@@ -8,6 +8,13 @@
       "when": 1782289778639,
       "tag": "0000_damp_sunset_bain",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1782290580595,
+      "tag": "0001_phase1_core_schema",
+      "breakpoints": true
     }
   ]
 }
