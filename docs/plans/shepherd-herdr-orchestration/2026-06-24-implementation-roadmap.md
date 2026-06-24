@@ -195,6 +195,7 @@ Implemented so far:
 - Bolt Socket Mode wrapper for Slack message events
 - Slack platform config schema using environment variable names for tokens
 - CLI daemon wiring for Slack runtime, delivery fanout, and daemon-backed inbound messages
+- local session client plus `shepherd send` / `shepherd watch` for TUI-style attach and resume
 
 Slack behavior:
 

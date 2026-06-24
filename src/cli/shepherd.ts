@@ -9,12 +9,27 @@ import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
+import { ShepherdSessionClient } from "@/tui/client.js";
 
 export type CliCommand =
   | {
       command: "daemon";
       configPath?: string;
       dbPath: string;
+      socketPath: string;
+    }
+  | {
+      actorId?: string;
+      command: "send";
+      displayName?: string;
+      sessionId: string;
+      socketPath: string;
+      text: string;
+    }
+  | {
+      afterEventId: number;
+      command: "watch";
+      sessionId: string;
       socketPath: string;
     }
   | { command: "help" };
@@ -24,6 +39,36 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
 
   if (!command || command === "--help" || command === "-h" || command === "help") {
     return { command: "help" };
+  }
+
+  if (command === "send") {
+    const parsed = parseOptions(rest);
+    if (!parsed.session || !parsed.text) {
+      throw new Error("send requires --session and --text");
+    }
+
+    return {
+      command: "send",
+      sessionId: parsed.session,
+      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      text: parsed.text,
+      ...(parsed.actor ? { actorId: parsed.actor } : {}),
+      ...(parsed["display-name"] ? { displayName: parsed["display-name"] } : {}),
+    };
+  }
+
+  if (command === "watch") {
+    const parsed = parseOptions(rest);
+    if (!parsed.session) {
+      throw new Error("watch requires --session");
+    }
+
+    return {
+      afterEventId: parsed.after ? Number(parsed.after) : 0,
+      command: "watch",
+      sessionId: parsed.session,
+      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+    };
   }
 
   if (command !== "daemon") {
@@ -44,9 +89,13 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
 export function helpText(): string {
   return `Usage:
   shepherd daemon [--socket <path>] [--db <path>] [--config <path>]
+  shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>]
+  shepherd watch --session <id> [--socket <path>] [--after <event-id>]
 
 Commands:
   daemon    Start the local Shepherd daemon
+  send      Send a user message into a Shepherd session
+  watch     Print session events as JSON Lines
   help      Show this help
 `;
 }
@@ -56,6 +105,44 @@ async function main(): Promise<void> {
 
   if (command.command === "help") {
     console.log(helpText());
+    return;
+  }
+
+  if (command.command === "send") {
+    const client = await ShepherdSessionClient.connect(command.socketPath);
+    try {
+      const result = await client.sendUserMessage({
+        actorId: command.actorId ?? "tui:user",
+        presentation: {
+          displayName: command.displayName ?? command.actorId ?? "TUI User",
+          sourcePlatform: "tui",
+        },
+        sessionId: command.sessionId,
+        text: command.text,
+      });
+      console.log(JSON.stringify(result.event));
+    } finally {
+      await client.close();
+    }
+    return;
+  }
+
+  if (command.command === "watch") {
+    const client = await ShepherdSessionClient.connect(command.socketPath);
+    await client.subscribe({
+      afterEventId: command.afterEventId,
+      onEvent(event) {
+        console.log(JSON.stringify(event));
+      },
+      sessionId: command.sessionId,
+    });
+
+    const stop = async () => {
+      await client.close();
+      exit(0);
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
     return;
   }
 

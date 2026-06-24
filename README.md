@@ -53,6 +53,18 @@ Build TypeScript into `dist`:
 pnpm build
 ```
 
+Send a message to a running daemon session:
+
+```bash
+shepherd send --session <session-id> --text "continue from here"
+```
+
+Watch session events as JSON Lines:
+
+```bash
+shepherd watch --session <session-id> --after 0
+```
+
 ## Common Commands
 
 - `pnpm typecheck`: run strict TypeScript checks without emitting files.
@@ -70,6 +82,7 @@ pnpm build
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
 - `src/platforms/slack`: Slack inbound normalization, Socket Mode wrapper, and outbound delivery.
+- `src/tui`: daemon socket client used by TUI-style local surfaces.
 - `test/unit`: pure logic and contract tests.
 - `test/integration`: SQLite and cross-module integration tests.
 - `docs/plans`: product and implementation plans for the Shepherd MVP.

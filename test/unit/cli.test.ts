@@ -40,4 +40,48 @@ describe("Shepherd CLI", () => {
     expect(parseCliArgs(["--help"])).toEqual({ command: "help" });
     expect(helpText()).toContain("shepherd daemon");
   });
+
+  test("parses send options", () => {
+    expect(
+      parseCliArgs([
+        "send",
+        "--socket",
+        "/tmp/shepherd.sock",
+        "--session",
+        "session-1",
+        "--text",
+        "hello",
+        "--actor",
+        "tui:ryo",
+        "--display-name",
+        "Ryo",
+      ]),
+    ).toEqual({
+      actorId: "tui:ryo",
+      command: "send",
+      displayName: "Ryo",
+      sessionId: "session-1",
+      socketPath: "/tmp/shepherd.sock",
+      text: "hello",
+    });
+  });
+
+  test("parses watch options", () => {
+    expect(
+      parseCliArgs([
+        "watch",
+        "--socket",
+        "/tmp/shepherd.sock",
+        "--session",
+        "session-1",
+        "--after",
+        "12",
+      ]),
+    ).toEqual({
+      afterEventId: 12,
+      command: "watch",
+      sessionId: "session-1",
+      socketPath: "/tmp/shepherd.sock",
+    });
+  });
 });
