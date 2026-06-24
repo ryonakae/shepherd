@@ -28,7 +28,7 @@ MVP limits:
 
 - Approval responses are recorded and delivered in Shepherd, but provider/worker-agent-specific callback routing is deferred.
 - TUI reconnect behavior is supported by replay cursors, but there is no full-screen TUI application yet.
-- Herdr state events are represented through logical tool events and wait/read results; a dedicated Herdr event subscription stream is deferred.
+- Herdr event waits can be recorded as compact `herdr.progress` events; automatic daemon-managed Herdr subscription lifecycle is deferred.
 
 ## Source of truth
 

@@ -18,7 +18,7 @@ Known MVP limits are tracked in the child plans and Deferred section:
 
 - Provider-specific approval response routing back into Codex app-server or worker-agent approval APIs is deferred.
 - A standalone Hermes-style `shepherd-tools` stdio callback binary is deferred; MVP uses the AI SDK tool bridge over Shepherd logical tools.
-- Dedicated Herdr event subscription/progress streaming is deferred; MVP uses wait/read operations, tool events, recovery notes, summaries, and gateway prompt narration.
+- Herdr event wait/progress recording is implemented; automatic daemon-managed Herdr subscription lifecycle is deferred.
 
 ## Phase 0: Implementation foundation
 
@@ -242,7 +242,7 @@ Deliverables:
 
 - provider-specific approval response bridge back into Codex app-server or worker-agent approval APIs
 - standalone Hermes-style `shepherd-tools` stdio callback binary
-- dedicated Herdr event subscription/progress streaming adapter
+- automatic daemon-managed Herdr event subscription lifecycle
 - session/channel/message provider override
 - full Hermes-style auxiliary model suite
 - `codexExec` fallback for Codex gateway
