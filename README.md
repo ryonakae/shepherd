@@ -120,7 +120,7 @@ shepherd audit --session <session-id> --db /tmp/shepherd.sqlite --after 0
 - `src/tui`: daemon socket client used by TUI-style local surfaces.
 - `test/unit`: pure logic and contract tests.
 - `test/integration`: SQLite and cross-module integration tests.
-- `docs/plans`: product and implementation plans for the Shepherd MVP.
+- `docs/plans`: active product and implementation plans; completed plans live under `docs/plans/archived`.
 
 ## Notes
 

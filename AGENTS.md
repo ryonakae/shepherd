@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Shepherd は、Herdr 管理の coding agent を TUI / Slack などのイベントストリームから操作する orchestration gateway です。通常の作業は README と関連する `src` / `test` から始め、設計判断や延期事項を確認するときだけ `docs/plans/` を参照してください。
+Shepherd は、Herdr 管理の coding agent を TUI / Slack などのイベントストリームから操作する orchestration gateway です。通常の作業は README と関連する `src` / `test` から始め、進行中の設計判断や延期事項は `docs/plans/`、完了済み plan の経緯は `docs/plans/archived/` を参照してください。
 
 ## よく使うコマンド
 
@@ -35,7 +35,8 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 - `src/tui/`: daemon JSON Lines RPC client。
 - `test/unit/`: pure logic / contract tests。
 - `test/integration/`: SQLite など実体を使う integration tests。
-- `docs/plans/`: 設計判断、MVP 状態、延期事項。作業前の必読ではなく、仕様判断が必要なときの参照先。
+- `docs/plans/`: 進行中の設計判断、MVP 状態、延期事項。作業前の必読ではなく、仕様判断が必要なときの参照先。
+- `docs/plans/archived/`: 完了済み plan の履歴。active plan として扱わない。
 
 ## コーディング方針
 
@@ -49,7 +50,7 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 
 - Active plan は `docs/plans/` 配下に置く。親 plan に紐づく子 plan は `docs/plans/<parent-slug>/` に置く。
 - plan を更新するときは、関連する親子リンクと README / AGENTS からの参照も確認する。
-- 完了済み plan を archive する場合は、実装変更とは分けた docs-only commit にする。
+- 完了済み plan を `docs/plans/archived/` に移す場合は、実装変更とは分けた docs-only commit にする。
 - 並行セッションで plan 更新が入っている、または追加判断が残っている場合は archive しない。
 
 ## 注意
