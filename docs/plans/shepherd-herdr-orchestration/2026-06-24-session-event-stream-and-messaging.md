@@ -219,7 +219,7 @@ Prompt builder uses:
 
 - `session_summary`
 - recent user/assistant window
-- recent structured Herdr progress signals
+- recent structured Herdr progress signals from `herdr.progress` events
 - recent relevant tool/Herdr events
 - current user message
 

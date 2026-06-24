@@ -67,6 +67,7 @@ export type HerdrControlClient = Pick<
   | "splitPane"
   | "startAgent"
   | "waitForAgent"
+  | "waitForEvent"
   | "waitForOutput"
 >;
 
@@ -376,6 +377,18 @@ export class HerdrOrchestrator {
       ...request,
       pane_id: paneId,
       ...(timeoutMs !== undefined ? { timeout_ms: timeoutMs } : {}),
+    });
+  }
+
+  waitForEvent(params: {
+    herdrSessionName: string;
+    timeoutMs?: number;
+    workspaceId?: string;
+  }): Promise<unknown> {
+    const { herdrSessionName, timeoutMs, workspaceId } = params;
+    return this.#clientForSession(herdrSessionName).waitForEvent({
+      ...(timeoutMs !== undefined ? { timeout_ms: timeoutMs } : {}),
+      ...(workspaceId !== undefined ? { workspace_id: workspaceId } : {}),
     });
   }
 

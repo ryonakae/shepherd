@@ -96,6 +96,7 @@ describe("HerdrSocketClient", () => {
       source: "recent",
       timeout_ms: 1000,
     });
+    await client.waitForEvent({ timeout_ms: 1000, workspace_id: "w1" });
     client.close();
 
     expect(requests.map((request) => request.method)).toEqual([
@@ -104,6 +105,7 @@ describe("HerdrSocketClient", () => {
       "pane.read",
       "agent.wait",
       "wait.output",
+      "events.wait",
     ]);
   });
 

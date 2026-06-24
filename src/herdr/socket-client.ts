@@ -163,6 +163,10 @@ export class HerdrSocketClient {
     return this.request("wait.output", params);
   }
 
+  waitForEvent(params: Record<string, unknown> = {}): Promise<unknown> {
+    return this.request("events.wait", params);
+  }
+
   #handleData(chunk: Buffer): void {
     for (const message of this.#decoder.push(chunk.toString("utf8"))) {
       const response = message as HerdrResponse;

@@ -20,10 +20,11 @@ Implemented:
 - Shepherd workspace layout creation with `agents`, `tests`, `logs`, `review`, and `scratch` tabs.
 - Herdr DB bindings for created and explicitly attached workspaces.
 - gateway logical tools for `herdr_read`, `ensure_herdr_workspace`, `attach_herdr_workspace`, `open_pane`, `run_pane_command`, `send_pane_text`, `read_pane`, `start_agent`, `send_agent_message`, `read_agent_output`, and waits.
+- Herdr `events.wait` socket wrapper and progress adapter that normalizes Herdr events into idempotent `herdr.progress` Shepherd events.
 
 MVP limits:
 
-- Herdr event subscription is not a dedicated streaming adapter yet; MVP uses `agent.wait` and `wait.output` plus Shepherd event records.
+- Herdr event wait/progress recording is implemented, but automatic daemon-managed subscription lifecycle is not started by default yet.
 - `send_agent_message` uses Herdr `agent.send`, not the older draft's internal `pane.send_input` example.
 - Explicit attach is included in MVP only when the user asks for it; broad attach/discovery modes remain out of scope.
 

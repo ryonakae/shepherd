@@ -171,6 +171,9 @@ function openFakeHerdrClient(
     async waitForAgent() {
       return { status: "idle" };
     },
+    async waitForEvent() {
+      return { type: "agent.status" };
+    },
     async waitForOutput() {
       return { matched: true };
     },

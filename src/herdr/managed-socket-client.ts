@@ -114,6 +114,10 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).waitForOutput(params);
   }
 
+  async waitForEvent(params: Parameters<HerdrSocketClient["waitForEvent"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).waitForEvent(params);
+  }
+
   async #getClient(): Promise<HerdrSocketClient> {
     if (this.#client) {
       return this.#client;

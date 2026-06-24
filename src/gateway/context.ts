@@ -37,6 +37,13 @@ export function buildGatewayMessagesFromEvents(
         messages.push({ content: `Recovery note: ${message}`, role: "system" });
       }
     }
+
+    if (event.type === "herdr.progress") {
+      const text = payloadText(event.payload);
+      if (text) {
+        messages.push({ content: `Herdr progress: ${text}`, role: "system" });
+      }
+    }
   }
 
   return messages;

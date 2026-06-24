@@ -19,7 +19,7 @@ Implemented:
 - environment-only API key lookup for API-key providers.
 - provider-independent logical tool registry converted to AI SDK tools with TypeBox/Ajv runtime validation.
 - gateway prompt builder with Herdr control-plane role, progress narration guidance, default agent, and `when` descriptions.
-- recent event context builder and threshold-based `session_summary` updates.
+- recent event context builder, `herdr.progress` context projection, and threshold-based `session_summary` updates.
 - Herdr orchestration tools listed below, including `herdr_read`, attach, pane text send, waits, and agent messaging.
 - deterministic tool visibility/policy gates and logical tool call/result/denial events.
 - approval request/response event surface in the daemon/TUI/delivery layer.
@@ -29,7 +29,7 @@ MVP limits:
 - The dedicated Hermes-style `shepherd-tools` stdio helper is not a separate binary; MVP uses the AI SDK executable tool bridge around the same Shepherd logical tools.
 - Provider-native approval requests can be recorded and delivered as Shepherd events, but response plumbing back into Codex app-server or worker-agent-specific approval APIs is deferred.
 - `auxiliary.summary` is reserved in config, but summary generation currently uses the gateway provider/model.
-- Rich Herdr progress detection is prompt and event-context based, not a separate auxiliary progress model.
+- Rich Herdr progress detection is prompt and event-context based, not a separate auxiliary progress model. Compact `herdr.progress` events can be recorded from Herdr event waits and projected into gateway context.
 
 ## Gateway LLM role
 

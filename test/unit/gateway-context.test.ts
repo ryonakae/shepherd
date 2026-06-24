@@ -14,6 +14,12 @@ describe("buildGatewayMessagesFromEvents", () => {
           },
           type: "recovery.note",
         }),
+        event({
+          payload: {
+            text: "Herdr progress agent.status status=idle agent=claude-impl",
+          },
+          type: "herdr.progress",
+        }),
         event({ payload: { tool: "x" }, type: "logical_tool.started" }),
       ]),
     ).toEqual([
@@ -21,6 +27,10 @@ describe("buildGatewayMessagesFromEvents", () => {
       { content: "working", role: "assistant" },
       {
         content: "Recovery note: Gateway run was in flight during daemon startup.",
+        role: "system",
+      },
+      {
+        content: "Herdr progress: Herdr progress agent.status status=idle agent=claude-impl",
         role: "system",
       },
     ]);
