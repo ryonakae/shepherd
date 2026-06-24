@@ -89,6 +89,78 @@ describe("builtin logical tools", () => {
       ),
     ).resolves.toEqual({ text: "agent output" });
   });
+
+  test("plan-name aliases and pane tools delegate to Herdr", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "start_agent",
+        {
+          agentName: "claude-impl",
+          agentProfile: "claude",
+          taskSlug: "Implement Slack Sync",
+          workingContextSlug: "shepherd",
+          workingDirectory: "/repo",
+        },
+        { sessionId },
+      ),
+    ).resolves.toMatchObject({ paneId: "w1:p1" });
+    await expect(
+      runner.run(
+        "open_pane",
+        {
+          direction: "right",
+          taskSlug: "Run Tests",
+          workingContextSlug: "shepherd",
+          workingDirectory: "/repo",
+        },
+        { sessionId },
+      ),
+    ).resolves.toMatchObject({ paneId: "w1:p2" });
+    await expect(
+      runner.run(
+        "run_pane_command",
+        { command: "pnpm test", paneId: "w1:p2", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ ran: true });
+    await expect(
+      runner.run(
+        "read_pane",
+        { lines: 20, paneId: "w1:p2", source: "recent", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ text: "pane output" });
+    await expect(
+      runner.run(
+        "send_agent_message",
+        { target: "w1:p1", text: "continue", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ sent: true });
+    await expect(
+      runner.run(
+        "read_agent_output",
+        { target: "w1:p1", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ text: "agent output" });
+    await expect(
+      runner.run(
+        "wait_for_agent",
+        { status: "idle", target: "w1:p1", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ status: "idle" });
+    await expect(
+      runner.run(
+        "wait_for_herdr_event",
+        { match: "done", paneId: "w1:p2", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ matched: true });
+  });
 });
 
 function openRunner(): {
@@ -111,14 +183,29 @@ function openRunner(): {
       async createTab(params) {
         return { tab_id: `w1:${params.label}` };
       },
+      async readPane() {
+        return { text: "pane output" };
+      },
       async readAgent() {
         return { text: "agent output" };
+      },
+      async runPaneCommand() {
+        return { ran: true };
       },
       async sendAgentMessage() {
         return { sent: true };
       },
+      async splitPane() {
+        return { pane_id: "w1:p2" };
+      },
       async startAgent() {
         return { pane_id: "w1:p1" };
+      },
+      async waitForAgent() {
+        return { status: "idle" };
+      },
+      async waitForOutput() {
+        return { matched: true };
       },
     },
     sqlite,

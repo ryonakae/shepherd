@@ -53,6 +53,18 @@ export class HerdrSocketClient {
     return this.request("tab.create", params);
   }
 
+  splitPane(params: {
+    cwd?: string;
+    direction: "down" | "right";
+    focus?: boolean;
+    pane_id?: string;
+    ratio?: number;
+    tab_id?: string;
+    workspace_id?: string;
+  }): Promise<unknown> {
+    return this.request("pane.split", params);
+  }
+
   runPaneCommand(params: { command: string; pane_id: string }): Promise<unknown> {
     return this.request("pane.run", params);
   }
@@ -86,6 +98,25 @@ export class HerdrSocketClient {
 
   sendAgentMessage(params: { target: string; text: string }): Promise<unknown> {
     return this.request("agent.send", params);
+  }
+
+  waitForAgent(params: {
+    status: "blocked" | "done" | "idle" | "unknown" | "working";
+    target: string;
+    timeout_ms?: number;
+  }): Promise<unknown> {
+    return this.request("agent.wait", params);
+  }
+
+  waitForOutput(params: {
+    lines?: number;
+    match: string;
+    pane_id: string;
+    regex?: boolean;
+    source?: "recent" | "recent-unwrapped" | "visible";
+    timeout_ms?: number;
+  }): Promise<unknown> {
+    return this.request("wait.output", params);
   }
 
   #handleData(chunk: Buffer): void {

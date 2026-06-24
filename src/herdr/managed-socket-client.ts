@@ -32,6 +32,20 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).createTab(params);
   }
 
+  async splitPane(params: Parameters<HerdrSocketClient["splitPane"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).splitPane(params);
+  }
+
+  async runPaneCommand(
+    params: Parameters<HerdrSocketClient["runPaneCommand"]>[0],
+  ): Promise<unknown> {
+    return (await this.#getClient()).runPaneCommand(params);
+  }
+
+  async readPane(params: Parameters<HerdrSocketClient["readPane"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).readPane(params);
+  }
+
   async readAgent(params: Parameters<HerdrSocketClient["readAgent"]>[0]): Promise<unknown> {
     return (await this.#getClient()).readAgent(params);
   }
@@ -44,6 +58,14 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
 
   async startAgent(params: Parameters<HerdrSocketClient["startAgent"]>[0]): Promise<unknown> {
     return (await this.#getClient()).startAgent(params);
+  }
+
+  async waitForAgent(params: Parameters<HerdrSocketClient["waitForAgent"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).waitForAgent(params);
+  }
+
+  async waitForOutput(params: Parameters<HerdrSocketClient["waitForOutput"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).waitForOutput(params);
   }
 
   async #getClient(): Promise<HerdrSocketClient> {

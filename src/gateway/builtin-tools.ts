@@ -41,6 +41,45 @@ type HerdrReadAgentInput = {
   workingContextSlug: string;
 };
 
+type OpenPaneInput = EnsureHerdrWorkspaceInput & {
+  cwd?: string;
+  direction?: "down" | "right";
+  focus?: boolean;
+  ratio?: number;
+  tabLabel?: string;
+  targetPaneId?: string;
+};
+
+type RunPaneCommandInput = {
+  command: string;
+  paneId: string;
+  workingContextSlug: string;
+};
+
+type ReadPaneInput = {
+  lines?: number;
+  paneId: string;
+  source?: "all" | "recent";
+  workingContextSlug: string;
+};
+
+type WaitForAgentInput = {
+  status: "blocked" | "done" | "idle" | "unknown" | "working";
+  target: string;
+  timeoutMs?: number;
+  workingContextSlug: string;
+};
+
+type WaitForHerdrEventInput = {
+  lines?: number;
+  match: string;
+  paneId: string;
+  regex?: boolean;
+  source?: "recent" | "recent-unwrapped" | "visible";
+  timeoutMs?: number;
+  workingContextSlug: string;
+};
+
 export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): LogicalToolRegistry {
   const registry = new LogicalToolRegistry();
 
@@ -76,6 +115,18 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
   });
 
   registry.register({
+    description: "Alias for ensure_herdr_workspace.",
+    execute: (input: EnsureHerdrWorkspaceInput, context) =>
+      registry.get("ensure_herdr_workspace").execute(input, context),
+    inputSchema: Type.Object({
+      taskSlug: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+      workingDirectory: Type.String({ minLength: 1 }),
+    }),
+    name: "ensure_agent_pane",
+  });
+
+  registry.register({
     description: "Start a configured coding agent inside the Shepherd Herdr workspace.",
     execute: (input: HerdrStartAgentInput, context) => {
       const profile = deps.agents?.[input.agentProfile];
@@ -103,6 +154,83 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
   });
 
   registry.register({
+    description: "Start a configured coding agent in Herdr.",
+    execute: (input: HerdrStartAgentInput, context) =>
+      registry.get("herdr_start_agent").execute(input, context),
+    inputSchema: Type.Object({
+      agentName: Type.String({ minLength: 1 }),
+      agentProfile: Type.String({ minLength: 1 }),
+      taskSlug: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+      workingDirectory: Type.String({ minLength: 1 }),
+    }),
+    name: "start_agent",
+  });
+
+  registry.register({
+    description: "Open a Shepherd-managed Herdr pane by splitting a pane or workspace.",
+    execute: (input: OpenPaneInput, context) =>
+      deps.herdr.openPane({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        sessionId: context.sessionId,
+        taskSlug: input.taskSlug,
+        workingDirectory: input.workingDirectory,
+        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        ...(input.direction !== undefined ? { direction: input.direction } : {}),
+        ...(input.focus !== undefined ? { focus: input.focus } : {}),
+        ...(input.ratio !== undefined ? { ratio: input.ratio } : {}),
+        ...(input.tabLabel !== undefined ? { tabLabel: input.tabLabel } : {}),
+        ...(input.targetPaneId !== undefined ? { targetPaneId: input.targetPaneId } : {}),
+      }),
+    inputSchema: Type.Object({
+      cwd: Type.Optional(Type.String({ minLength: 1 })),
+      direction: Type.Optional(Type.Union([Type.Literal("right"), Type.Literal("down")])),
+      focus: Type.Optional(Type.Boolean()),
+      ratio: Type.Optional(Type.Number({ minimum: 0.05, maximum: 0.95 })),
+      tabLabel: Type.Optional(Type.String({ minLength: 1 })),
+      targetPaneId: Type.Optional(Type.String({ minLength: 1 })),
+      taskSlug: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+      workingDirectory: Type.String({ minLength: 1 }),
+    }),
+    name: "open_pane",
+  });
+
+  registry.register({
+    description: "Run a shell command in a Herdr pane.",
+    execute: (input: RunPaneCommandInput) =>
+      deps.herdr.runPaneCommand({
+        command: input.command,
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        paneId: input.paneId,
+      }),
+    inputSchema: Type.Object({
+      command: Type.String({ minLength: 1 }),
+      paneId: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "run_pane_command",
+  });
+
+  registry.register({
+    description: "Read recent output from a Herdr pane.",
+    execute: (input: ReadPaneInput) =>
+      deps.herdr.readPane({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        paneId: input.paneId,
+        ...(input.lines !== undefined ? { lines: input.lines } : {}),
+        ...(input.source !== undefined ? { source: input.source } : {}),
+      }),
+    inputSchema: Type.Object({
+      lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+      paneId: Type.String({ minLength: 1 }),
+      source: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("recent")])),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "read_pane",
+  });
+
+  registry.register({
     description: "Send a user message to a Herdr-managed agent target.",
     execute: (input: HerdrSendAgentMessageInput) =>
       deps.herdr.sendAgentMessage({
@@ -116,6 +244,18 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_send_agent_message",
+  });
+
+  registry.register({
+    description: "Send a user message to a Herdr-managed agent target.",
+    execute: (input: HerdrSendAgentMessageInput, context) =>
+      registry.get("herdr_send_agent_message").execute(input, context),
+    inputSchema: Type.Object({
+      target: Type.String({ minLength: 1 }),
+      text: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "send_agent_message",
   });
 
   registry.register({
@@ -144,6 +284,80 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_read_agent",
+  });
+
+  registry.register({
+    description: "Read recent output from a Herdr-managed agent target.",
+    execute: (input: HerdrReadAgentInput, context) =>
+      registry.get("herdr_read_agent").execute(input, context),
+    inputSchema: Type.Object({
+      lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+      source: Type.Optional(
+        Type.Union([
+          Type.Literal("detection"),
+          Type.Literal("recent"),
+          Type.Literal("recent-unwrapped"),
+          Type.Literal("visible"),
+        ]),
+      ),
+      target: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "read_agent_output",
+  });
+
+  registry.register({
+    description: "Wait for a Herdr-managed agent target to reach a status.",
+    execute: (input: WaitForAgentInput) =>
+      deps.herdr.waitForAgent({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        status: input.status,
+        target: input.target,
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      }),
+    inputSchema: Type.Object({
+      status: Type.Union([
+        Type.Literal("idle"),
+        Type.Literal("working"),
+        Type.Literal("blocked"),
+        Type.Literal("done"),
+        Type.Literal("unknown"),
+      ]),
+      target: Type.String({ minLength: 1 }),
+      timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "wait_for_agent",
+  });
+
+  registry.register({
+    description: "Wait for a Herdr pane output match.",
+    execute: (input: WaitForHerdrEventInput) =>
+      deps.herdr.waitForOutput({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        match: input.match,
+        paneId: input.paneId,
+        ...(input.lines !== undefined ? { lines: input.lines } : {}),
+        ...(input.regex !== undefined ? { regex: input.regex } : {}),
+        ...(input.source !== undefined ? { source: input.source } : {}),
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      }),
+    inputSchema: Type.Object({
+      lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+      match: Type.String({ minLength: 1 }),
+      paneId: Type.String({ minLength: 1 }),
+      regex: Type.Optional(Type.Boolean()),
+      source: Type.Optional(
+        Type.Union([
+          Type.Literal("recent"),
+          Type.Literal("recent-unwrapped"),
+          Type.Literal("visible"),
+        ]),
+      ),
+      timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "wait_for_herdr_event",
   });
 
   return registry;

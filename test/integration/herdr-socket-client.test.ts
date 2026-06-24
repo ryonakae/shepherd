@@ -79,6 +79,33 @@ describe("HerdrSocketClient", () => {
       },
     });
   });
+
+  test("uses pane and wait socket methods for terminal control", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    await client.splitPane({ direction: "right", pane_id: "w1:p1", ratio: 0.5 });
+    await client.runPaneCommand({ command: "pnpm test", pane_id: "w1:p2" });
+    await client.readPane({ lines: 20, pane_id: "w1:p2", source: "recent" });
+    await client.waitForAgent({ status: "idle", target: "claude-impl", timeout_ms: 1000 });
+    await client.waitForOutput({
+      match: "done",
+      pane_id: "w1:p2",
+      source: "recent",
+      timeout_ms: 1000,
+    });
+    client.close();
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "pane.split",
+      "pane.run",
+      "pane.read",
+      "agent.wait",
+      "wait.output",
+    ]);
+  });
 });
 
 async function openFakeHerdrServer(

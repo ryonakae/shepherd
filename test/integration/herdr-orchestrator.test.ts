@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
-import { HerdrOrchestrator } from "@/herdr/orchestrator.js";
+import { type HerdrControlClient, HerdrOrchestrator } from "@/herdr/orchestrator.js";
 
 const tempDirs: string[] = [];
 
@@ -30,15 +30,7 @@ describe("HerdrOrchestrator", () => {
           calls.push(["tab.create", params]);
           return { tab_id: `w1:t${calls.length}` };
         },
-        async readAgent() {
-          throw new Error("not used");
-        },
-        async sendAgentMessage() {
-          throw new Error("not used");
-        },
-        async startAgent() {
-          throw new Error("not used");
-        },
+        ...unusedHerdrMethods(),
       },
       sqlite,
     });
@@ -79,15 +71,7 @@ describe("HerdrOrchestrator", () => {
         async createTab() {
           throw new Error("should not create tabs twice");
         },
-        async readAgent() {
-          throw new Error("not used");
-        },
-        async sendAgentMessage() {
-          throw new Error("not used");
-        },
-        async startAgent() {
-          throw new Error("not used");
-        },
+        ...unusedHerdrMethods(),
       },
       sqlite,
     });
@@ -134,12 +118,7 @@ describe("HerdrOrchestrator", () => {
           calls.push(["tab.create", params]);
           return { tab_id: `w1:${params.label}` };
         },
-        async readAgent() {
-          throw new Error("not used");
-        },
-        async sendAgentMessage() {
-          throw new Error("not used");
-        },
+        ...unusedHerdrMethods(),
         async startAgent(params) {
           calls.push(["agent.start", params]);
           return { pane_id: "w1:p1" };
@@ -191,12 +170,7 @@ describe("HerdrOrchestrator", () => {
           async createTab(params) {
             return { tab_id: `w1:${params.label}` };
           },
-          async readAgent() {
-            throw new Error("not used");
-          },
-          async sendAgentMessage() {
-            throw new Error("not used");
-          },
+          ...unusedHerdrMethods(),
           async startAgent() {
             return { pane_id: "w1:p1" };
           },
@@ -228,4 +202,33 @@ function openMigratedDatabase(): {
   const { sqlite } = openSqlite(join(dir, "test.sqlite"));
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   return { sqlite, store: new EventStore(sqlite) };
+}
+
+function unusedHerdrMethods(): Omit<HerdrControlClient, "createTab" | "createWorkspace"> {
+  return {
+    async readAgent() {
+      throw new Error("not used");
+    },
+    async readPane() {
+      throw new Error("not used");
+    },
+    async runPaneCommand() {
+      throw new Error("not used");
+    },
+    async sendAgentMessage() {
+      throw new Error("not used");
+    },
+    async splitPane() {
+      throw new Error("not used");
+    },
+    async startAgent() {
+      throw new Error("not used");
+    },
+    async waitForAgent() {
+      throw new Error("not used");
+    },
+    async waitForOutput() {
+      throw new Error("not used");
+    },
+  };
 }

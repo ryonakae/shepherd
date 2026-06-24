@@ -116,15 +116,30 @@ function openFakeHerdrClient(
     async createWorkspace() {
       return { workspace_id: "w1" };
     },
+    async readPane() {
+      return { text: "pane output" };
+    },
     async readAgent() {
       return { text: "ready" };
+    },
+    async runPaneCommand() {
+      return { ran: true };
     },
     async sendAgentMessage() {
       return { sent: true };
     },
+    async splitPane() {
+      return { pane_id: "w1:p2" };
+    },
     async startAgent(params) {
       state.startedAgents.push(params);
       return { pane_id: "w1:p1" };
+    },
+    async waitForAgent() {
+      return { status: "idle" };
+    },
+    async waitForOutput() {
+      return { matched: true };
     },
   };
 }

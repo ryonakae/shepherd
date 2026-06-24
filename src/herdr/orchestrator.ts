@@ -40,7 +40,16 @@ type AgentStartResult = {
 
 export type HerdrControlClient = Pick<
   HerdrSocketClient,
-  "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
+  | "createTab"
+  | "createWorkspace"
+  | "readAgent"
+  | "readPane"
+  | "runPaneCommand"
+  | "sendAgentMessage"
+  | "splitPane"
+  | "startAgent"
+  | "waitForAgent"
+  | "waitForOutput"
 >;
 
 export type HerdrWorkspaceBinding = {
@@ -52,6 +61,13 @@ export type HerdrWorkspaceBinding = {
 export type HerdrAgentBinding = {
   agentName: string;
   paneId: string;
+  raw: unknown;
+  tabId: string | undefined;
+  workspaceId: string;
+};
+
+export type HerdrPaneBinding = {
+  paneId: string | undefined;
   raw: unknown;
   tabId: string | undefined;
   workspaceId: string;
@@ -163,6 +179,62 @@ export class HerdrOrchestrator {
     return this.#clientForSession(herdrSessionName).readAgent(request);
   }
 
+  async openPane(
+    params: EnsureWorkspaceInput & {
+      cwd?: string;
+      direction?: "down" | "right";
+      focus?: boolean;
+      ratio?: number;
+      tabLabel?: string;
+      targetPaneId?: string;
+    },
+  ): Promise<HerdrPaneBinding> {
+    const binding = await this.ensureWorkspace(params);
+    const herdr = this.#clientForSession(binding.herdrSessionName);
+    const tabId = params.tabLabel ? binding.tabs[params.tabLabel] : undefined;
+    const result = (await herdr.splitPane({
+      direction: params.direction ?? "right",
+      workspace_id: binding.workspaceId,
+      ...(params.cwd !== undefined ? { cwd: params.cwd } : {}),
+      ...(params.focus !== undefined ? { focus: params.focus } : {}),
+      ...(params.ratio !== undefined ? { ratio: params.ratio } : {}),
+      ...(params.targetPaneId !== undefined ? { pane_id: params.targetPaneId } : {}),
+      ...(tabId !== undefined ? { tab_id: tabId } : {}),
+    })) as { id?: string; pane?: { pane_id?: string }; pane_id?: string };
+
+    return {
+      paneId: result.pane_id ?? result.pane?.pane_id ?? result.id,
+      raw: result,
+      tabId,
+      workspaceId: binding.workspaceId,
+    };
+  }
+
+  readPane(params: {
+    herdrSessionName: string;
+    lines?: number;
+    paneId: string;
+    source?: "all" | "recent";
+  }): Promise<unknown> {
+    const { herdrSessionName, paneId, ...request } = params;
+    return this.#clientForSession(herdrSessionName).readPane({
+      ...request,
+      pane_id: paneId,
+    });
+  }
+
+  runPaneCommand(params: {
+    command: string;
+    herdrSessionName: string;
+    paneId: string;
+  }): Promise<unknown> {
+    const { herdrSessionName, paneId, ...request } = params;
+    return this.#clientForSession(herdrSessionName).runPaneCommand({
+      ...request,
+      pane_id: paneId,
+    });
+  }
+
   sendAgentMessage(params: {
     herdrSessionName: string;
     target: string;
@@ -170,6 +242,36 @@ export class HerdrOrchestrator {
   }): Promise<unknown> {
     const { herdrSessionName, ...request } = params;
     return this.#clientForSession(herdrSessionName).sendAgentMessage(request);
+  }
+
+  waitForAgent(params: {
+    herdrSessionName: string;
+    status: "blocked" | "done" | "idle" | "unknown" | "working";
+    target: string;
+    timeoutMs?: number;
+  }): Promise<unknown> {
+    const { herdrSessionName, timeoutMs, ...request } = params;
+    return this.#clientForSession(herdrSessionName).waitForAgent({
+      ...request,
+      ...(timeoutMs !== undefined ? { timeout_ms: timeoutMs } : {}),
+    });
+  }
+
+  waitForOutput(params: {
+    herdrSessionName: string;
+    lines?: number;
+    match: string;
+    paneId: string;
+    regex?: boolean;
+    source?: "recent" | "recent-unwrapped" | "visible";
+    timeoutMs?: number;
+  }): Promise<unknown> {
+    const { herdrSessionName, paneId, timeoutMs, ...request } = params;
+    return this.#clientForSession(herdrSessionName).waitForOutput({
+      ...request,
+      pane_id: paneId,
+      ...(timeoutMs !== undefined ? { timeout_ms: timeoutMs } : {}),
+    });
   }
 
   #getBinding(sessionId: string): HerdrWorkspaceBinding | undefined {
