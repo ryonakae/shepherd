@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { helpText, parseCliArgs } from "@/cli/shepherd.js";
+import { formatAuditEvent, helpText, parseCliArgs } from "@/cli/shepherd.js";
 
 describe("Shepherd CLI", () => {
   test("parses daemon options", () => {
@@ -102,5 +102,44 @@ describe("Shepherd CLI", () => {
       socketPath: "/tmp/shepherd.sock",
       title: "New title",
     });
+  });
+
+  test("parses audit options", () => {
+    expect(
+      parseCliArgs([
+        "audit",
+        "--db",
+        "/tmp/shepherd.sqlite",
+        "--session",
+        "session-1",
+        "--after",
+        "12",
+        "--limit",
+        "25",
+        "--json",
+        "true",
+      ]),
+    ).toEqual({
+      afterEventId: 12,
+      command: "audit",
+      dbPath: "/tmp/shepherd.sqlite",
+      json: true,
+      limit: 25,
+      sessionId: "session-1",
+    });
+  });
+
+  test("formats audit events as tab-separated records", () => {
+    expect(
+      formatAuditEvent({
+        actorId: "gateway",
+        createdAt: new Date("2026-06-24T10:00:00.000Z"),
+        id: 42,
+        idempotencyKey: null,
+        payload: { text: "done" },
+        sessionId: "session-1",
+        type: "gateway.message",
+      }),
+    ).toBe('42\t2026-06-24T10:00:00.000Z\tsession-1\tgateway\tgateway.message\t{"text":"done"}');
   });
 });

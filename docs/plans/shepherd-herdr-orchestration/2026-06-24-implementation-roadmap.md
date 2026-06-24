@@ -205,6 +205,7 @@ Implemented so far:
 - allowed-root working context discovery and resolution tools
 - persisted logical tool idempotency records with completed-result reuse
 - session title rename flow through daemon RPC and CLI
+- basic SQLite event audit log through `shepherd audit`
 
 Slack behavior:
 
@@ -219,7 +220,6 @@ Deliverables:
 
 - explicit attach to existing Herdr session/workspace
 - title/rename flow
-- basic audit log
 - conservative daemon restart recovery from DB
 - recovery notes for uncertain in-flight gateway/tool work
 - clearer tool errors for Herdr command start failures

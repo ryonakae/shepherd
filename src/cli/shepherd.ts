@@ -40,6 +40,14 @@ export type CliCommand =
       sessionId: string;
       socketPath: string;
     }
+  | {
+      afterEventId: number;
+      command: "audit";
+      dbPath: string;
+      json: boolean;
+      limit: number;
+      sessionId: string;
+    }
   | { command: "help" };
 
 export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = env): CliCommand {
@@ -79,6 +87,22 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
     };
   }
 
+  if (command === "audit") {
+    const parsed = parseOptions(rest);
+    if (!parsed.session) {
+      throw new Error("audit requires --session");
+    }
+
+    return {
+      afterEventId: parsed.after ? Number(parsed.after) : 0,
+      command: "audit",
+      dbPath: parsed.db ?? environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
+      json: parsed.json === "true",
+      limit: parsed.limit ? Number(parsed.limit) : 100,
+      sessionId: parsed.session,
+    };
+  }
+
   if (command === "rename") {
     const parsed = parseOptions(rest);
     if (!parsed.session || parsed.title === undefined) {
@@ -114,14 +138,24 @@ export function helpText(): string {
   shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>]
   shepherd watch --session <id> [--socket <path>] [--after <event-id>]
   shepherd rename --session <id> --title <title> [--socket <path>]
+  shepherd audit --session <id> [--db <path>] [--after <event-id>] [--limit <n>] [--json true]
 
 Commands:
   daemon    Start the local Shepherd daemon
   send      Send a user message into a Shepherd session
   watch     Print session events as JSON Lines
   rename    Rename a Shepherd session
+  audit     Print stored session events from the SQLite audit log
   help      Show this help
 `;
+}
+
+export function formatAuditEvent(event: ReturnType<EventStore["listEvents"]>[number]): string {
+  const createdAt = event.createdAt.toISOString();
+  const actor = event.actorId ?? "system";
+  return `${event.id}\t${createdAt}\t${event.sessionId}\t${actor}\t${event.type}\t${JSON.stringify(
+    event.payload,
+  )}`;
 }
 
 async function main(): Promise<void> {
@@ -180,6 +214,24 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(result.session));
     } finally {
       await client.close();
+    }
+    return;
+  }
+
+  if (command.command === "audit") {
+    const { sqlite } = openSqlite(command.dbPath);
+    try {
+      applyMigrations(sqlite, { migrationsFolder: "drizzle" });
+      const events = new EventStore(sqlite);
+      for (const event of events.listEvents(
+        command.sessionId,
+        command.afterEventId,
+        command.limit,
+      )) {
+        console.log(command.json ? JSON.stringify(event) : formatAuditEvent(event));
+      }
+    } finally {
+      sqlite.close();
     }
     return;
   }

@@ -71,6 +71,12 @@ Rename a session:
 shepherd rename --session <session-id> --title "Review Slack sync"
 ```
 
+Print stored session audit events from SQLite:
+
+```bash
+shepherd audit --session <session-id> --db /tmp/shepherd.sqlite --after 0
+```
+
 ## Common Commands
 
 - `pnpm typecheck`: run strict TypeScript checks without emitting files.
@@ -84,7 +90,7 @@ shepherd rename --session <session-id> --title "Review Slack sync"
 ## Project Layout
 
 - `src/config`: TypeBox/Ajv runtime configuration contracts.
-- `src/daemon`: local daemon utilities, including JSON Lines framing.
+- `src/daemon`: local daemon utilities, including JSON Lines framing and recovery.
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
 - `src/gateway`: provider adapters, logical tools, turn queueing, context, and summary updates.
