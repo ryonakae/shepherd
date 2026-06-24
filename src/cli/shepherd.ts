@@ -29,6 +29,12 @@ export type CliCommand =
       text: string;
     }
   | {
+      command: "rename";
+      sessionId: string;
+      socketPath: string;
+      title: string | null;
+    }
+  | {
       afterEventId: number;
       command: "watch";
       sessionId: string;
@@ -73,6 +79,20 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
     };
   }
 
+  if (command === "rename") {
+    const parsed = parseOptions(rest);
+    if (!parsed.session || parsed.title === undefined) {
+      throw new Error("rename requires --session and --title");
+    }
+
+    return {
+      command: "rename",
+      sessionId: parsed.session,
+      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      title: parsed.title.length === 0 ? null : parsed.title,
+    };
+  }
+
   if (command !== "daemon") {
     throw new Error(`Unknown command: ${command}`);
   }
@@ -93,11 +113,13 @@ export function helpText(): string {
   shepherd daemon [--socket <path>] [--db <path>] [--config <path>]
   shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>]
   shepherd watch --session <id> [--socket <path>] [--after <event-id>]
+  shepherd rename --session <id> --title <title> [--socket <path>]
 
 Commands:
   daemon    Start the local Shepherd daemon
   send      Send a user message into a Shepherd session
   watch     Print session events as JSON Lines
+  rename    Rename a Shepherd session
   help      Show this help
 `;
 }
@@ -145,6 +167,20 @@ async function main(): Promise<void> {
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
+    return;
+  }
+
+  if (command.command === "rename") {
+    const client = await ShepherdSessionClient.connect(command.socketPath);
+    try {
+      const result = await client.renameSession({
+        sessionId: command.sessionId,
+        title: command.title,
+      });
+      console.log(JSON.stringify(result.session));
+    } finally {
+      await client.close();
+    }
     return;
   }
 

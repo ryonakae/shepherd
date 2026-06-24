@@ -84,4 +84,23 @@ describe("Shepherd CLI", () => {
       socketPath: "/tmp/shepherd.sock",
     });
   });
+
+  test("parses rename options", () => {
+    expect(
+      parseCliArgs([
+        "rename",
+        "--socket",
+        "/tmp/shepherd.sock",
+        "--session",
+        "session-1",
+        "--title",
+        "New title",
+      ]),
+    ).toEqual({
+      command: "rename",
+      sessionId: "session-1",
+      socketPath: "/tmp/shepherd.sock",
+      title: "New title",
+    });
+  });
 });

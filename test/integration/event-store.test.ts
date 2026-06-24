@@ -72,6 +72,20 @@ describe("EventStore", () => {
       { text: "event 4" },
     ]);
   });
+
+  test("updates session titles", () => {
+    const store = openMigratedEventStore();
+    const session = store.createSession({ id: "session-1", title: "Old title" });
+
+    expect(store.updateSessionTitle(session.id, "New title")).toMatchObject({
+      id: "session-1",
+      title: "New title",
+    });
+    expect(store.updateSessionTitle(session.id, null)).toMatchObject({
+      id: "session-1",
+      title: null,
+    });
+  });
 });
 
 function openMigratedEventStore(): EventStore {

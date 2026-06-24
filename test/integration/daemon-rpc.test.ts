@@ -120,6 +120,54 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     });
   });
 
+  test("renames sessions and broadcasts a session event", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1", title: "Old title" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "rename-1",
+        method: "session.rename",
+        params: {
+          sessionId: session.id,
+          title: "New title",
+        },
+      }),
+    );
+
+    const messages = await readMessages(client, 2);
+
+    expect(messages[0]).toMatchObject({
+      id: "rename-1",
+      result: {
+        session: {
+          id: session.id,
+          title: "New title",
+        },
+      },
+    });
+    expect(messages[1]).toMatchObject({
+      method: "session.event",
+      params: {
+        event: {
+          payload: { title: "New title" },
+          type: "session.renamed",
+        },
+      },
+    });
+  });
+
   test("reloads config through RPC", async () => {
     const configPath = writeTempFile(
       "shepherd.yaml",

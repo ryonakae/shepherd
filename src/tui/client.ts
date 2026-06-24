@@ -20,6 +20,11 @@ export type SendUserMessageInput = {
   text: string;
 };
 
+export type RenameSessionInput = {
+  sessionId: string;
+  title: string | null;
+};
+
 type PendingRequest = {
   reject(error: Error): void;
   resolve(value: unknown): void;
@@ -73,6 +78,28 @@ export class ShepherdSessionClient {
 
   async sendUserMessage(input: SendUserMessageInput): Promise<{ event: WireEventRecord }> {
     return (await this.#request("session.user_message", input)) as { event: WireEventRecord };
+  }
+
+  async renameSession(input: RenameSessionInput): Promise<{
+    session: {
+      createdAt: string;
+      id: string;
+      status: "active" | "archived";
+      title: string | null;
+      updatedAt: string;
+      workingContextId: string | null;
+    };
+  }> {
+    return (await this.#request("session.rename", input)) as {
+      session: {
+        createdAt: string;
+        id: string;
+        status: "active" | "archived";
+        title: string | null;
+        updatedAt: string;
+        workingContextId: string | null;
+      };
+    };
   }
 
   async subscribe(input: SubscribeInput): Promise<{ replayed: number; subscribed: true }> {

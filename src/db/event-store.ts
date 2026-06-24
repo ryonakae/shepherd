@@ -119,6 +119,15 @@ export class EventStore {
     return mapSession(row);
   }
 
+  updateSessionTitle(id: string, title: string | null): SessionRecord {
+    const now = Date.now();
+    this.#sqlite
+      .prepare("update sessions set title = ?, updated_at = ? where id = ?")
+      .run(title, now, id);
+
+    return this.getSession(id);
+  }
+
   upsertActor(input: UpsertActorInput): ActorRecord {
     const now = Date.now();
     const presentationJson =

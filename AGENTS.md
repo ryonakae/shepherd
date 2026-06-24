@@ -14,6 +14,7 @@ Shepherd は Herdr 管理の coding agent を TUI / Slack から操作するた�
 - `SHEPHERD_DB_PATH=/tmp/shepherd.sqlite pnpm db:migrate`: committed migration を SQLite に適用する。
 - `shepherd send --session <id> --text <text>`: running daemon に user message を送る。
 - `shepherd watch --session <id> --after 0`: session event stream を JSON Lines で見る。
+- `shepherd rename --session <id> --title <title>`: session title を更新する。
 
 ## 検証手順
 

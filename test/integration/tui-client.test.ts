@@ -64,6 +64,27 @@ describe("ShepherdSessionClient", () => {
       type: "user.message",
     });
   });
+
+  test("renames sessions through the daemon socket", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1", title: "Old title" });
+    const client = await ShepherdSessionClient.connect(socketPath);
+    clients.push(client);
+
+    await expect(
+      client.renameSession({
+        sessionId: session.id,
+        title: "New title",
+      }),
+    ).resolves.toMatchObject({
+      session: {
+        id: session.id,
+        title: "New title",
+      },
+    });
+  });
 });
 
 async function openServer(): Promise<{

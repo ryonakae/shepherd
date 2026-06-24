@@ -65,6 +65,12 @@ Watch session events as JSON Lines:
 shepherd watch --session <session-id> --after 0
 ```
 
+Rename a session:
+
+```bash
+shepherd rename --session <session-id> --title "Review Slack sync"
+```
+
 ## Common Commands
 
 - `pnpm typecheck`: run strict TypeScript checks without emitting files.

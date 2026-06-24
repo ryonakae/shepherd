@@ -203,6 +203,7 @@ Implemented so far:
 - Herdr named-session CLI lifecycle wrapper before socket requests
 - plan-name Herdr logical tools for pane run/read/open and wait operations
 - allowed-root working context discovery and resolution tools
+- session title rename flow through daemon RPC and CLI
 
 Slack behavior:
 

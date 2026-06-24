@@ -205,6 +205,11 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    if (request.method === "session.rename") {
+      this.#renameSession(socket, request);
+      return;
+    }
+
     if (request.method === "config.reload") {
       this.#reloadConfig(socket, request);
       return;
@@ -309,6 +314,30 @@ export class ShepherdDaemonServer {
     });
     await this.#publishEvent(event);
     await this.#wakeGatewayForUserMessage(input, event);
+  }
+
+  #renameSession(socket: Socket, request: RpcRequest): void {
+    const params = request.params as { sessionId?: string; title?: string | null };
+    if (!params?.sessionId || params.title === undefined) {
+      this.#write(socket, {
+        error: { message: "sessionId and title are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const session = this.#store.updateSessionTitle(params.sessionId, params.title);
+    const event = this.#store.appendEvent({
+      payload: { title: params.title },
+      sessionId: params.sessionId,
+      type: "session.renamed",
+    });
+
+    this.#write(socket, {
+      id: request.id,
+      result: { session: toWireSession(session) },
+    });
+    void this.#publishEvent(event);
   }
 
   #reloadConfig(socket: Socket, request: RpcRequest): void {
@@ -448,5 +477,19 @@ function toWireEvent(event: EventRecord): EventWireRecord {
   return {
     ...event,
     createdAt: event.createdAt.toISOString(),
+  };
+}
+
+function toWireSession(session: ReturnType<EventStore["getSession"]>): Omit<
+  typeof session,
+  "createdAt" | "updatedAt"
+> & {
+  createdAt: string;
+  updatedAt: string;
+} {
+  return {
+    ...session,
+    createdAt: session.createdAt.toISOString(),
+    updatedAt: session.updatedAt.toISOString(),
   };
 }
