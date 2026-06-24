@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
-import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
+import { LogicalToolCallStore, LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 
 const tempDirs: string[] = [];
 
@@ -64,9 +64,51 @@ describe("LogicalToolRunner", () => {
       "gateway.tool.denied",
     ]);
   });
+
+  test("reuses completed idempotent tool results without rerunning side effects", async () => {
+    const { events, sessionId, sqlite } = openStore();
+    const registry = new LogicalToolRegistry();
+    const calls: unknown[] = [];
+    registry.register({
+      description: "Run a command",
+      execute: (input: { command: string }) => {
+        calls.push(input);
+        return { output: `ran ${input.command}` };
+      },
+      inputSchema: Type.Object({ command: Type.String() }),
+      name: "run_pane_command",
+    });
+    const runner = new LogicalToolRunner({
+      events,
+      policy: { allowedTools: new Set(["run_pane_command"]) },
+      registry,
+      toolCalls: new LogicalToolCallStore(sqlite),
+    });
+
+    await expect(
+      runner.run(
+        "run_pane_command",
+        { command: "pnpm test", idempotencyKey: "tool-1" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ output: "ran pnpm test" });
+    await expect(
+      runner.run(
+        "run_pane_command",
+        { command: "pnpm test", idempotencyKey: "tool-1" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ output: "ran pnpm test" });
+
+    expect(calls).toEqual([{ command: "pnpm test", idempotencyKey: "tool-1" }]);
+  });
 });
 
-function openStore(): { events: EventStore; sessionId: string } {
+function openStore(): {
+  events: EventStore;
+  sessionId: string;
+  sqlite: ReturnType<typeof openSqlite>["sqlite"];
+} {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-tools-"));
   tempDirs.push(dir);
 
@@ -75,5 +117,5 @@ function openStore(): { events: EventStore; sessionId: string } {
   const events = new EventStore(sqlite);
   const session = events.createSession({ id: "session-1" });
 
-  return { events, sessionId: session.id };
+  return { events, sessionId: session.id, sqlite };
 }

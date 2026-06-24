@@ -14,7 +14,7 @@ import {
 import { GatewayRunner } from "./runner.js";
 import { GatewaySummaryUpdater } from "./summary.js";
 import { buildGatewaySystemPrompt } from "./system-prompt.js";
-import { LogicalToolRunner } from "./tools.js";
+import { LogicalToolCallStore, LogicalToolRunner } from "./tools.js";
 import { GatewayRunStore, GatewayTurnQueue } from "./turn-queue.js";
 import { WorkingContextResolver } from "./working-contexts.js";
 
@@ -60,6 +60,7 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     events: options.events,
     policy: { allowedTools: new Set(registry.list().map((tool) => tool.name)) },
     registry,
+    toolCalls: new LogicalToolCallStore(options.sqlite),
   });
   const provider = createGatewayProviderFromConfig(options.config, {
     ...(options.createCodexProvider !== undefined
