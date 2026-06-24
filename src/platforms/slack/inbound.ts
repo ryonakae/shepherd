@@ -9,6 +9,12 @@ export type SlackUserMessageAppender = (input: {
   text: string;
 }) => EventRecord | Promise<EventRecord>;
 
+export type SlackInboundPolicy = {
+  allowedChannels?: readonly string[];
+  allowedTeams?: readonly string[];
+  allowedUsers?: readonly string[];
+};
+
 export type NormalizedSlackMessage = {
   actor: {
     displayName: string;
@@ -54,7 +60,10 @@ export class SlackInboundHandler {
 
   constructor(
     stores: { bindings: SessionBindingStore; events: EventStore },
-    options: { appendUserMessage?: SlackUserMessageAppender } = {},
+    options: {
+      appendUserMessage?: SlackUserMessageAppender;
+      policy?: SlackInboundPolicy;
+    } = {},
   ) {
     this.#appendUserMessage =
       options.appendUserMessage ??
@@ -81,11 +90,18 @@ export class SlackInboundHandler {
       });
     this.#bindings = stores.bindings;
     this.#events = stores.events;
+    this.#policy = options.policy ?? {};
   }
+
+  readonly #policy: SlackInboundPolicy;
 
   async handleMessageEvent(event: unknown): Promise<SlackInboundResult | undefined> {
     const message = normalizeSlackMessageEvent(event);
     if (!message) {
+      return undefined;
+    }
+
+    if (!isAllowedSlackMessage(message, this.#policy)) {
       return undefined;
     }
 
@@ -124,6 +140,21 @@ export class SlackInboundHandler {
       session,
     };
   }
+}
+
+function isAllowedSlackMessage(
+  message: NormalizedSlackMessage,
+  policy: SlackInboundPolicy,
+): boolean {
+  return (
+    isAllowed(policy.allowedTeams, message.teamId) &&
+    isAllowed(policy.allowedChannels, message.channelId) &&
+    isAllowed(policy.allowedUsers, message.actor.sourceUserId)
+  );
+}
+
+function isAllowed(allowedValues: readonly string[] | undefined, value: string): boolean {
+  return allowedValues === undefined || allowedValues.includes(value);
 }
 
 export function normalizeSlackMessageEvent(event: unknown): NormalizedSlackMessage | undefined {

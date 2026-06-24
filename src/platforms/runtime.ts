@@ -72,6 +72,11 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
         const result = await options.receiveUserMessage(input);
         return result.event;
       },
+      policy: {
+        ...(slack.allowed_channels ? { allowedChannels: slack.allowed_channels } : {}),
+        ...(slack.allowed_teams ? { allowedTeams: slack.allowed_teams } : {}),
+        ...(slack.allowed_users ? { allowedUsers: slack.allowed_users } : {}),
+      },
     },
   );
   const socketMode = new SlackSocketModeAdapter({ app, inbound });

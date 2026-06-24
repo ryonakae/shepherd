@@ -169,6 +169,51 @@ describe("createPlatformRuntime", () => {
       },
     ]);
   });
+
+  test("applies Slack platform allowlists before receiving messages", async () => {
+    const { events, sqlite } = openHarness();
+    const app = new FakeSlackApp();
+    const received: unknown[] = [];
+    const runtime = createPlatformRuntime({
+      config: minimalConfig({
+        platforms: {
+          slack: {
+            allowed_channels: ["C999"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+      createSlackApp() {
+        return app;
+      },
+      createSlackWebClient() {
+        return fakeSlackWebClient();
+      },
+      environment: {
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+      },
+      events,
+      async receiveUserMessage(input) {
+        received.push(input);
+        return { event: appendReceivedUserMessage(events, input) };
+      },
+      sqlite,
+    });
+
+    await runtime.start();
+    await app.emitMessage({
+      channel: "C123",
+      team: "T123",
+      text: "blocked",
+      ts: "1700000001.000001",
+      type: "message",
+      user: "U123",
+    });
+
+    expect(received).toEqual([]);
+  });
 });
 
 class FakeSlackApp implements SlackBoltLikeApp {

@@ -151,6 +151,28 @@ describe("SlackInboundHandler", () => {
     expect(retry?.event).toEqual(first?.event);
     expect(stores.events.listEvents(first?.session.id ?? "")).toHaveLength(1);
   });
+
+  test("ignores messages outside configured allowlists", async () => {
+    const { stores } = openSlackInboundHarness();
+    const handler = new SlackInboundHandler(stores, {
+      policy: {
+        allowedChannels: ["C999"],
+        allowedTeams: ["T123"],
+        allowedUsers: ["U123"],
+      },
+    });
+
+    await expect(
+      handler.handleMessageEvent({
+        channel: "C123",
+        team: "T123",
+        text: "blocked",
+        ts: "1700000001.000001",
+        type: "message",
+        user: "U123",
+      }),
+    ).resolves.toBeUndefined();
+  });
 });
 
 function openSlackInboundHarness(): {
