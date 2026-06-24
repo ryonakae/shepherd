@@ -43,21 +43,39 @@ describe("HerdrSocketClient", () => {
     ]);
   });
 
-  test("uses pane.send_input with enter for agent messages", async () => {
+  test("uses agent.send for agent messages", async () => {
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { type: "pane_input_sent" } }));
+      socket.write(encodeJsonLine({ id: request.id, result: { type: "agent_input_sent" } }));
     });
 
     const client = new HerdrSocketClient({ socketPath });
-    await client.sendAgentMessage({ pane_id: "w1:p1", text: "please review" });
+    await client.sendAgentMessage({ target: "w1:p1", text: "please review" });
     client.close();
 
     expect(requests[0]).toMatchObject({
-      method: "pane.send_input",
+      method: "agent.send",
       params: {
-        keys: ["enter"],
-        pane_id: "w1:p1",
+        target: "w1:p1",
         text: "please review",
+      },
+    });
+  });
+
+  test("uses agent.read for agent output", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(encodeJsonLine({ id: request.id, result: { text: "done" } }));
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    await client.readAgent({ lines: 40, source: "recent", target: "w1:p1" });
+    client.close();
+
+    expect(requests[0]).toMatchObject({
+      method: "agent.read",
+      params: {
+        lines: 40,
+        source: "recent",
+        target: "w1:p1",
       },
     });
   });

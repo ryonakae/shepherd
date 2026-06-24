@@ -10,6 +10,17 @@ export type EnsureWorkspaceInput = {
   workingDirectory: string;
 };
 
+export type HerdrAgentProfile = {
+  args?: string[];
+  command: string;
+};
+
+export type StartAgentInput = EnsureWorkspaceInput & {
+  agentName: string;
+  profile: HerdrAgentProfile;
+  tabLabel?: string;
+};
+
 type WorkspaceResult = {
   id?: string;
   workspace_id?: string;
@@ -20,18 +31,39 @@ type TabResult = {
   tab_id?: string;
 };
 
+type AgentStartResult = {
+  agent?: { pane_id?: string };
+  id?: string;
+  pane?: { pane_id?: string };
+  pane_id?: string;
+};
+
 export type HerdrWorkspaceBinding = {
   herdrSessionName: string;
   tabs: Record<string, string>;
   workspaceId: string;
 };
 
+export type HerdrAgentBinding = {
+  agentName: string;
+  paneId: string;
+  raw: unknown;
+  tabId: string | undefined;
+  workspaceId: string;
+};
+
 export class HerdrOrchestrator {
-  readonly #herdr: Pick<HerdrSocketClient, "createTab" | "createWorkspace">;
+  readonly #herdr: Pick<
+    HerdrSocketClient,
+    "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
+  >;
   readonly #sqlite: DatabaseSync;
 
   constructor(options: {
-    herdr: Pick<HerdrSocketClient, "createTab" | "createWorkspace">;
+    herdr: Pick<
+      HerdrSocketClient,
+      "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
+    >;
     sqlite: DatabaseSync;
   }) {
     this.#herdr = options.herdr;
@@ -86,6 +118,44 @@ export class HerdrOrchestrator {
       tabs,
       workspaceId,
     };
+  }
+
+  async startAgent(input: StartAgentInput): Promise<HerdrAgentBinding> {
+    const binding = await this.ensureWorkspace(input);
+    const tabId = binding.tabs[input.tabLabel ?? "agents"];
+    const startParams = {
+      command: input.profile.command,
+      cwd: input.workingDirectory,
+      name: input.agentName,
+      workspace_id: binding.workspaceId,
+      ...(input.profile.args !== undefined ? { args: input.profile.args } : {}),
+      ...(tabId !== undefined ? { tab_id: tabId } : {}),
+    };
+    const result = (await this.#herdr.startAgent(startParams)) as AgentStartResult;
+    const paneId = result.pane_id ?? result.pane?.pane_id ?? result.agent?.pane_id ?? result.id;
+    if (!paneId) {
+      throw new Error("Herdr agent.start response did not include a pane id");
+    }
+
+    return {
+      agentName: input.agentName,
+      paneId,
+      raw: result,
+      tabId,
+      workspaceId: binding.workspaceId,
+    };
+  }
+
+  readAgent(params: {
+    lines?: number;
+    source?: "detection" | "recent" | "recent-unwrapped" | "visible";
+    target: string;
+  }): Promise<unknown> {
+    return this.#herdr.readAgent(params);
+  }
+
+  sendAgentMessage(params: { target: string; text: string }): Promise<unknown> {
+    return this.#herdr.sendAgentMessage(params);
   }
 
   #getBinding(sessionId: string): HerdrWorkspaceBinding | undefined {

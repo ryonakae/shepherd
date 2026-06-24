@@ -30,6 +30,15 @@ describe("HerdrOrchestrator", () => {
           calls.push(["tab.create", params]);
           return { tab_id: `w1:t${calls.length}` };
         },
+        async readAgent() {
+          throw new Error("not used");
+        },
+        async sendAgentMessage() {
+          throw new Error("not used");
+        },
+        async startAgent() {
+          throw new Error("not used");
+        },
       },
       sqlite,
     });
@@ -70,6 +79,15 @@ describe("HerdrOrchestrator", () => {
         async createTab() {
           throw new Error("should not create tabs twice");
         },
+        async readAgent() {
+          throw new Error("not used");
+        },
+        async sendAgentMessage() {
+          throw new Error("not used");
+        },
+        async startAgent() {
+          throw new Error("not used");
+        },
       },
       sqlite,
     });
@@ -100,6 +118,63 @@ describe("HerdrOrchestrator", () => {
       tabs: { agents: "w1:t1" },
       workspaceId: "w1",
     });
+  });
+
+  test("starts an agent in the Shepherd agents tab", async () => {
+    const { sqlite, store } = openMigratedDatabase();
+    const session = store.createSession({ id: "session-abcdef123456" });
+    const calls: unknown[] = [];
+    const orchestrator = new HerdrOrchestrator({
+      herdr: {
+        async createWorkspace(params) {
+          calls.push(["workspace.create", params]);
+          return { workspace_id: "w1" };
+        },
+        async createTab(params) {
+          calls.push(["tab.create", params]);
+          return { tab_id: `w1:${params.label}` };
+        },
+        async readAgent() {
+          throw new Error("not used");
+        },
+        async sendAgentMessage() {
+          throw new Error("not used");
+        },
+        async startAgent(params) {
+          calls.push(["agent.start", params]);
+          return { pane_id: "w1:p1" };
+        },
+      },
+      sqlite,
+    });
+
+    await expect(
+      orchestrator.startAgent({
+        agentName: "claude-impl",
+        herdrSessionName: "shepherd-main",
+        profile: { args: ["--dangerously-skip-permissions"], command: "claude" },
+        sessionId: session.id,
+        taskSlug: "Implement Slack Sync",
+        workingDirectory: "/repo",
+      }),
+    ).resolves.toMatchObject({
+      agentName: "claude-impl",
+      paneId: "w1:p1",
+      tabId: "w1:agents",
+      workspaceId: "w1",
+    });
+
+    expect(calls.at(-1)).toEqual([
+      "agent.start",
+      {
+        args: ["--dangerously-skip-permissions"],
+        command: "claude",
+        cwd: "/repo",
+        name: "claude-impl",
+        tab_id: "w1:agents",
+        workspace_id: "w1",
+      },
+    ]);
   });
 });
 

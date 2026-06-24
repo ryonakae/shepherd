@@ -49,6 +49,46 @@ describe("builtin logical tools", () => {
       workspaceId: "w1",
     });
   });
+
+  test("herdr_start_agent uses configured agent profiles", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "herdr_start_agent",
+        {
+          agentName: "claude-impl",
+          agentProfile: "claude",
+          taskSlug: "Implement Slack Sync",
+          workingContextSlug: "shepherd",
+          workingDirectory: "/repo",
+        },
+        { sessionId },
+      ),
+    ).resolves.toMatchObject({
+      agentName: "claude-impl",
+      paneId: "w1:p1",
+    });
+  });
+
+  test("herdr_send_agent_message and herdr_read_agent delegate to Herdr", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "herdr_send_agent_message",
+        { target: "w1:p1", text: "please implement" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ sent: true });
+    await expect(
+      runner.run(
+        "herdr_read_agent",
+        { lines: 50, source: "recent", target: "w1:p1" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ text: "agent output" });
+  });
 });
 
 function openRunner(): {
@@ -71,10 +111,25 @@ function openRunner(): {
       async createTab(params) {
         return { tab_id: `w1:${params.label}` };
       },
+      async readAgent() {
+        return { text: "agent output" };
+      },
+      async sendAgentMessage() {
+        return { sent: true };
+      },
+      async startAgent() {
+        return { pane_id: "w1:p1" };
+      },
     },
     sqlite,
   });
-  const registry = createBuiltinToolRegistry({ events, herdr });
+  const registry = createBuiltinToolRegistry({
+    agents: {
+      claude: { args: ["--dangerously-skip-permissions"], command: "claude" },
+    },
+    events,
+    herdr,
+  });
   const runner = new LogicalToolRunner({
     events,
     policy: { allowedTools: new Set(registry.list().map((tool) => tool.name)) },

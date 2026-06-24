@@ -65,6 +65,14 @@ export class HerdrSocketClient {
     return this.request("pane.read", params);
   }
 
+  readAgent(params: {
+    lines?: number;
+    source?: "detection" | "recent" | "recent-unwrapped" | "visible";
+    target: string;
+  }): Promise<unknown> {
+    return this.request("agent.read", params);
+  }
+
   startAgent(params: {
     args?: string[];
     command: string;
@@ -76,12 +84,8 @@ export class HerdrSocketClient {
     return this.request("agent.start", params);
   }
 
-  sendAgentMessage(params: { pane_id: string; text: string }): Promise<unknown> {
-    return this.request("pane.send_input", {
-      keys: ["enter"],
-      pane_id: params.pane_id,
-      text: params.text,
-    });
+  sendAgentMessage(params: { target: string; text: string }): Promise<unknown> {
+    return this.request("agent.send", params);
   }
 
   #handleData(chunk: Buffer): void {

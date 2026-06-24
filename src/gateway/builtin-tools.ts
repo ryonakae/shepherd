@@ -1,10 +1,12 @@
 import { Type } from "@sinclair/typebox";
+import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
 import { herdrSessionNameForWorkingContext } from "@/herdr/naming.js";
 import type { HerdrOrchestrator } from "@/herdr/orchestrator.js";
 import { LogicalToolRegistry } from "./tools.js";
 
 export type BuiltinToolDependencies = {
+  agents?: ShepherdConfig["agents"];
   events: EventStore;
   herdr: HerdrOrchestrator;
 };
@@ -19,6 +21,22 @@ type EnsureHerdrWorkspaceInput = {
   taskSlug: string;
   workingContextSlug: string;
   workingDirectory: string;
+};
+
+type HerdrStartAgentInput = EnsureHerdrWorkspaceInput & {
+  agentName: string;
+  agentProfile: string;
+};
+
+type HerdrSendAgentMessageInput = {
+  target: string;
+  text: string;
+};
+
+type HerdrReadAgentInput = {
+  lines?: number;
+  source?: "detection" | "recent" | "recent-unwrapped" | "visible";
+  target: string;
 };
 
 export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): LogicalToolRegistry {
@@ -53,6 +71,61 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingDirectory: Type.String({ minLength: 1 }),
     }),
     name: "ensure_herdr_workspace",
+  });
+
+  registry.register({
+    description: "Start a configured coding agent inside the Shepherd Herdr workspace.",
+    execute: (input: HerdrStartAgentInput, context) => {
+      const profile = deps.agents?.[input.agentProfile];
+      if (!profile) {
+        throw new Error(`Unknown agent profile: ${input.agentProfile}`);
+      }
+
+      return deps.herdr.startAgent({
+        agentName: input.agentName,
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        profile,
+        sessionId: context.sessionId,
+        taskSlug: input.taskSlug,
+        workingDirectory: input.workingDirectory,
+      });
+    },
+    inputSchema: Type.Object({
+      agentName: Type.String({ minLength: 1 }),
+      agentProfile: Type.String({ minLength: 1 }),
+      taskSlug: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+      workingDirectory: Type.String({ minLength: 1 }),
+    }),
+    name: "herdr_start_agent",
+  });
+
+  registry.register({
+    description: "Send a user message to a Herdr-managed agent target.",
+    execute: (input: HerdrSendAgentMessageInput) => deps.herdr.sendAgentMessage(input),
+    inputSchema: Type.Object({
+      target: Type.String({ minLength: 1 }),
+      text: Type.String({ minLength: 1 }),
+    }),
+    name: "herdr_send_agent_message",
+  });
+
+  registry.register({
+    description: "Read recent output from a Herdr-managed agent target.",
+    execute: (input: HerdrReadAgentInput) => deps.herdr.readAgent(input),
+    inputSchema: Type.Object({
+      lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+      source: Type.Optional(
+        Type.Union([
+          Type.Literal("detection"),
+          Type.Literal("recent"),
+          Type.Literal("recent-unwrapped"),
+          Type.Literal("visible"),
+        ]),
+      ),
+      target: Type.String({ minLength: 1 }),
+    }),
+    name: "herdr_read_agent",
   });
 
   return registry;
