@@ -194,6 +194,7 @@ Implemented so far:
 - daemon delivery publication hook
 - Bolt Socket Mode wrapper for Slack message events
 - Slack platform config schema using environment variable names for tokens
+- CLI daemon wiring for Slack runtime, delivery fanout, and daemon-backed inbound messages
 
 Slack behavior:
 

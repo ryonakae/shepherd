@@ -15,7 +15,7 @@ describe("SlackSocketModeAdapter", () => {
     const adapter = new SlackSocketModeAdapter({
       app,
       inbound: {
-        handleMessageEvent(event) {
+        async handleMessageEvent(event) {
           handled.push(event);
           return result;
         },
@@ -37,7 +37,7 @@ describe("SlackSocketModeAdapter", () => {
     const adapter = new SlackSocketModeAdapter({
       app,
       inbound: {
-        handleMessageEvent() {
+        async handleMessageEvent() {
           return undefined;
         },
       },

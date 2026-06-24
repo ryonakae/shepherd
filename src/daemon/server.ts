@@ -36,6 +36,14 @@ type ActorPresentationInput = {
   sourceUserId?: string;
 };
 
+export type ReceiveUserMessageInput = {
+  actorId?: string;
+  idempotencyKey?: string;
+  presentation?: unknown;
+  sessionId: string;
+  text: string;
+};
+
 export class ShepherdDaemonServer {
   readonly #configPath: string | undefined;
   readonly #server: Server;
@@ -91,6 +99,61 @@ export class ShepherdDaemonServer {
         resolve();
       });
     });
+  }
+
+  async receiveUserMessage(input: ReceiveUserMessageInput): Promise<{
+    event: EventRecord;
+    gatewayEvents: EventRecord[];
+  }> {
+    const event = this.#storeUserMessage(input);
+    await this.#publishEvent(event);
+    const gatewayEvents = await this.#wakeGatewayForUserMessage(input, event);
+
+    return { event, gatewayEvents };
+  }
+
+  #storeUserMessage(input: ReceiveUserMessageInput): EventRecord {
+    if (input.actorId) {
+      const presentation = parseActorPresentation(input.presentation);
+      this.#store.upsertActor({
+        displayName: presentation.displayName ?? input.actorId,
+        id: input.actorId,
+        kind: "user",
+        presentation: input.presentation ?? {},
+        ...(presentation.avatarUrl ? { avatarUrl: presentation.avatarUrl } : {}),
+        ...(presentation.sourcePlatform ? { sourcePlatform: presentation.sourcePlatform } : {}),
+        ...(presentation.sourceUserId ? { sourceUserId: presentation.sourceUserId } : {}),
+      });
+    }
+
+    return this.#store.appendEvent({
+      payload: {
+        presentation: input.presentation ?? {},
+        text: input.text,
+      },
+      sessionId: input.sessionId,
+      type: "user.message",
+      ...(input.actorId ? { actorId: input.actorId } : {}),
+      ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+    });
+  }
+
+  async #wakeGatewayForUserMessage(
+    input: ReceiveUserMessageInput,
+    event: EventRecord,
+  ): Promise<EventRecord[]> {
+    if (!this.#gatewayRunner) {
+      return [];
+    }
+
+    const result = await this.#collectGatewayTurnResult(input.sessionId, event.id, [
+      { content: input.text, role: "user" },
+    ]);
+    for (const gatewayEvent of result.events) {
+      await this.#publishEvent(gatewayEvent);
+    }
+
+    return result.events;
   }
 
   #handleConnection(socket: Socket): void {
@@ -220,44 +283,21 @@ export class ShepherdDaemonServer {
       return;
     }
 
-    if (params.actorId) {
-      const presentation = parseActorPresentation(params.presentation);
-      this.#store.upsertActor({
-        displayName: presentation.displayName ?? params.actorId,
-        id: params.actorId,
-        kind: "user",
-        presentation: params.presentation ?? {},
-        ...(presentation.avatarUrl ? { avatarUrl: presentation.avatarUrl } : {}),
-        ...(presentation.sourcePlatform ? { sourcePlatform: presentation.sourcePlatform } : {}),
-        ...(presentation.sourceUserId ? { sourceUserId: presentation.sourceUserId } : {}),
-      });
-    }
-
-    const event = this.#store.appendEvent({
-      payload: {
-        presentation: params.presentation ?? {},
-        text: params.text,
-      },
+    const input = {
       sessionId: params.sessionId,
-      type: "user.message",
+      text: params.text,
       ...(params.actorId ? { actorId: params.actorId } : {}),
       ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
-    });
+      ...(params.presentation !== undefined ? { presentation: params.presentation } : {}),
+    };
+    const event = this.#storeUserMessage(input);
 
     this.#write(socket, {
       id: request.id,
       result: { event: toWireEvent(event) },
     });
     await this.#publishEvent(event);
-
-    if (this.#gatewayRunner) {
-      const result = await this.#collectGatewayTurnResult(params.sessionId, event.id, [
-        { content: params.text, role: "user" },
-      ]);
-      for (const gatewayEvent of result.events) {
-        await this.#publishEvent(gatewayEvent);
-      }
-    }
+    await this.#wakeGatewayForUserMessage(input, event);
   }
 
   #reloadConfig(socket: Socket, request: RpcRequest): void {

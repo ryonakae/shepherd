@@ -31,7 +31,7 @@ export class SlackSocketModeAdapter {
     }
 
     this.#app.event("message", async ({ event }) => {
-      const result = this.#inbound.handleMessageEvent(event);
+      const result = await this.#inbound.handleMessageEvent(event);
       if (result) {
         await this.#onMessage?.(result);
       }

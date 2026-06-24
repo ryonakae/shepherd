@@ -7,7 +7,8 @@ import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
-import { createGatewayRuntime, type GatewayRuntime } from "@/gateway/runtime.js";
+import { createGatewayRuntime } from "@/gateway/runtime.js";
+import { createPlatformRuntime } from "@/platforms/runtime.js";
 
 export type CliCommand =
   | {
@@ -61,11 +62,26 @@ async function main(): Promise<void> {
   const { sqlite } = openSqlite(command.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
-  const gatewayRuntime = command.configPath
-    ? createRuntimeFromConfig(command.configPath, events, sqlite)
+  const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
+  const gatewayRuntime = config
+    ? createGatewayRuntime({
+        config,
+        events,
+        sqlite,
+      })
+    : undefined;
+  let server: ShepherdDaemonServer;
+  const platformRuntime = config
+    ? createPlatformRuntime({
+        config,
+        events,
+        receiveUserMessage: async (input) => server.receiveUserMessage(input),
+        sqlite,
+      })
     : undefined;
 
-  const server = new ShepherdDaemonServer({
+  server = new ShepherdDaemonServer({
+    ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(gatewayRuntime ? { gatewayRunner: gatewayRuntime.runner } : {}),
     socketPath: command.socketPath,
     store: events,
@@ -73,9 +89,11 @@ async function main(): Promise<void> {
   });
 
   await server.start();
+  await platformRuntime?.start();
   console.log(`Shepherd daemon listening on ${command.socketPath}`);
 
   const stop = async () => {
+    await platformRuntime?.close();
     await server.stop();
     await gatewayRuntime?.close();
     sqlite.close();
@@ -86,11 +104,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", stop);
 }
 
-function createRuntimeFromConfig(
-  configPath: string,
-  events: EventStore,
-  sqlite: ReturnType<typeof openSqlite>["sqlite"],
-): GatewayRuntime {
+function loadConfigOrThrow(configPath: string) {
   const config = loadShepherdConfig(configPath);
   if (!config.ok) {
     throw new Error(
@@ -98,11 +112,7 @@ function createRuntimeFromConfig(
     );
   }
 
-  return createGatewayRuntime({
-    config: config.value,
-    events,
-    sqlite,
-  });
+  return config.value;
 }
 
 function parseOptions(args: string[]): Record<string, string | undefined> {

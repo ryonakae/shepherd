@@ -325,6 +325,73 @@ agents:
       expect.objectContaining({ type: "gateway.run.completed" }),
     ]);
   });
+
+  test("exposes a public user message receiver for platform adapters", async () => {
+    const delivered: unknown[] = [];
+    const { server, store } = await openServer({
+      configureDeliveryFanout() {
+        return {
+          async deliverEvent(event) {
+            delivered.push(event.type);
+          },
+        };
+      },
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              return { text: `Gateway saw ${input.messages.at(-1)?.content ?? ""}` };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const result = await server.receiveUserMessage({
+      actorId: "slack:T123:U123",
+      idempotencyKey: "slack:T123:C123:1700000001.000001",
+      presentation: {
+        displayName: "U123",
+        sourcePlatform: "slack",
+        sourceUserId: "U123",
+      },
+      sessionId: session.id,
+      text: "from Slack",
+    });
+
+    expect(result.event).toMatchObject({
+      actorId: "slack:T123:U123",
+      payload: {
+        presentation: {
+          displayName: "U123",
+          sourcePlatform: "slack",
+          sourceUserId: "U123",
+        },
+        text: "from Slack",
+      },
+      type: "user.message",
+    });
+    expect(result.gatewayEvents.map((event) => event.type)).toEqual([
+      "gateway.run.started",
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+    expect(delivered).toEqual([
+      "user.message",
+      "gateway.run.started",
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+  });
 });
 
 async function openServer(

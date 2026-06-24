@@ -1,6 +1,14 @@
 import type { EventRecord, EventStore, SessionRecord } from "@/db/event-store.js";
 import type { SessionBindingRecord, SessionBindingStore } from "@/db/session-bindings.js";
 
+export type SlackUserMessageAppender = (input: {
+  actorId: string;
+  idempotencyKey: string;
+  presentation: NormalizedSlackMessage["actor"]["presentation"];
+  sessionId: string;
+  text: string;
+}) => EventRecord | Promise<EventRecord>;
+
 export type NormalizedSlackMessage = {
   actor: {
     displayName: string;
@@ -40,15 +48,42 @@ type SlackMessageEvent = {
 };
 
 export class SlackInboundHandler {
+  readonly #appendUserMessage: SlackUserMessageAppender;
   readonly #bindings: SessionBindingStore;
   readonly #events: EventStore;
 
-  constructor(stores: { bindings: SessionBindingStore; events: EventStore }) {
+  constructor(
+    stores: { bindings: SessionBindingStore; events: EventStore },
+    options: { appendUserMessage?: SlackUserMessageAppender } = {},
+  ) {
+    this.#appendUserMessage =
+      options.appendUserMessage ??
+      ((input) => {
+        this.#events.upsertActor({
+          displayName: input.presentation.displayName,
+          id: input.actorId,
+          kind: "user",
+          presentation: input.presentation,
+          sourcePlatform: "slack",
+          sourceUserId: input.presentation.sourceUserId,
+        });
+
+        return this.#events.appendEvent({
+          actorId: input.actorId,
+          idempotencyKey: input.idempotencyKey,
+          payload: {
+            presentation: input.presentation,
+            text: input.text,
+          },
+          sessionId: input.sessionId,
+          type: "user.message",
+        });
+      });
     this.#bindings = stores.bindings;
     this.#events = stores.events;
   }
 
-  handleMessageEvent(event: unknown): SlackInboundResult | undefined {
+  async handleMessageEvent(event: unknown): Promise<SlackInboundResult | undefined> {
     const message = normalizeSlackMessageEvent(event);
     if (!message) {
       return undefined;
@@ -74,24 +109,12 @@ export class SlackInboundHandler {
         threadId: message.threadTs,
       });
 
-    this.#events.upsertActor({
-      displayName: message.actor.displayName,
-      id: message.actor.id,
-      kind: "user",
-      presentation: message.actor.presentation,
-      sourcePlatform: "slack",
-      sourceUserId: message.actor.sourceUserId,
-    });
-
-    const storedEvent = this.#events.appendEvent({
+    const storedEvent = await this.#appendUserMessage({
       actorId: message.actor.id,
       idempotencyKey: message.idempotencyKey,
-      payload: {
-        presentation: message.actor.presentation,
-        text: message.text,
-      },
+      presentation: message.actor.presentation,
       sessionId: session.id,
-      type: "user.message",
+      text: message.text,
     });
 
     return {

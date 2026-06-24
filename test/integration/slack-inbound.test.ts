@@ -63,10 +63,10 @@ describe("normalizeSlackMessageEvent", () => {
 });
 
 describe("SlackInboundHandler", () => {
-  test("creates a Shepherd session for a new Slack thread", () => {
+  test("creates a Shepherd session for a new Slack thread", async () => {
     const { handler, stores } = openSlackInboundHarness();
 
-    const result = handler.handleMessageEvent({
+    const result = await handler.handleMessageEvent({
       channel: "C123",
       team: "T123",
       text: "please review this branch",
@@ -101,9 +101,9 @@ describe("SlackInboundHandler", () => {
     });
   });
 
-  test("appends follow-up thread messages to the existing session", () => {
+  test("appends follow-up thread messages to the existing session", async () => {
     const { handler, stores } = openSlackInboundHarness();
-    const first = handler.handleMessageEvent({
+    const first = await handler.handleMessageEvent({
       channel: "C123",
       team: "T123",
       text: "first",
@@ -111,7 +111,7 @@ describe("SlackInboundHandler", () => {
       type: "message",
       user: "U123",
     });
-    const second = handler.handleMessageEvent({
+    const second = await handler.handleMessageEvent({
       channel: "C123",
       team: "T123",
       text: "second",
@@ -129,9 +129,9 @@ describe("SlackInboundHandler", () => {
     ]);
   });
 
-  test("deduplicates retried Slack delivery events", () => {
+  test("deduplicates retried Slack delivery events", async () => {
     const { handler, stores } = openSlackInboundHarness();
-    const first = handler.handleMessageEvent({
+    const first = await handler.handleMessageEvent({
       channel: "C123",
       team: "T123",
       text: "hello",
@@ -139,7 +139,7 @@ describe("SlackInboundHandler", () => {
       type: "message",
       user: "U123",
     });
-    const retry = handler.handleMessageEvent({
+    const retry = await handler.handleMessageEvent({
       channel: "C123",
       team: "T123",
       text: "hello again",
