@@ -101,9 +101,10 @@ Behavior:
 
 - Enter submits when not empty.
 - Shift+Enter / Alt+Enter inserts newline per Pi TUI behavior.
-- On submit, send `session.user_message` to daemon.
+- On submit, send `session.user_message` to daemon with a per-message idempotency key.
 - Clear editor only after the daemon accepts the message.
 - If send fails, keep the text and show an error notification/status.
+- For the first message in a Slack auto-bind eligible session, show a sending/binding status while the daemon posts the Slack thread parent and records binding state.
 
 ### Footer
 
@@ -198,6 +199,19 @@ Display decision and responder.
 
 Update header and show a small status line.
 
+### `platform.binding_failed`
+
+Display a prominent warning, but do not make it look like an assistant response.
+
+Suggested rendering:
+
+```text
+Slack binding failed: <reason>
+Continuing this session as TUI-only.
+```
+
+This event is persistent so it appears after `/resume` and in audit output. It is operational state for the user, not gateway context.
+
 ### Recovery and error events
 
 Display prominently. These events usually require user/gateway judgment.
@@ -219,6 +233,11 @@ Editor slash commands:
 - `/new`: create new cwd-bound session.
 - `/resume`: open session selector.
 - `/rename <title>`: rename current session.
+
+Future slash commands, not required for MVP:
+
+- `/bind slack`: explicitly bind the current session to Slack.
+- `/retry-bind slack`: retry a failed automatic Slack binding.
 
 Slash command implementation can be simple string handling before sending a message. Full autocomplete can use Pi TUI's autocomplete later.
 
@@ -338,8 +357,10 @@ Manual smoke tests are required because raw-mode terminal behavior is hard to co
 4. Send multiline message.
 5. Receive gateway events.
 6. Open `/resume` and cancel.
-7. Exit TUI; daemon remains alive.
-8. Reopen with `--session` and verify replay.
+7. With Slack `tui_default_channel` configured, send the first TUI message and verify Slack parent creation, binding, and no duplicate thread reply.
+8. Reply in the Slack thread as an allowed user and verify the TUI receives the message and gateway wakes.
+9. Exit TUI; daemon remains alive.
+10. Reopen with `--session` and verify replay.
 
 ## Deferred
 
@@ -350,7 +371,7 @@ Manual smoke tests are required because raw-mode terminal behavior is hard to co
 - Raw JSON event inspector.
 - Theme files.
 - Mouse support.
-- Built-in Slack thread creation from TUI.
+- Explicit `/bind slack` and `/retry-bind slack` commands.
 - Gateway abort/interrupt UI.
 
 ## Open questions

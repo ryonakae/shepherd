@@ -147,6 +147,7 @@ MVP rendering should cover:
 - `approval.requested`
 - `approval.responded`
 - `session.renamed`
+- `platform.binding_failed`
 - recovery/error events already emitted by the daemon
 
 Rendering should be compact by default. Raw JSON should be available later through an inspect command or debug mode, not shown in the main stream.
@@ -157,10 +158,15 @@ Shepherd DB remains the source of truth.
 
 - TUI-originated messages are appended to the event stream first, then delivered to bound messaging platforms through existing delivery fanout.
 - Slack-originated messages are appended to the same event stream first, then delivered to attached TUI clients through live subscription.
+- If Slack `tui_default_channel` is configured, a default TUI-created session is eligible for automatic Slack binding on its first user message.
+- That first user message becomes the Slack thread parent. Shepherd records the Slack binding and a sent delivery receipt for the same event/target before publishing the event and waking the gateway.
+- If Slack parent posting fails, Shepherd keeps the TUI message, records `platform.binding_failed`, marks the session auto-bind state as failed, and continues as TUI-only.
+- Slack replies in an auto-created thread are normal session user messages and wake the gateway, subject to Slack allowlists.
+- Slack `allowed_users` is required whenever Slack is configured.
 - The TUI keeps the latest seen event id in memory while running.
 - On reconnect after daemon restart, the TUI subscribes with the latest seen event id and receives missed events.
 
-A TUI session does not need a separate platform binding unless future features need durable local client identity. The session itself is enough for replay/live sync.
+A TUI session does not need a separate TUI platform binding unless future features need durable local client identity. Slack bindings are still used for synchronized messaging threads.
 
 ## Working context behavior
 
@@ -233,7 +239,7 @@ The first implementation should add a shared path resolver and move all commands
 The current daemon RPC is enough to send and watch a known session. The TUI MVP needs these additional operations:
 
 - `session.create`
-  - input: title optional, working context path/label optional or required for default TUI startup
+  - input: title optional, working context path/label optional or required for default TUI startup, optional Slack auto-bind eligibility
   - output: session record, working context record if created/resolved
 - `session.list`
   - input: limit, workingContextId/path optional, status optional
@@ -250,29 +256,34 @@ These can be collapsed into fewer RPC methods if implementation stays simple, bu
 
 ## Implementation order
 
-1. Add tests and store methods for listing sessions and resolving cwd working contexts.
-2. Add daemon RPC methods for session create/list/get and local working context resolution.
-3. Extend `ShepherdSessionClient` with typed wrappers for those RPC methods.
-4. Add `@earendil-works/pi-tui` dependency.
-5. Implement a minimal TUI app that attaches to `--session <id>` and renders events.
-6. Add editor submission via `sendUserMessage()`.
-7. Add default `shepherd` command that creates a cwd-bound session and opens TUI.
-8. Add daemon autostart.
-9. Add `--resume` and `--continue` flows.
-10. Add slash commands and polish.
+1. Add tests and store methods for listing sessions, resolving cwd working contexts, and storing session metadata.
+2. Add config validation for Slack `tui_default_channel` and required `allowed_users`.
+3. Add daemon RPC methods for session create/list/get and local working context resolution.
+4. Extend `ShepherdSessionClient` with typed wrappers for those RPC methods.
+5. Add Slack auto-bind handling for default TUI-created sessions.
+6. Add `@earendil-works/pi-tui` dependency.
+7. Implement a minimal TUI app that attaches to `--session <id>` and renders events.
+8. Add editor submission via `sendUserMessage()` with per-message idempotency keys.
+9. Add default `shepherd` command that creates a cwd-bound session and opens TUI.
+10. Add daemon autostart.
+11. Add `--resume` and `--continue` flows.
+12. Add slash commands and polish.
 
 ## Verification
 
 Required checks for implementation changes:
 
 - Unit tests for CLI parsing.
+- Unit tests for Slack config validation, including required `allowed_users` and `tui_default_channel` allowlist checks.
 - Integration tests for new daemon RPC methods.
 - Integration tests for TUI client wrappers.
+- Integration tests for Slack auto-bind success, failure, receipt de-duplication, and inbound reply wake-up.
 - Component-level tests for event formatting where possible.
 - Manual TUI smoke test in a real terminal:
   - `shepherd` from a project directory
   - send a message
   - receive gateway response/events
+  - with Slack auto-bind configured, verify first message creates a Slack parent and later Slack replies appear in TUI
   - close and reopen with `--session`
   - daemon remains running after TUI exit
 - `pnpm check`.
@@ -282,10 +293,11 @@ Required checks for implementation changes:
 
 These are not blockers for writing the initial plan, but should be resolved before implementation starts:
 
-1. Should default `shepherd` always create a new session, or should it create a new session only when the editor receives the first user message?
-2. For TUI-created sessions, should Slack delivery happen only after the session is explicitly bound to a Slack target, or should Shepherd offer a way to select/create a Slack thread from TUI?
-3. What is the minimum slash-command set for MVP?
-4. Should the TUI show gateway/tool/Herdr progress as compact status lines, collapsible blocks, or full message cards?
+1. Should empty auto-created sessions be pruned automatically?
+2. Should `session.create` emit a session-level event or only create the DB row?
+3. Should cwd registration bypass allowed roots only for interactive TUI, or also for `shepherd send` when run locally?
+4. What should the exact `platform.binding_failed` payload shape be?
+5. Should the MVP TUI render Markdown from `gateway.message`, or use plain wrapped text first?
 
 ## Child plans
 

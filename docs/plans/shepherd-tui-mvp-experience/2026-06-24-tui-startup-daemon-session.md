@@ -295,6 +295,110 @@ Recommended MVP:
 - session title: null
 - TUI displays basename(cwd) until title exists
 
+## Slack auto-bind for TUI-created sessions
+
+### Config
+
+Slack config adds one optional field:
+
+```yaml
+platforms:
+  slack:
+    app_token_env: SLACK_APP_TOKEN
+    bot_token_env: SLACK_BOT_TOKEN
+    allowed_users:
+      - U1234567890
+    allowed_channels:
+      - C1234567890
+    tui_default_channel: C1234567890
+```
+
+Rules:
+
+- `allowed_users` is required whenever `platforms.slack` is configured. This follows the Hermes-style rule that messaging users who can drive the agent must be explicitly allowed.
+- `tui_default_channel` is optional. If absent, default TUI-created sessions remain TUI-only unless explicitly bound by a future command.
+- `tui_default_channel` is a Slack channel ID only, for example `C1234567890`. Do not resolve `#channel-name` in the MVP.
+- If `allowed_channels` is configured, `tui_default_channel` must be included in it. Treat mismatch as config validation failure.
+- If `allowed_teams` has exactly one entry, store it as Slack binding metadata `{ teamId }` for TUI-created bindings. If it has zero or multiple entries, omit `teamId` metadata.
+
+### Eligibility
+
+Only newly created sessions from default TUI startup are eligible for automatic Slack binding:
+
+- `shepherd` with no subcommand: eligible if `tui_default_channel` is configured.
+- `shepherd --continue`: eligible only when it does not find an existing session and creates a new one.
+- `shepherd --session <id>` and `--resume`: not eligible unless the selected session already has a Slack binding.
+- Existing TUI-only sessions should not become Slack-published just because they are later attached.
+
+Persist eligibility in session metadata so daemon restarts and reconnects do not change behavior. Add a session metadata field, for example:
+
+```ts
+type SessionMetadata = {
+  slackAutoBind?: {
+    attemptedAt?: string;
+    bindingId?: string;
+    channelId: string;
+    failureReason?: string;
+    status: "pending" | "bound" | "failed";
+  };
+};
+```
+
+Only `status: "pending"` is processed automatically. Success changes it to `bound`; failure changes it to `failed`. A failed session is not retried automatically.
+
+This requires a `sessions.metadata_json` migration or an equivalent session-state table. Prefer `sessions.metadata_json` for MVP so the session record carries the decision.
+
+### First user message flow
+
+When an eligible session receives its first TUI user message:
+
+1. Store the `user.message` event with a TUI-provided idempotency key.
+2. Before publishing the event or waking the gateway, post that same message text to Slack `tui_default_channel` as a parent message.
+3. If Slack returns `ts`, create a Slack binding with:
+   - `platform = "slack"`
+   - `spaceId = tui_default_channel`
+   - `threadId = returned ts`
+   - `messageId = returned ts`
+   - optional metadata `{ teamId }` when unambiguous from `allowed_teams`
+4. Mark the delivery receipt for the stored event as sent using target id `<channelId>:<returnedTs>`. This matches normal fanout target ids and prevents duplicate thread replies for the parent event.
+5. Mark session metadata `slackAutoBind.status = "bound"` and store `bindingId` / `attemptedAt`.
+6. Send the RPC response, publish the user event to TUI subscribers, then wake the gateway.
+
+The Slack parent message body is exactly the user message text. Do not append working context path, session id, or a TUI footer by default.
+
+Display customization follows the existing Slack delivery rule: use TUI actor `presentation.displayName` / `avatarUrl` only when `allow_customize` is true. Otherwise post as the Slack bot.
+
+The first message may wait for Slack parent post success/failure before the RPC response. The TUI should show a sending/binding status instead of clearing the editor optimistically.
+
+### Failure behavior
+
+If Slack parent posting fails:
+
+- Keep the `user.message` event and continue the TUI/gateway flow.
+- Do not create a Slack binding.
+- Mark session metadata `slackAutoBind.status = "failed"`, with `attemptedAt` and `failureReason`.
+- Append a persistent `platform.binding_failed` event for TUI/audit visibility.
+- Do not include `platform.binding_failed` in gateway context.
+- Do not retry automatic binding for that session on later user messages.
+
+A future `/retry-bind slack` command can explicitly reset or retry failed binding, but it is out of MVP scope.
+
+### Idempotency and ordering
+
+- TUI user messages should include idempotency keys. This is required for retry-safe first-message binding.
+- If a repeated idempotency key returns an existing event, daemon logic must not post another Slack parent for the same event.
+- The user event, Slack parent post, binding creation, delivery receipt, metadata update, and optional failure event must be ordered so subscribers and gateway see a consistent stream.
+- Do not wrap the external Slack API call in a long DB transaction. Use persisted metadata, binding records, and delivery receipts to make retry behavior safe.
+
+### Inbound behavior for auto-created threads
+
+After automatic binding succeeds, the Slack thread is a normal bidirectional Shepherd surface:
+
+- Human replies in the thread are accepted only if they pass `allowed_users`, `allowed_channels`, and `allowed_teams`.
+- Accepted replies append `user.message` events to the same Shepherd session.
+- Accepted replies wake the gateway just like other Slack-originated user messages.
+- Bot messages and Shepherd's own Slack posts remain ignored by the existing Slack inbound filters.
+
 ## Session list and resume
 
 ### `session.list` output
@@ -365,6 +469,9 @@ Input:
 
 ```ts
 {
+  slackAutoBind?: {
+    channelId: string;
+  };
   title?: string | null;
   workingContextId?: string;
 }
@@ -379,6 +486,7 @@ Output:
 Semantics:
 
 - Creates an active session.
+- If `slackAutoBind` is present, stores session metadata with `slackAutoBind.status = "pending"` and the target channel id.
 - Optionally emits `session.created` event if useful for subscribers. Not required for the new session's own stream.
 
 ### `session.list`
@@ -418,10 +526,16 @@ Output:
 
 Add tests near existing daemon/client tests:
 
+- Config schema requires Slack `allowed_users` and validates `tui_default_channel` against `allowed_channels` when both are configured.
+- `EventStore` creates sessions with metadata and updates Slack auto-bind state.
 - `EventStore` lists sessions by updated time and working context.
 - `WorkingContextStore` resolves by path without wrong slug reuse.
-- Daemon RPC creates a session with working context.
+- Daemon RPC creates a session with working context and optional Slack auto-bind metadata.
 - Daemon RPC lists recent sessions.
+- First TUI user message for an eligible session posts a Slack parent, creates a binding, and records a sent receipt with target `<channelId>:<ts>`.
+- Slack parent post failure records `platform.binding_failed`, marks metadata failed, and still runs the TUI/gateway flow.
+- Repeated idempotency keys do not create duplicate Slack parents.
+- Slack replies in auto-created threads pass allowlists, append to the same session, and wake the gateway.
 - `ShepherdSessionClient` wraps new RPC methods.
 - CLI parser treats no args as TUI new session.
 - CLI parser supports `--session`, `--resume`, and `--continue`.
@@ -430,7 +544,7 @@ Autostart can be tested at a thinner unit level by injecting a fake connector/sp
 
 ## Open questions
 
-1. Should changing DB/socket defaults happen before TUI ships, or should TUI require explicit `SHEPHERD_DB_PATH` during the first implementation?
-2. Should empty auto-created sessions be pruned automatically?
-3. Should `session.create` emit a session-level event or only create the DB row?
-4. Should cwd registration bypass allowed roots only for interactive TUI, or also for `shepherd send` when run locally?
+1. Should empty auto-created sessions be pruned automatically?
+2. Should `session.create` emit a session-level event or only create the DB row?
+3. Should cwd registration bypass allowed roots only for interactive TUI, or also for `shepherd send` when run locally?
+4. What should the exact `platform.binding_failed` payload shape be?
