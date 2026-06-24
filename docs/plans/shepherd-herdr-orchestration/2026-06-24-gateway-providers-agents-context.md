@@ -18,6 +18,7 @@ Implemented:
 - Codex app-server provider factory through `ai-sdk-provider-codex-cli`, plus OpenAI, Anthropic, and OpenRouter API-key providers.
 - environment-only API key lookup for API-key providers.
 - provider-independent logical tool registry converted to AI SDK tools with TypeBox/Ajv runtime validation.
+- daemon logical tool RPC and standalone `shepherd-tools` stdio helper over the same logical tool registry.
 - gateway prompt builder with Herdr control-plane role, progress narration guidance, default agent, and `when` descriptions.
 - recent event context builder, `herdr.progress` context projection, and threshold-based `session_summary` updates.
 - Herdr orchestration tools listed below, including `herdr_read`, attach, pane text send, waits, and agent messaging.
@@ -26,7 +27,7 @@ Implemented:
 
 MVP limits:
 
-- The dedicated Hermes-style `shepherd-tools` stdio helper is not a separate binary; MVP uses the AI SDK executable tool bridge around the same Shepherd logical tools.
+- The Codex gateway still uses the AI SDK executable tool bridge by default, while the dedicated Hermes-style `shepherd-tools` stdio helper is available for callback-style integrations over the daemon socket.
 - Provider-native approval requests can be recorded and delivered as Shepherd events, but response plumbing back into Codex app-server or worker-agent-specific approval APIs is deferred.
 - `auxiliary.summary` is reserved in config, but summary generation currently uses the gateway provider/model.
 - Rich Herdr progress detection is prompt and event-context based, not a separate auxiliary progress model. Compact `herdr.progress` events are recorded from Herdr event waits for Shepherd-bound workspaces and projected into gateway context.
@@ -74,7 +75,7 @@ Gateway tools are provider-independent Shepherd logical tools. Shepherd owns the
 
 Provider adapters only translate the same logical tool registry into provider-specific wire formats:
 
-- Codex app-server uses the MVP AI SDK executable tool bridge. A standalone internal `shepherd-tools` stdio callback remains an implementation option after MVP.
+- Codex app-server uses the MVP AI SDK executable tool bridge by default. A standalone internal `shepherd-tools` stdio callback is also available over daemon `tool.list`/`tool.run` without changing logical tool definitions.
 - OpenAI, OpenRouter, and Anthropic use normal function/tool calling through their AI SDK-backed adapters.
 - A future direct Codex OAuth Responses provider would use normal Responses function tools.
 
@@ -152,7 +153,7 @@ Rationale:
 Important limitation:
 
 - Codex CLI providers do not use normal AI SDK custom tools the same way API providers do.
-- MVP uses the same Shepherd logical tool registry through the AI SDK tool bridge. A later Codex-specific `shepherd-tools` stdio callback can replace this transport without changing logical tool definitions.
+- MVP uses the same Shepherd logical tool registry through the AI SDK tool bridge. The `shepherd-tools` stdio callback can be used by callback-style transports without changing logical tool definitions.
 - Any callback remains an implementation detail, not a user-facing MCP integration surface.
 - Do not let Codex operate directly on the Shepherd daemon environment.
 

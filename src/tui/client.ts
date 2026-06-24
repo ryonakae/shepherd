@@ -41,6 +41,18 @@ export type RespondApprovalInput = {
   sessionId: string;
 };
 
+export type ToolDefinitionWireRecord = {
+  description: string;
+  inputSchema: unknown;
+  name: string;
+};
+
+export type RunToolInput = {
+  input?: unknown;
+  name: string;
+  sessionId: string;
+};
+
 type PendingRequest = {
   reject(error: Error): void;
   resolve(value: unknown): void;
@@ -124,6 +136,14 @@ export class ShepherdSessionClient {
 
   async respondApproval(input: RespondApprovalInput): Promise<{ event: WireEventRecord }> {
     return (await this.#request("approval.respond", input)) as { event: WireEventRecord };
+  }
+
+  async listTools(): Promise<{ tools: ToolDefinitionWireRecord[] }> {
+    return (await this.#request("tool.list", {})) as { tools: ToolDefinitionWireRecord[] };
+  }
+
+  async runTool(input: RunToolInput): Promise<{ output: unknown }> {
+    return (await this.#request("tool.run", input)) as { output: unknown };
   }
 
   async subscribe(input: SubscribeInput): Promise<{ replayed: number; subscribed: true }> {

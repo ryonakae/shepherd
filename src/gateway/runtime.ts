@@ -37,6 +37,7 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
 export type GatewayRuntime = {
   close(): Promise<void>;
   runner: GatewayTurnQueue;
+  tools: LogicalToolRunner;
 };
 
 export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRuntime {
@@ -108,5 +109,6 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
       runStore: new GatewayRunStore(options.sqlite),
       runner,
     }),
+    tools,
   };
 }

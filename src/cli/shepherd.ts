@@ -263,6 +263,7 @@ async function main(): Promise<void> {
   server = new ShepherdDaemonServer({
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(gatewayRuntime ? { gatewayRunner: gatewayRuntime.runner } : {}),
+    ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),
     socketPath: command.socketPath,
     store: events,
     summaries,

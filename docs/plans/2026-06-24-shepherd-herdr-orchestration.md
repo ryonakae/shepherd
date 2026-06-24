@@ -19,6 +19,7 @@ Implemented:
 - Slack Socket Mode inbound, outbound delivery fanout, delivery receipts, allowlists, actor presentation/customize support
 - gateway provider registry for Codex app-server, OpenAI, Anthropic, and OpenRouter through the AI SDK adapter layer
 - provider-independent logical tool registry with policy gates, event logging, and idempotent side-effect tool records
+- daemon `tool.list`/`tool.run` logical tool RPC plus standalone `shepherd-tools` stdio JSON Lines helper over the same Shepherd logical tools
 - Herdr named-session lifecycle, socket wrapper, resource inspection, workspace/tab/pane/agent orchestration, waits, pane text send, and explicit attach
 - session summaries, recent-context gateway turns, per-session gateway turn queueing, and conservative daemon restart recovery
 - approval request/response event recording and delivery surface
@@ -27,7 +28,7 @@ Implemented:
 Important MVP limits:
 
 - Provider-specific approval callbacks are not fully bridged back into Codex app-server or worker agents yet. Shepherd records and delivers approval request/response events; provider-specific response plumbing is deferred.
-- The Codex gateway uses the AI SDK tool bridge around Shepherd logical tools. A standalone Hermes-style `shepherd-tools` stdio helper is not a separate implemented binary in this MVP.
+- The Codex gateway uses the AI SDK tool bridge around Shepherd logical tools by default. A standalone Hermes-style `shepherd-tools` stdio helper is available over the daemon logical tool RPC for callback-style integrations.
 - Long-running Herdr progress narration is implemented as gateway prompt guidance plus structured tool/session events. Shepherd starts daemon-managed Herdr progress subscriptions when gateway orchestration binds a workspace, then records and delivers compact `herdr.progress` signals.
 
 ## First implementation step
@@ -161,7 +162,7 @@ MVP providers:
 
 Shepherd must not depend on Vercel AI Gateway or a Vercel account.
 
-For the MVP Codex gateway, Shepherd exposes curated Shepherd/Herdr orchestration tools through the AI SDK executable tool bridge around the Codex app-server provider. A Hermes-style internal `shepherd-tools` stdio callback remains a future implementation option, not a user-facing MCP integration surface.
+For the MVP Codex gateway, Shepherd exposes curated Shepherd/Herdr orchestration tools through the AI SDK executable tool bridge around the Codex app-server provider. Shepherd also provides a Hermes-style internal `shepherd-tools` stdio callback over daemon `tool.list`/`tool.run`; it uses the same logical tool definitions and is not a user-facing MCP integration surface.
 
 Gateway tools are provider-independent Shepherd logical tools. Shepherd owns the tool registry, policy checks, execution, event logging, and result projection; each provider adapter only translates those tools to its own transport.
 

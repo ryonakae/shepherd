@@ -1,11 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, test } from "vitest";
 import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
 const tempDirs: string[] = [];
@@ -85,9 +87,46 @@ describe("ShepherdSessionClient", () => {
       },
     });
   });
+
+  test("lists and runs logical tools through the daemon socket", async () => {
+    const { server, socketPath, store } = await openServer({
+      configureLogicalTools(events) {
+        const registry = new LogicalToolRegistry();
+        registry.register({
+          description: "Echo a message",
+          execute: (input: { text: string }) => ({ echoed: input.text }),
+          inputSchema: Type.Object({ text: Type.String() }),
+          name: "echo",
+        });
+        return new LogicalToolRunner({
+          events,
+          policy: { allowedTools: new Set(["echo"]) },
+          registry,
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await ShepherdSessionClient.connect(socketPath);
+    clients.push(client);
+
+    await expect(client.listTools()).resolves.toMatchObject({
+      tools: [{ description: "Echo a message", name: "echo" }],
+    });
+    await expect(
+      client.runTool({
+        input: { text: "hello" },
+        name: "echo",
+        sessionId: session.id,
+      }),
+    ).resolves.toEqual({ output: { echoed: "hello" } });
+  });
 });
 
-async function openServer(): Promise<{
+async function openServer(
+  options: { configureLogicalTools?: (store: EventStore) => LogicalToolRunner } = {},
+): Promise<{
   server: ShepherdDaemonServer;
   socketPath: string;
   store: EventStore;
@@ -100,6 +139,9 @@ async function openServer(): Promise<{
   const store = new EventStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdDaemonServer({
+    ...(options.configureLogicalTools
+      ? { logicalTools: options.configureLogicalTools(store) }
+      : {}),
     socketPath,
     store,
   });

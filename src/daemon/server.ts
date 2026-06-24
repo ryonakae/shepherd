@@ -5,6 +5,7 @@ import type { EventRecord, EventStore } from "@/db/event-store.js";
 import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
 import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
+import type { LogicalToolRunner } from "@/gateway/tools.js";
 import { toHerdrProgressSignal } from "@/herdr/progress.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
@@ -12,6 +13,7 @@ type ShepherdDaemonServerOptions = {
   configPath?: string;
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
+  logicalTools?: LogicalToolService;
   socketPath: string;
   store: EventStore;
   summaries?: Pick<SessionSummaryStore, "getSummary">;
@@ -22,6 +24,8 @@ type EventDeliveryFanout = {
 };
 
 type GatewayTurnRunner = Pick<GatewayRunner, "runTurn">;
+
+type LogicalToolService = Pick<LogicalToolRunner, "list" | "run">;
 
 type RpcRequest = {
   id?: string | number;
@@ -78,6 +82,7 @@ export class ShepherdDaemonServer {
   readonly #sockets = new Set<Socket>();
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
+  readonly #logicalTools: LogicalToolService | undefined;
   readonly #store: EventStore;
   readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
@@ -87,6 +92,7 @@ export class ShepherdDaemonServer {
     this.#configPath = options.configPath;
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
+    this.#logicalTools = options.logicalTools;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
     this.#summaries = options.summaries;
@@ -325,6 +331,16 @@ export class ShepherdDaemonServer {
 
     if (request.method === "gateway.run_turn") {
       void this.#runGatewayTurn(socket, request);
+      return;
+    }
+
+    if (request.method === "tool.list") {
+      this.#listTools(socket, request);
+      return;
+    }
+
+    if (request.method === "tool.run") {
+      void this.#runTool(socket, request);
       return;
     }
 
@@ -584,6 +600,65 @@ export class ShepherdDaemonServer {
       for (const event of result.events) {
         await this.#publishEvent(event);
       }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  #listTools(socket: Socket, request: RpcRequest): void {
+    if (!this.#logicalTools) {
+      this.#write(socket, {
+        error: { message: "Logical tools are not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    this.#write(socket, {
+      id: request.id,
+      result: {
+        tools: this.#logicalTools.list().map((tool) => ({
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          name: tool.name,
+        })),
+      },
+    });
+  }
+
+  async #runTool(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#logicalTools) {
+      this.#write(socket, {
+        error: { message: "Logical tools are not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as {
+      input?: unknown;
+      name?: string;
+      sessionId?: string;
+    };
+    if (!params?.sessionId || !params.name) {
+      this.#write(socket, {
+        error: { message: "sessionId and name are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const output = await this.#logicalTools.run(params.name, params.input ?? {}, {
+        sessionId: params.sessionId,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: { output },
+      });
     } catch (error) {
       this.#write(socket, {
         error: { message: error instanceof Error ? error.message : String(error) },

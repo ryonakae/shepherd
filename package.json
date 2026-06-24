@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "shepherd": "./dist/src/cli/shepherd.js"
+    "shepherd": "./dist/src/cli/shepherd.js",
+    "shepherd-tools": "./dist/src/cli/shepherd-tools.js"
   },
   "packageManager": "pnpm@11.9.0",
   "engines": {

@@ -65,6 +65,12 @@ Watch session events as JSON Lines:
 shepherd watch --session <session-id> --after 0
 ```
 
+Bridge logical tools over stdio JSON Lines:
+
+```bash
+shepherd-tools --socket /tmp/shepherd.sock
+```
+
 Rename a session:
 
 ```bash
@@ -90,6 +96,7 @@ shepherd audit --session <session-id> --db /tmp/shepherd.sqlite --after 0
 ## Project Layout
 
 - `src/config`: TypeBox/Ajv runtime configuration contracts.
+- `src/cli`: command-line entrypoints for `shepherd` and `shepherd-tools`.
 - `src/daemon`: local daemon utilities, including JSON Lines framing and recovery.
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, test } from "vitest";
 import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
 import { ShepherdDaemonServer } from "@/daemon/server.js";
@@ -423,6 +424,63 @@ agents:
     ]);
   });
 
+  test("lists and runs logical tools through RPC", async () => {
+    const { server, socketPath, store } = await openServer({
+      configureLogicalTools(events) {
+        const registry = new LogicalToolRegistry();
+        registry.register({
+          description: "Echo a message",
+          execute: (input: { text: string }) => ({ echoed: input.text }),
+          inputSchema: Type.Object({ text: Type.String() }),
+          name: "echo",
+        });
+        return new LogicalToolRunner({
+          events,
+          policy: { allowedTools: new Set(["echo"]) },
+          registry,
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(encodeJsonLine({ id: "tools-1", method: "tool.list" }));
+    client.write(
+      encodeJsonLine({
+        id: "tools-2",
+        method: "tool.run",
+        params: {
+          input: { text: "hello" },
+          name: "echo",
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    const messages = await readMessages(client, 2);
+
+    expect(messages[0]).toMatchObject({
+      id: "tools-1",
+      result: {
+        tools: [
+          {
+            description: "Echo a message",
+            name: "echo",
+          },
+        ],
+      },
+    });
+    expect(messages[1]).toEqual({
+      id: "tools-2",
+      result: { output: { echoed: "hello" } },
+    });
+    expect(store.listEvents(session.id).map((event) => event.type)).toEqual([
+      "gateway.tool.call",
+      "gateway.tool.result",
+    ]);
+  });
+
   test("persists a user message and wakes the gateway turn", async () => {
     const { server, socketPath, store } = await openServer({
       configureGatewayRunner(events) {
@@ -729,6 +787,7 @@ async function openServer(
       deliverEvent(event: ReturnType<EventStore["appendEvent"]>): Promise<unknown>;
     };
     configureGatewayRunner?: (store: EventStore) => GatewayRunner;
+    configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
   } = {},
 ): Promise<{
   server: ShepherdDaemonServer;
@@ -750,6 +809,9 @@ async function openServer(
       : {}),
     ...(options.configureGatewayRunner
       ? { gatewayRunner: options.configureGatewayRunner(store) }
+      : {}),
+    ...(options.configureLogicalTools
+      ? { logicalTools: options.configureLogicalTools(store) }
       : {}),
     socketPath,
     store,
