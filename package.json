@@ -28,6 +28,8 @@
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
+    "ai": "^6.0.208",
+    "ai-sdk-provider-codex-cli": "^1.2.2",
     "ajv": "^8.20.0",
     "drizzle-orm": "^0.45.2",
     "yaml": "^2.9.0"

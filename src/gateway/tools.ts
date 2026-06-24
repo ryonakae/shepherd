@@ -57,6 +57,10 @@ export class LogicalToolRunner {
     this.#registry = options.registry;
   }
 
+  list(): LogicalToolDefinition<unknown, unknown>[] {
+    return this.#registry.list();
+  }
+
   async run(name: string, input: unknown, context: LogicalToolContext): Promise<unknown> {
     const tool = this.#registry.get(name);
 
