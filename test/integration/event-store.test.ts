@@ -86,6 +86,45 @@ describe("EventStore", () => {
       title: null,
     });
   });
+
+  test("stores and updates session metadata", () => {
+    const store = openMigratedEventStore();
+    const session = store.createSession({
+      id: "session-1",
+      metadata: {
+        slackAutoBind: {
+          channelId: "C123",
+          status: "pending",
+        },
+      },
+    });
+
+    expect(session.metadata).toEqual({
+      slackAutoBind: {
+        channelId: "C123",
+        status: "pending",
+      },
+    });
+    expect(
+      store.updateSessionMetadata(session.id, {
+        slackAutoBind: {
+          attemptedAt: "2026-06-25T00:00:00.000Z",
+          bindingId: "binding-1",
+          channelId: "C123",
+          status: "bound",
+        },
+      }),
+    ).toMatchObject({
+      metadata: {
+        slackAutoBind: {
+          attemptedAt: "2026-06-25T00:00:00.000Z",
+          bindingId: "binding-1",
+          channelId: "C123",
+          status: "bound",
+        },
+      },
+    });
+  });
 });
 
 function openMigratedEventStore(): EventStore {

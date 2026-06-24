@@ -1,8 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+export type SessionMetadata = {
+  slackAutoBind?: {
+    attemptedAt?: string;
+    bindingId?: string;
+    channelId: string;
+    failureReason?: string;
+    status: "bound" | "failed" | "pending";
+  };
+};
+
 export type CreateSessionInput = {
   id?: string;
+  metadata?: SessionMetadata;
   title?: string;
   workingContextId?: string;
 };
@@ -28,6 +39,7 @@ export type UpsertActorInput = {
 export type SessionRecord = {
   createdAt: Date;
   id: string;
+  metadata: SessionMetadata;
   status: "active" | "archived";
   title: string | null;
   updatedAt: Date;
@@ -59,6 +71,7 @@ export type ActorRecord = {
 type SessionRow = {
   created_at: number;
   id: string;
+  metadata_json: string | null;
   status: "active" | "archived";
   title: string | null;
   updated_at: number;
@@ -100,9 +113,16 @@ export class EventStore {
 
     this.#sqlite
       .prepare(
-        "insert into sessions (id, title, status, working_context_id, created_at, updated_at) values (?, ?, 'active', ?, ?, ?)",
+        "insert into sessions (id, title, status, working_context_id, metadata_json, created_at, updated_at) values (?, ?, 'active', ?, ?, ?, ?)",
       )
-      .run(id, input.title ?? null, input.workingContextId ?? null, now, now);
+      .run(
+        id,
+        input.title ?? null,
+        input.workingContextId ?? null,
+        input.metadata === undefined ? null : JSON.stringify(input.metadata),
+        now,
+        now,
+      );
 
     return this.getSession(id);
   }
@@ -124,6 +144,15 @@ export class EventStore {
     this.#sqlite
       .prepare("update sessions set title = ?, updated_at = ? where id = ?")
       .run(title, now, id);
+
+    return this.getSession(id);
+  }
+
+  updateSessionMetadata(id: string, metadata: SessionMetadata): SessionRecord {
+    const now = Date.now();
+    this.#sqlite
+      .prepare("update sessions set metadata_json = ?, updated_at = ? where id = ?")
+      .run(JSON.stringify(metadata), now, id);
 
     return this.getSession(id);
   }
@@ -258,6 +287,7 @@ function mapSession(row: SessionRow): SessionRecord {
   return {
     createdAt: new Date(row.created_at),
     id: row.id,
+    metadata: row.metadata_json === null ? {} : (JSON.parse(row.metadata_json) as SessionMetadata),
     status: row.status,
     title: row.title,
     updatedAt: new Date(row.updated_at),

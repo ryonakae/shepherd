@@ -18,6 +18,7 @@ export const workingContexts = sqliteTable(
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  metadataJson: text("metadata_json"),
   status: text("status", { enum: ["active", "archived"] })
     .notNull()
     .default("active"),
