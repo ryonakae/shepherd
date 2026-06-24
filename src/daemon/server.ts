@@ -4,6 +4,10 @@ import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
 import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
+import {
+  type ProviderOverrideResolver,
+  parseGatewayProviderOverride,
+} from "@/gateway/provider-overrides.js";
 import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
 import type { LogicalToolRunner } from "@/gateway/tools.js";
 import { toHerdrProgressSignal } from "@/herdr/progress.js";
@@ -14,6 +18,7 @@ type ShepherdDaemonServerOptions = {
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
   logicalTools?: LogicalToolService;
+  providerOverrides?: ProviderOverrideResolver;
   socketPath: string;
   store: EventStore;
   summaries?: Pick<SessionSummaryStore, "getSummary">;
@@ -48,6 +53,7 @@ export type ReceiveUserMessageInput = {
   actorId?: string;
   idempotencyKey?: string;
   presentation?: unknown;
+  providerOverride?: unknown;
   sessionId: string;
   text: string;
 };
@@ -83,6 +89,7 @@ export class ShepherdDaemonServer {
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
+  readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
   readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
@@ -93,6 +100,7 @@ export class ShepherdDaemonServer {
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
     this.#logicalTools = options.logicalTools;
+    this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
     this.#summaries = options.summaries;
@@ -233,6 +241,9 @@ export class ShepherdDaemonServer {
     return this.#store.appendEvent({
       payload: {
         presentation: input.presentation ?? {},
+        ...(input.providerOverride !== undefined
+          ? { providerOverride: input.providerOverride }
+          : {}),
         text: input.text,
       },
       sessionId: input.sessionId,
@@ -258,6 +269,7 @@ export class ShepherdDaemonServer {
         this.#store.listRecentEvents(input.sessionId, 40),
         summary ? { summary } : {},
       ),
+      parseGatewayProviderOverride(input.providerOverride),
     );
     for (const gatewayEvent of result.events) {
       await this.#publishEvent(gatewayEvent);
@@ -411,6 +423,7 @@ export class ShepherdDaemonServer {
       actorId?: string;
       idempotencyKey?: string;
       presentation?: unknown;
+      providerOverride?: unknown;
       sessionId?: string;
       text?: string;
     };
@@ -429,6 +442,9 @@ export class ShepherdDaemonServer {
       ...(params.actorId ? { actorId: params.actorId } : {}),
       ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
       ...(params.presentation !== undefined ? { presentation: params.presentation } : {}),
+      ...(params.providerOverride !== undefined
+        ? { providerOverride: params.providerOverride }
+        : {}),
     };
     const event = this.#storeUserMessage(input);
 
@@ -578,7 +594,11 @@ export class ShepherdDaemonServer {
       return;
     }
 
-    const params = request.params as { messages?: unknown; sessionId?: string };
+    const params = request.params as {
+      messages?: unknown;
+      providerOverride?: unknown;
+      sessionId?: string;
+    };
     if (!params?.sessionId || !isGatewayMessages(params.messages)) {
       this.#write(socket, {
         error: { message: "sessionId and messages are required" },
@@ -592,6 +612,7 @@ export class ShepherdDaemonServer {
         params.sessionId,
         undefined,
         params.messages,
+        parseGatewayProviderOverride(params.providerOverride),
       );
       this.#write(socket, {
         id: request.id,
@@ -671,14 +692,17 @@ export class ShepherdDaemonServer {
     sessionId: string,
     triggeringEventId: number | undefined,
     messages: GatewayMessage[],
+    explicitProviderOverride?: ReturnType<typeof parseGatewayProviderOverride>,
   ): Promise<{ events: EventRecord[]; output: { text: string } }> {
     if (!this.#gatewayRunner) {
       throw new Error("Gateway runner is not configured");
     }
 
     const afterEventId = this.#store.getLatestEventId(sessionId);
+    const providerOverride = explicitProviderOverride ?? this.#providerOverrides?.({ sessionId });
     const output = await this.#gatewayRunner.runTurn({
       messages,
+      ...(providerOverride !== undefined ? { providerOverride } : {}),
       sessionId,
       ...(triggeringEventId !== undefined ? { triggeringEventId } : {}),
     });

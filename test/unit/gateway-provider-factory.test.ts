@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { ShepherdConfig } from "@/config/schema.js";
 import {
   createGatewayProviderFromConfig,
+  createGatewayProviderRouterFromConfig,
   type GatewayProviderFactoryDependencies,
 } from "@/gateway/provider-factory.js";
 import type { LogicalToolRunner } from "@/gateway/tools.js";
@@ -84,6 +85,50 @@ describe("createGatewayProviderFromConfig", () => {
         environment: {},
       }),
     ).toThrow("Missing required environment variable: OPENAI_API_KEY");
+  });
+
+  test("routes turns to provider and model overrides", async () => {
+    const calls: unknown[] = [];
+    const deps: GatewayProviderFactoryDependencies = {
+      createCodexProvider: () => {
+        const provider = (modelId: string) => {
+          calls.push({ modelId });
+          return modelId as unknown as LanguageModel;
+        };
+        provider.close = async () => {
+          calls.push({ closed: true });
+        };
+        return provider;
+      },
+      generateText: async (options) => {
+        calls.push({ generatedWith: options.model });
+        return { text: "ok" };
+      },
+    };
+    const config = openConfig();
+    config.providers.alt = {
+      auth_source: "codex_cli",
+      mode: "app_server",
+      type: "codex_cli",
+    };
+    const router = createGatewayProviderRouterFromConfig(config, deps);
+
+    await router.generate({
+      messages: [{ content: "hello", role: "user" }],
+      providerOverride: { model: "gpt-5.3-alt", provider: "alt" },
+      sessionId: "session-1",
+      tools: {
+        list: () => [],
+        run: async () => ({}),
+      } as unknown as LogicalToolRunner,
+    });
+    await router.close();
+
+    expect(calls).toEqual([
+      { modelId: "gpt-5.3-alt" },
+      { generatedWith: "gpt-5.3-alt" },
+      { closed: true },
+    ]);
   });
 });
 

@@ -9,6 +9,7 @@ import {
   type CodexAppServerFactory,
   createCodexAppServerGatewayProvider,
 } from "./codex-provider.js";
+import type { GatewayProviderOverride } from "./runner.js";
 
 export type GatewayProviderFactoryDependencies = {
   createCodexProvider?: CodexAppServerFactory;
@@ -20,15 +21,18 @@ export type GatewayProviderFactoryDependencies = {
 export function createGatewayProviderFromConfig(
   config: ShepherdConfig,
   deps: GatewayProviderFactoryDependencies = {},
+  selection: GatewayProviderOverride = {},
 ): ClosableGatewayProvider {
-  const providerConfig = config.providers[config.gateway.default_provider];
+  const providerName = selection.provider ?? config.gateway.default_provider;
+  const modelId = selection.model ?? config.gateway.model;
+  const providerConfig = config.providers[providerName];
   if (!providerConfig) {
-    throw new Error(`Gateway provider is not configured: ${config.gateway.default_provider}`);
+    throw new Error(`Gateway provider is not configured: ${providerName}`);
   }
 
   if (providerConfig.type === "codex_cli") {
     return createCodexAppServerGatewayProvider({
-      model: config.gateway.model,
+      model: modelId,
       ...(deps.createCodexProvider !== undefined
         ? { createProvider: deps.createCodexProvider }
         : {}),
@@ -43,10 +47,10 @@ export function createGatewayProviderFromConfig(
   const apiKey = requireEnv(deps.environment ?? process.env, providerConfig.api_key_env);
   const model =
     providerConfig.type === "openai"
-      ? createOpenAI({ apiKey })(config.gateway.model)
+      ? createOpenAI({ apiKey })(modelId)
       : providerConfig.type === "anthropic"
-        ? createAnthropic({ apiKey })(config.gateway.model)
-        : createOpenRouter({ apiKey })(config.gateway.model);
+        ? createAnthropic({ apiKey })(modelId)
+        : createOpenRouter({ apiKey })(modelId);
 
   const provider = new AiSdkGatewayProvider({
     model,
@@ -57,6 +61,47 @@ export function createGatewayProviderFromConfig(
   return {
     async close() {},
     generate: (input) => provider.generate(input),
+  };
+}
+
+export function createGatewayProviderRouterFromConfig(
+  config: ShepherdConfig,
+  deps: GatewayProviderFactoryDependencies = {},
+): ClosableGatewayProvider {
+  const providers = new Map<string, ClosableGatewayProvider>();
+
+  return {
+    async close() {
+      await Promise.all([...providers.values()].map((provider) => provider.close()));
+      providers.clear();
+    },
+    generate(input) {
+      const provider = getProvider(input.providerOverride);
+      return provider.generate(input);
+    },
+  };
+
+  function getProvider(selection: GatewayProviderOverride | undefined): ClosableGatewayProvider {
+    const normalized = normalizeSelection(config, selection);
+    const key = `${normalized.provider ?? config.gateway.default_provider}:${normalized.model ?? config.gateway.model}`;
+    const existing = providers.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const provider = createGatewayProviderFromConfig(config, deps, normalized);
+    providers.set(key, provider);
+    return provider;
+  }
+}
+
+function normalizeSelection(
+  config: ShepherdConfig,
+  selection: GatewayProviderOverride | undefined,
+): GatewayProviderOverride {
+  return {
+    provider: selection?.provider ?? config.gateway.default_provider,
+    model: selection?.model ?? config.gateway.model,
   };
 }
 

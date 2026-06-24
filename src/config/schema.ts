@@ -34,6 +34,14 @@ const apiKeyProviderSchema = Type.Object(
 
 export const gatewayProviderSchema = Type.Union([codexProviderSchema, apiKeyProviderSchema]);
 
+const providerOverrideSchema = Type.Object(
+  {
+    model: Type.Optional(Type.String({ minLength: 1 })),
+    provider: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 const slackPlatformSchema = Type.Object(
   {
     allow_customize: Type.Optional(Type.Boolean()),
@@ -77,6 +85,19 @@ export const shepherdConfigSchema = Type.Object(
       {
         default_provider: Type.String({ minLength: 1 }),
         model: Type.String({ minLength: 1 }),
+        provider_overrides: Type.Optional(
+          Type.Object(
+            {
+              channels: Type.Optional(
+                Type.Record(Type.String({ minLength: 1 }), providerOverrideSchema),
+              ),
+              sessions: Type.Optional(
+                Type.Record(Type.String({ minLength: 1 }), providerOverrideSchema),
+              ),
+            },
+            { additionalProperties: false },
+          ),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -129,8 +150,46 @@ export function parseShepherdConfig(value: unknown): ValidationResult<ShepherdCo
       };
     }
 
+    for (const invalidOverride of invalidProviderOverridePaths(config)) {
+      return {
+        errors: [
+          {
+            instancePath: invalidOverride.path,
+            keyword: "requiredProvider",
+            message: "must reference a configured provider",
+            params: { provider: invalidOverride.provider },
+            schemaPath: "#/requiredProvider",
+          },
+        ],
+        ok: false,
+      };
+    }
+
     return { ok: true, value: config };
   }
 
   return { errors: validateShepherdConfig.errors ?? [], ok: false };
+}
+
+function invalidProviderOverridePaths(
+  config: ShepherdConfig,
+): Array<{ path: string; provider: string }> {
+  const invalid: Array<{ path: string; provider: string }> = [];
+  const groups = [
+    ["sessions", config.gateway.provider_overrides?.sessions],
+    ["channels", config.gateway.provider_overrides?.channels],
+  ] as const;
+
+  for (const [groupName, overrides] of groups) {
+    for (const [key, override] of Object.entries(overrides ?? {})) {
+      if (override.provider && !(override.provider in config.providers)) {
+        invalid.push({
+          path: `/gateway/provider_overrides/${groupName}/${key}/provider`,
+          provider: override.provider,
+        });
+      }
+    }
+  }
+
+  return invalid;
 }

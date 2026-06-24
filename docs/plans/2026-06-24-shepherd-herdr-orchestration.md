@@ -18,6 +18,7 @@ Implemented:
 - daemon SQLite event stream, Unix socket JSON Lines RPC, TUI replay/live subscription, send/watch/rename/audit CLI
 - Slack Socket Mode inbound, outbound delivery fanout, delivery receipts, allowlists, actor presentation/customize support
 - gateway provider registry for Codex app-server, OpenAI, Anthropic, and OpenRouter through the AI SDK adapter layer
+- message-level `providerOverride` plus configured session/channel gateway provider overrides
 - provider-independent logical tool registry with policy gates, event logging, and idempotent side-effect tool records
 - daemon `tool.list`/`tool.run` logical tool RPC plus standalone `shepherd-tools` stdio JSON Lines helper over the same Shepherd logical tools
 - Herdr named-session lifecycle, socket wrapper, resource inspection, workspace/tab/pane/agent orchestration, waits, pane text send, and explicit attach
@@ -165,6 +166,15 @@ Shepherd must not depend on Vercel AI Gateway or a Vercel account.
 For the MVP Codex gateway, Shepherd exposes curated Shepherd/Herdr orchestration tools through the AI SDK executable tool bridge around the Codex app-server provider. Shepherd also provides a Hermes-style internal `shepherd-tools` stdio callback over daemon `tool.list`/`tool.run`; it uses the same logical tool definitions and is not a user-facing MCP integration surface.
 
 Gateway tools are provider-independent Shepherd logical tools. Shepherd owns the tool registry, policy checks, execution, event logging, and result projection; each provider adapter only translates those tools to its own transport.
+
+Provider override precedence is:
+
+1. explicit message/turn `providerOverride`
+2. configured `gateway.provider_overrides.sessions[sessionId]`
+3. configured channel/thread override from `gateway.provider_overrides.channels`
+4. `gateway.default_provider` and `gateway.model`
+
+Channel override keys use `platform:spaceId` or the more specific `platform:spaceId:threadId`, for example `slack:C123` or `slack:C123:1700000001.000001`.
 
 ### Herdr agents
 

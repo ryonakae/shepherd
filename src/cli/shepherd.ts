@@ -8,7 +8,9 @@ import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
@@ -24,6 +26,10 @@ export type CliCommand =
       actorId?: string;
       command: "send";
       displayName?: string;
+      providerOverride?: {
+        model?: string;
+        provider?: string;
+      };
       sessionId: string;
       socketPath: string;
       text: string;
@@ -70,6 +76,14 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
       text: parsed.text,
       ...(parsed.actor ? { actorId: parsed.actor } : {}),
       ...(parsed["display-name"] ? { displayName: parsed["display-name"] } : {}),
+      ...(parsed.provider || parsed.model
+        ? {
+            providerOverride: {
+              ...(parsed.model ? { model: parsed.model } : {}),
+              ...(parsed.provider ? { provider: parsed.provider } : {}),
+            },
+          }
+        : {}),
     };
   }
 
@@ -135,7 +149,7 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
 export function helpText(): string {
   return `Usage:
   shepherd daemon [--socket <path>] [--db <path>] [--config <path>]
-  shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>]
+  shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>] [--provider <name>] [--model <id>]
   shepherd watch --session <id> [--socket <path>] [--after <event-id>]
   shepherd rename --session <id> --title <title> [--socket <path>]
   shepherd audit --session <id> [--db <path>] [--after <event-id>] [--limit <n>] [--json true]
@@ -175,6 +189,9 @@ async function main(): Promise<void> {
           displayName: command.displayName ?? command.actorId ?? "TUI User",
           sourcePlatform: "tui",
         },
+        ...(command.providerOverride !== undefined
+          ? { providerOverride: command.providerOverride }
+          : {}),
         sessionId: command.sessionId,
         text: command.text,
       });
@@ -239,6 +256,7 @@ async function main(): Promise<void> {
   const { sqlite } = openSqlite(command.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
+  const sessionBindings = new SessionBindingStore(sqlite);
   const summaries = new SessionSummaryStore(sqlite);
   recoverDaemonState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
@@ -264,6 +282,14 @@ async function main(): Promise<void> {
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(gatewayRuntime ? { gatewayRunner: gatewayRuntime.runner } : {}),
     ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),
+    ...(config
+      ? {
+          providerOverrides: createConfiguredProviderOverrideResolver({
+            bindings: sessionBindings,
+            config,
+          }),
+        }
+      : {}),
     socketPath: command.socketPath,
     store: events,
     summaries,

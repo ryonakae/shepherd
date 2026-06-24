@@ -8,7 +8,13 @@ export type GatewayMessage = {
 
 export type GatewayTurnInput = {
   messages: GatewayMessage[];
+  providerOverride?: GatewayProviderOverride;
   sessionId: string;
+};
+
+export type GatewayProviderOverride = {
+  model?: string;
+  provider?: string;
 };
 
 export type GatewayProvider = {
@@ -17,6 +23,7 @@ export type GatewayProvider = {
 
 export type GatewayProviderInput = {
   messages: GatewayMessage[];
+  providerOverride?: GatewayProviderOverride;
   sessionId: string;
   tools: LogicalToolRunner;
 };
@@ -49,7 +56,12 @@ export class GatewayRunner {
 
   async runTurn(input: GatewayTurnInput): Promise<GatewayProviderOutput> {
     const run = this.#events.appendEvent({
-      payload: { messageCount: input.messages.length },
+      payload: {
+        messageCount: input.messages.length,
+        ...(input.providerOverride !== undefined
+          ? { providerOverride: input.providerOverride }
+          : {}),
+      },
       sessionId: input.sessionId,
       type: "gateway.run.started",
     });
@@ -57,6 +69,9 @@ export class GatewayRunner {
     try {
       const output = await this.#provider.generate({
         messages: input.messages,
+        ...(input.providerOverride !== undefined
+          ? { providerOverride: input.providerOverride }
+          : {}),
         sessionId: input.sessionId,
         tools: this.#tools,
       });

@@ -17,6 +17,7 @@ Implemented:
 - config schema for provider registry, `gateway.default_provider`, `gateway.model`, `providers.*`, `default_agent`, `agents.*`, `context.allowed_roots`, and `auxiliary.summary`.
 - Codex app-server provider factory through `ai-sdk-provider-codex-cli`, plus OpenAI, Anthropic, and OpenRouter API-key providers.
 - environment-only API key lookup for API-key providers.
+- provider router with message/turn, session, and channel/thread overrides.
 - provider-independent logical tool registry converted to AI SDK tools with TypeBox/Ajv runtime validation.
 - daemon logical tool RPC and standalone `shepherd-tools` stdio helper over the same logical tool registry.
 - gateway prompt builder with Herdr control-plane role, progress narration guidance, default agent, and `when` descriptions.
@@ -125,7 +126,10 @@ Decisions:
 
 - `providers` is a map.
 - `gateway.default_provider` is required.
-- MVP uses `default_provider` and `model`; session/channel/message model switching is later.
+- `gateway.model` is the default model when no override supplies a model.
+- `gateway.provider_overrides.sessions` can override provider/model by Shepherd session id.
+- `gateway.provider_overrides.channels` can override provider/model by `platform:spaceId` or `platform:spaceId:threadId`.
+- Message-level `providerOverride` from daemon RPC or local CLI takes precedence over configured overrides.
 - API-key providers read credentials from environment variables only.
 - Do not allow API key literals in config for MVP.
 - Codex OAuth reads the Shepherd daemon user's existing Codex CLI login.

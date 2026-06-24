@@ -88,6 +88,50 @@ describe("createGatewayRuntime", () => {
     ]);
     expect(closed).toEqual(["codex", "shepherd-main"]);
   });
+
+  test("routes gateway turns to configured provider overrides", async () => {
+    const { events, sqlite } = openMigratedDatabase();
+    const session = events.createSession({ id: "session-abcdef123456" });
+    const generatedModels: unknown[] = [];
+    const config = openConfig();
+    config.providers.alt = {
+      auth_source: "codex_cli",
+      mode: "app_server",
+      type: "codex_cli",
+    };
+    const runtime = createGatewayRuntime({
+      config,
+      createCodexProvider() {
+        const provider = (modelId: string) => modelId as unknown as LanguageModel;
+        provider.close = async () => {};
+        return provider;
+      },
+      createHerdrClient(sessionName) {
+        return openFakeHerdrClient(sessionName, {
+          closed: [],
+          progressEvents: [],
+          startedAgents: [],
+        });
+      },
+      events,
+      generateText: async (options) => {
+        generatedModels.push(options.model);
+        return { text: "Using override." };
+      },
+      sqlite,
+    });
+
+    await expect(
+      runtime.runner.runTurn({
+        messages: [{ content: "use another provider", role: "user" }],
+        providerOverride: { model: "gpt-5.3-alt", provider: "alt" },
+        sessionId: session.id,
+      }),
+    ).resolves.toEqual({ text: "Using override." });
+    await runtime.close();
+
+    expect(generatedModels).toEqual(["gpt-5.3-alt"]);
+  });
 });
 
 function executeAiTool(tools: ToolSet, name: string, input: unknown): Promise<unknown> {

@@ -16,6 +16,7 @@ export type SendUserMessageInput = {
   actorId?: string;
   idempotencyKey?: string;
   presentation?: unknown;
+  providerOverride?: unknown;
   sessionId: string;
   text: string;
 };

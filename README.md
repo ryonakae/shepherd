@@ -59,6 +59,12 @@ Send a message to a running daemon session:
 shepherd send --session <session-id> --text "continue from here"
 ```
 
+Send a message with a one-turn gateway provider override:
+
+```bash
+shepherd send --session <session-id> --text "try this with OpenAI" --provider openai --model gpt-4.1
+```
+
 Watch session events as JSON Lines:
 
 ```bash

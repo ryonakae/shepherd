@@ -12,7 +12,7 @@ import {
 } from "@/herdr/progress-subscriptions.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
 import {
-  createGatewayProviderFromConfig,
+  createGatewayProviderRouterFromConfig,
   type GatewayProviderFactoryDependencies,
 } from "./provider-factory.js";
 import { GatewayRunner } from "./runner.js";
@@ -77,7 +77,7 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     registry,
     toolCalls: new LogicalToolCallStore(options.sqlite),
   });
-  const provider = createGatewayProviderFromConfig(options.config, {
+  const provider = createGatewayProviderRouterFromConfig(options.config, {
     ...(options.createCodexProvider !== undefined
       ? { createCodexProvider: options.createCodexProvider }
       : {}),

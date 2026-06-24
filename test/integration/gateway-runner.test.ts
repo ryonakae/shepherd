@@ -71,6 +71,34 @@ describe("GatewayRunner", () => {
       "gateway.run.failed",
     ]);
   });
+
+  test("passes provider overrides to the provider and records them on run start", async () => {
+    const { events, sessionId, tools } = openGatewayHarness();
+    const providerInputs: unknown[] = [];
+    const runner = new GatewayRunner({
+      events,
+      provider: {
+        async generate(input) {
+          providerInputs.push(input.providerOverride);
+          return { text: "using override" };
+        },
+      },
+      tools,
+    });
+
+    await expect(
+      runner.runTurn({
+        messages: [{ content: "hello", role: "user" }],
+        providerOverride: { model: "gpt-4.1", provider: "openai" },
+        sessionId,
+      }),
+    ).resolves.toEqual({ text: "using override" });
+
+    expect(providerInputs).toEqual([{ model: "gpt-4.1", provider: "openai" }]);
+    expect(events.listEvents(sessionId)[0]?.payload).toMatchObject({
+      providerOverride: { model: "gpt-4.1", provider: "openai" },
+    });
+  });
 });
 
 function openGatewayHarness(): {

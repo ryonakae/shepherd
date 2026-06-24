@@ -48,6 +48,56 @@ describe("Shepherd config schema", () => {
     expect(result.ok).toBe(true);
   });
 
+  test("accepts session and channel provider overrides for configured providers", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        gateway: {
+          default_provider: "codex",
+          model: "gpt-5.3-codex",
+          provider_overrides: {
+            channels: {
+              "slack:C123": { provider: "openai", model: "gpt-4.1" },
+            },
+            sessions: {
+              "session-1": { provider: "codex", model: "gpt-5.3-codex-high" },
+            },
+          },
+        },
+        providers: {
+          codex: {
+            auth_source: "codex_cli",
+            mode: "app_server",
+            type: "codex_cli",
+          },
+          openai: {
+            api_key_env: "OPENAI_API_KEY",
+            type: "openai",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects provider overrides that reference unknown providers", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        gateway: {
+          default_provider: "codex",
+          model: "gpt-5.3-codex",
+          provider_overrides: {
+            sessions: {
+              "session-1": { provider: "missing" },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
   test("rejects literal Slack tokens in platform config", () => {
     const result = parseShepherdConfig(
       minimalConfig({

@@ -424,6 +424,93 @@ agents:
     ]);
   });
 
+  test("passes explicit gateway provider overrides through RPC", async () => {
+    const providerOverrides: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              providerOverrides.push(input.providerOverride);
+              return { text: "override accepted" };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "gateway-override-1",
+        method: "gateway.run_turn",
+        params: {
+          messages: [{ content: "please coordinate this", role: "user" }],
+          providerOverride: { model: "gpt-4.1", provider: "openai" },
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "gateway-override-1", result: { text: "override accepted" } },
+    ]);
+    expect(providerOverrides).toEqual([{ model: "gpt-4.1", provider: "openai" }]);
+  });
+
+  test("uses configured provider overrides when a message has no explicit override", async () => {
+    const providerOverrides: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              providerOverrides.push(input.providerOverride);
+              return { text: "configured override accepted" };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+      providerOverrides: () => ({ model: "gpt-5.3-codex-high", provider: "codex" }),
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-override-1",
+        method: "session.user_message",
+        params: {
+          sessionId: session.id,
+          text: "please start",
+        },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() => providerOverrides.length === 1);
+
+    expect(providerOverrides).toEqual([{ model: "gpt-5.3-codex-high", provider: "codex" }]);
+  });
+
   test("lists and runs logical tools through RPC", async () => {
     const { server, socketPath, store } = await openServer({
       configureLogicalTools(events) {
@@ -788,6 +875,7 @@ async function openServer(
     };
     configureGatewayRunner?: (store: EventStore) => GatewayRunner;
     configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
+    providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
 ): Promise<{
   server: ShepherdDaemonServer;
@@ -813,6 +901,7 @@ async function openServer(
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
       : {}),
+    ...(options.providerOverrides ? { providerOverrides: options.providerOverrides } : {}),
     socketPath,
     store,
     summaries,
