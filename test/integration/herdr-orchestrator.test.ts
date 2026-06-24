@@ -176,6 +176,46 @@ describe("HerdrOrchestrator", () => {
       },
     ]);
   });
+
+  test("uses a client selected by Herdr session name", async () => {
+    const { sqlite, store } = openMigratedDatabase();
+    const session = store.createSession({ id: "session-abcdef123456" });
+    const selectedSessions: string[] = [];
+    const orchestrator = new HerdrOrchestrator({
+      clientForSession(sessionName) {
+        selectedSessions.push(sessionName);
+        return {
+          async createWorkspace() {
+            return { workspace_id: "w1" };
+          },
+          async createTab(params) {
+            return { tab_id: `w1:${params.label}` };
+          },
+          async readAgent() {
+            throw new Error("not used");
+          },
+          async sendAgentMessage() {
+            throw new Error("not used");
+          },
+          async startAgent() {
+            return { pane_id: "w1:p1" };
+          },
+        };
+      },
+      sqlite,
+    });
+
+    await orchestrator.startAgent({
+      agentName: "codex-review",
+      herdrSessionName: "shepherd-api",
+      profile: { command: "codex" },
+      sessionId: session.id,
+      taskSlug: "Review API",
+      workingDirectory: "/repo",
+    });
+
+    expect(selectedSessions).toEqual(["shepherd-api", "shepherd-api"]);
+  });
 });
 
 function openMigratedDatabase(): {

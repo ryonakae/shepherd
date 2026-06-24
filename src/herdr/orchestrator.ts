@@ -38,6 +38,11 @@ type AgentStartResult = {
   pane_id?: string;
 };
 
+export type HerdrControlClient = Pick<
+  HerdrSocketClient,
+  "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
+>;
+
 export type HerdrWorkspaceBinding = {
   herdrSessionName: string;
   tabs: Record<string, string>;
@@ -53,20 +58,20 @@ export type HerdrAgentBinding = {
 };
 
 export class HerdrOrchestrator {
-  readonly #herdr: Pick<
-    HerdrSocketClient,
-    "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
-  >;
+  readonly #clientForSession: (herdrSessionName: string) => HerdrControlClient;
   readonly #sqlite: DatabaseSync;
 
   constructor(options: {
-    herdr: Pick<
-      HerdrSocketClient,
-      "createTab" | "createWorkspace" | "readAgent" | "sendAgentMessage" | "startAgent"
-    >;
+    clientForSession?: (herdrSessionName: string) => HerdrControlClient;
+    herdr?: HerdrControlClient;
     sqlite: DatabaseSync;
   }) {
-    this.#herdr = options.herdr;
+    if (!options.clientForSession && !options.herdr) {
+      throw new Error("HerdrOrchestrator requires herdr or clientForSession");
+    }
+
+    this.#clientForSession =
+      options.clientForSession ?? (() => options.herdr as HerdrControlClient);
     this.#sqlite = options.sqlite;
   }
 
@@ -76,7 +81,8 @@ export class HerdrOrchestrator {
       return existing;
     }
 
-    const workspace = (await this.#herdr.createWorkspace({
+    const herdr = this.#clientForSession(input.herdrSessionName);
+    const workspace = (await herdr.createWorkspace({
       cwd: input.workingDirectory,
       label: herdrWorkspaceNameForTask(input.taskSlug, input.sessionId.slice(0, 8)),
     })) as WorkspaceResult;
@@ -87,7 +93,7 @@ export class HerdrOrchestrator {
 
     const tabs: Record<string, string> = {};
     for (const label of ["agents", "tests", "logs", "review", "scratch"]) {
-      const tab = (await this.#herdr.createTab({
+      const tab = (await herdr.createTab({
         label,
         workspace_id: workspaceId,
       })) as TabResult;
@@ -122,6 +128,7 @@ export class HerdrOrchestrator {
 
   async startAgent(input: StartAgentInput): Promise<HerdrAgentBinding> {
     const binding = await this.ensureWorkspace(input);
+    const herdr = this.#clientForSession(binding.herdrSessionName);
     const tabId = binding.tabs[input.tabLabel ?? "agents"];
     const startParams = {
       command: input.profile.command,
@@ -131,7 +138,7 @@ export class HerdrOrchestrator {
       ...(input.profile.args !== undefined ? { args: input.profile.args } : {}),
       ...(tabId !== undefined ? { tab_id: tabId } : {}),
     };
-    const result = (await this.#herdr.startAgent(startParams)) as AgentStartResult;
+    const result = (await herdr.startAgent(startParams)) as AgentStartResult;
     const paneId = result.pane_id ?? result.pane?.pane_id ?? result.agent?.pane_id ?? result.id;
     if (!paneId) {
       throw new Error("Herdr agent.start response did not include a pane id");
@@ -147,15 +154,22 @@ export class HerdrOrchestrator {
   }
 
   readAgent(params: {
+    herdrSessionName: string;
     lines?: number;
     source?: "detection" | "recent" | "recent-unwrapped" | "visible";
     target: string;
   }): Promise<unknown> {
-    return this.#herdr.readAgent(params);
+    const { herdrSessionName, ...request } = params;
+    return this.#clientForSession(herdrSessionName).readAgent(request);
   }
 
-  sendAgentMessage(params: { target: string; text: string }): Promise<unknown> {
-    return this.#herdr.sendAgentMessage(params);
+  sendAgentMessage(params: {
+    herdrSessionName: string;
+    target: string;
+    text: string;
+  }): Promise<unknown> {
+    const { herdrSessionName, ...request } = params;
+    return this.#clientForSession(herdrSessionName).sendAgentMessage(request);
   }
 
   #getBinding(sessionId: string): HerdrWorkspaceBinding | undefined {

@@ -77,14 +77,14 @@ describe("builtin logical tools", () => {
     await expect(
       runner.run(
         "herdr_send_agent_message",
-        { target: "w1:p1", text: "please implement" },
+        { target: "w1:p1", text: "please implement", workingContextSlug: "shepherd" },
         { sessionId },
       ),
     ).resolves.toEqual({ sent: true });
     await expect(
       runner.run(
         "herdr_read_agent",
-        { lines: 50, source: "recent", target: "w1:p1" },
+        { lines: 50, source: "recent", target: "w1:p1", workingContextSlug: "shepherd" },
         { sessionId },
       ),
     ).resolves.toEqual({ text: "agent output" });

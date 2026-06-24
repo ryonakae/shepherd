@@ -31,12 +31,14 @@ type HerdrStartAgentInput = EnsureHerdrWorkspaceInput & {
 type HerdrSendAgentMessageInput = {
   target: string;
   text: string;
+  workingContextSlug: string;
 };
 
 type HerdrReadAgentInput = {
   lines?: number;
   source?: "detection" | "recent" | "recent-unwrapped" | "visible";
   target: string;
+  workingContextSlug: string;
 };
 
 export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): LogicalToolRegistry {
@@ -102,17 +104,32 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
 
   registry.register({
     description: "Send a user message to a Herdr-managed agent target.",
-    execute: (input: HerdrSendAgentMessageInput) => deps.herdr.sendAgentMessage(input),
+    execute: (input: HerdrSendAgentMessageInput) =>
+      deps.herdr.sendAgentMessage({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        target: input.target,
+        text: input.text,
+      }),
     inputSchema: Type.Object({
       target: Type.String({ minLength: 1 }),
       text: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_send_agent_message",
   });
 
   registry.register({
     description: "Read recent output from a Herdr-managed agent target.",
-    execute: (input: HerdrReadAgentInput) => deps.herdr.readAgent(input),
+    execute: (input: HerdrReadAgentInput) => {
+      const request = {
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        target: input.target,
+        ...(input.lines !== undefined ? { lines: input.lines } : {}),
+        ...(input.source !== undefined ? { source: input.source } : {}),
+      };
+
+      return deps.herdr.readAgent(request);
+    },
     inputSchema: Type.Object({
       lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
       source: Type.Optional(
@@ -124,6 +141,7 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
         ]),
       ),
       target: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_read_agent",
   });
