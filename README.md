@@ -51,9 +51,10 @@ platforms:
       - C1234567890
     allowed_users:
       - U1234567890
+    tui_default_channel: C1234567890
 ```
 
-Messages denied by these allowlists are ignored and logged at debug level with the denied axis and Slack IDs. If Slack is enabled without `allowed_users`, the daemon starts with a warning because that leaves sender access unrestricted for that axis.
+`allowed_users` is required whenever Slack is configured. Messages denied by these allowlists are ignored and logged at debug level with the denied axis and Slack IDs. If `tui_default_channel` is set, it must be a Slack channel ID included in `allowed_channels` when that allowlist is configured.
 
 Build TypeScript into `dist`:
 

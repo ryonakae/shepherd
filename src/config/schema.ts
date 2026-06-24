@@ -47,9 +47,10 @@ const slackPlatformSchema = Type.Object(
     allow_customize: Type.Optional(Type.Boolean()),
     allowed_channels: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
     allowed_teams: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
-    allowed_users: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    allowed_users: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     app_token_env: Type.String({ minLength: 1 }),
     bot_token_env: Type.String({ minLength: 1 }),
+    tui_default_channel: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -165,6 +166,22 @@ export function parseShepherdConfig(value: unknown): ValidationResult<ShepherdCo
       };
     }
 
+    const invalidSlackDefaultChannel = invalidSlackTuiDefaultChannel(config);
+    if (invalidSlackDefaultChannel) {
+      return {
+        errors: [
+          {
+            instancePath: "/platforms/slack/tui_default_channel",
+            keyword: "allowedChannel",
+            message: "must be included in platforms.slack.allowed_channels",
+            params: { channel: invalidSlackDefaultChannel },
+            schemaPath: "#/allowedChannel",
+          },
+        ],
+        ok: false,
+      };
+    }
+
     return { ok: true, value: config };
   }
 
@@ -192,4 +209,15 @@ function invalidProviderOverridePaths(
   }
 
   return invalid;
+}
+
+function invalidSlackTuiDefaultChannel(config: ShepherdConfig): string | undefined {
+  const slack = config.platforms?.slack;
+  if (!slack?.tui_default_channel || !slack.allowed_channels) {
+    return undefined;
+  }
+
+  return slack.allowed_channels.includes(slack.tui_default_channel)
+    ? undefined
+    : slack.tui_default_channel;
 }

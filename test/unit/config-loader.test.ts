@@ -47,6 +47,8 @@ platforms:
     allow_customize: true
     allowed_teams:
       - T123
+    allowed_users:
+      - U123
 `);
 
     const result = loadShepherdConfig(path);

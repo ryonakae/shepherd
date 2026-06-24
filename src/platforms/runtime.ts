@@ -21,7 +21,6 @@ export type PlatformRuntime = {
 
 export type PlatformLogger = {
   debug?: (message: string, metadata?: Record<string, unknown>) => void;
-  warn?: (message: string, metadata?: Record<string, unknown>) => void;
 };
 
 export type PlatformRuntimeOptions = {
@@ -61,12 +60,6 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
   const parts: RuntimePart[] = [];
   const adapters: Record<string, SlackDeliveryAdapter> = {};
   const logger = options.logger ?? consolePlatformLogger;
-
-  if (!slack.allowed_users) {
-    logger.warn?.("slack policy warning: allowed_users is not configured", {
-      reason: "slack_allowed_users_missing",
-    });
-  }
 
   const botToken = requireEnv(options.environment ?? process.env, slack.bot_token_env);
   const appToken = requireEnv(options.environment ?? process.env, slack.app_token_env);
@@ -127,9 +120,6 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
 const consolePlatformLogger: PlatformLogger = {
   debug(message, metadata) {
     console.debug(message, metadata ?? {});
-  },
-  warn(message, metadata) {
-    console.warn(message, metadata ?? {});
   },
 };
 

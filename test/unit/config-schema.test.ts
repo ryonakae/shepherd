@@ -40,12 +40,47 @@ describe("Shepherd config schema", () => {
             allowed_users: ["U123"],
             app_token_env: "SLACK_APP_TOKEN",
             bot_token_env: "SLACK_BOT_TOKEN",
+            tui_default_channel: "C123",
           },
         },
       }),
     );
 
     expect(result.ok).toBe(true);
+  });
+
+  test("rejects Slack platform config without allowed users", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        platforms: {
+          slack: {
+            allowed_channels: ["C123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects a Slack TUI default channel outside the allowed channel list", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        platforms: {
+          slack: {
+            allowed_channels: ["C123"],
+            allowed_users: ["U123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+            tui_default_channel: "C999",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
   });
 
   test("accepts session and channel provider overrides for configured providers", () => {
