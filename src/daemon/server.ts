@@ -24,6 +24,13 @@ type EventWireRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
 };
 
+type ActorPresentationInput = {
+  avatarUrl?: string;
+  displayName?: string;
+  sourcePlatform?: string;
+  sourceUserId?: string;
+};
+
 export class ShepherdDaemonServer {
   readonly #configPath: string | undefined;
   readonly #server: Server;
@@ -112,6 +119,11 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    if (request.method === "session.user_message") {
+      void this.#appendUserMessage(socket, request);
+      return;
+    }
+
     if (request.method === "config.reload") {
       this.#reloadConfig(socket, request);
       return;
@@ -184,6 +196,63 @@ export class ShepherdDaemonServer {
     this.#broadcastEvent(event);
   }
 
+  async #appendUserMessage(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      actorId?: string;
+      idempotencyKey?: string;
+      presentation?: unknown;
+      sessionId?: string;
+      text?: string;
+    };
+
+    if (!params?.sessionId || !params.text) {
+      this.#write(socket, {
+        error: { message: "sessionId and text are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    if (params.actorId) {
+      const presentation = parseActorPresentation(params.presentation);
+      this.#store.upsertActor({
+        displayName: presentation.displayName ?? params.actorId,
+        id: params.actorId,
+        kind: "user",
+        presentation: params.presentation ?? {},
+        ...(presentation.avatarUrl ? { avatarUrl: presentation.avatarUrl } : {}),
+        ...(presentation.sourcePlatform ? { sourcePlatform: presentation.sourcePlatform } : {}),
+        ...(presentation.sourceUserId ? { sourceUserId: presentation.sourceUserId } : {}),
+      });
+    }
+
+    const event = this.#store.appendEvent({
+      payload: {
+        presentation: params.presentation ?? {},
+        text: params.text,
+      },
+      sessionId: params.sessionId,
+      type: "user.message",
+      ...(params.actorId ? { actorId: params.actorId } : {}),
+      ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+    });
+
+    this.#write(socket, {
+      id: request.id,
+      result: { event: toWireEvent(event) },
+    });
+    this.#broadcastEvent(event);
+
+    if (this.#gatewayRunner) {
+      const result = await this.#collectGatewayTurnResult(params.sessionId, event.id, [
+        { content: params.text, role: "user" },
+      ]);
+      for (const gatewayEvent of result.events) {
+        this.#broadcastEvent(gatewayEvent);
+      }
+    }
+  }
+
   #reloadConfig(socket: Socket, request: RpcRequest): void {
     if (!this.#configPath) {
       this.#write(socket, {
@@ -218,19 +287,17 @@ export class ShepherdDaemonServer {
       return;
     }
 
-    const afterEventId = this.#store.getLatestEventId(params.sessionId);
-
     try {
-      const output = await this.#gatewayRunner.runTurn({
-        messages: params.messages,
-        sessionId: params.sessionId,
-      });
+      const result = await this.#collectGatewayTurnResult(
+        params.sessionId,
+        undefined,
+        params.messages,
+      );
       this.#write(socket, {
         id: request.id,
-        result: output,
+        result: result.output,
       });
-
-      for (const event of this.#store.listEvents(params.sessionId, afterEventId, 500)) {
+      for (const event of result.events) {
         this.#broadcastEvent(event);
       }
     } catch (error) {
@@ -239,6 +306,26 @@ export class ShepherdDaemonServer {
         id: request.id,
       });
     }
+  }
+
+  async #collectGatewayTurnResult(
+    sessionId: string,
+    triggeringEventId: number | undefined,
+    messages: GatewayMessage[],
+  ): Promise<{ events: EventRecord[]; output: { text: string } }> {
+    if (!this.#gatewayRunner) {
+      throw new Error("Gateway runner is not configured");
+    }
+
+    const afterEventId = this.#store.getLatestEventId(sessionId);
+    const output = await this.#gatewayRunner.runTurn({
+      messages,
+      sessionId,
+      ...(triggeringEventId !== undefined ? { triggeringEventId } : {}),
+    });
+    const events = this.#store.listEvents(sessionId, afterEventId, 500);
+
+    return { events, output };
   }
 
   #broadcastEvent(event: EventRecord): void {
@@ -278,6 +365,20 @@ function isGatewayMessages(value: unknown): value is GatewayMessage[] {
       typeof (message as GatewayMessage).content === "string" &&
       ["assistant", "system", "user"].includes((message as GatewayMessage).role),
   );
+}
+
+function parseActorPresentation(value: unknown): ActorPresentationInput {
+  if (typeof value !== "object" || value === null) {
+    return {};
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    ...(typeof record.avatarUrl === "string" ? { avatarUrl: record.avatarUrl } : {}),
+    ...(typeof record.displayName === "string" ? { displayName: record.displayName } : {}),
+    ...(typeof record.sourcePlatform === "string" ? { sourcePlatform: record.sourcePlatform } : {}),
+    ...(typeof record.sourceUserId === "string" ? { sourceUserId: record.sourceUserId } : {}),
+  };
 }
 
 function toWireEvent(event: EventRecord): EventWireRecord {

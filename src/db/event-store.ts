@@ -15,6 +15,16 @@ export type AppendEventInput = {
   type: string;
 };
 
+export type UpsertActorInput = {
+  avatarUrl?: string;
+  displayName: string;
+  id: string;
+  kind: "gateway" | "system" | "user" | "worker_agent";
+  presentation?: unknown;
+  sourcePlatform?: string;
+  sourceUserId?: string;
+};
+
 export type SessionRecord = {
   createdAt: Date;
   id: string;
@@ -34,6 +44,18 @@ export type EventRecord = {
   type: string;
 };
 
+export type ActorRecord = {
+  avatarUrl: string | null;
+  createdAt: Date;
+  displayName: string;
+  id: string;
+  kind: "gateway" | "system" | "user" | "worker_agent";
+  presentation: unknown;
+  sourcePlatform: string | null;
+  sourceUserId: string | null;
+  updatedAt: Date;
+};
+
 type SessionRow = {
   created_at: number;
   id: string;
@@ -51,6 +73,18 @@ type EventRow = {
   payload_json: string;
   session_id: string;
   type: string;
+};
+
+type ActorRow = {
+  avatar_url: string | null;
+  created_at: number;
+  display_name: string;
+  id: string;
+  kind: "gateway" | "system" | "user" | "worker_agent";
+  presentation_json: string | null;
+  source_platform: string | null;
+  source_user_id: string | null;
+  updated_at: number;
 };
 
 export class EventStore {
@@ -83,6 +117,49 @@ export class EventStore {
     }
 
     return mapSession(row);
+  }
+
+  upsertActor(input: UpsertActorInput): ActorRecord {
+    const now = Date.now();
+    const presentationJson =
+      input.presentation === undefined ? null : JSON.stringify(input.presentation);
+    this.#sqlite
+      .prepare(
+        `insert into actors (id, kind, display_name, avatar_url, source_platform, source_user_id, presentation_json, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(id) do update set
+           kind = excluded.kind,
+           display_name = excluded.display_name,
+           avatar_url = excluded.avatar_url,
+           source_platform = excluded.source_platform,
+           source_user_id = excluded.source_user_id,
+           presentation_json = excluded.presentation_json,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.id,
+        input.kind,
+        input.displayName,
+        input.avatarUrl ?? null,
+        input.sourcePlatform ?? null,
+        input.sourceUserId ?? null,
+        presentationJson,
+        now,
+        now,
+      );
+
+    return this.getActor(input.id);
+  }
+
+  getActor(id: string): ActorRecord {
+    const row = this.#sqlite.prepare("select * from actors where id = ?").get(id) as
+      | ActorRow
+      | undefined;
+    if (!row) {
+      throw new Error(`Actor not found: ${id}`);
+    }
+
+    return mapActor(row);
   }
 
   appendEvent(input: AppendEventInput): EventRecord {
@@ -180,5 +257,19 @@ function mapEvent(row: EventRow): EventRecord {
     payload: JSON.parse(row.payload_json) as unknown,
     sessionId: row.session_id,
     type: row.type,
+  };
+}
+
+function mapActor(row: ActorRow): ActorRecord {
+  return {
+    avatarUrl: row.avatar_url,
+    createdAt: new Date(row.created_at),
+    displayName: row.display_name,
+    id: row.id,
+    kind: row.kind,
+    presentation: row.presentation_json === null ? null : JSON.parse(row.presentation_json),
+    sourcePlatform: row.source_platform,
+    sourceUserId: row.source_user_id,
+    updatedAt: new Date(row.updated_at),
   };
 }

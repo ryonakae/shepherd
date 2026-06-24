@@ -203,6 +203,75 @@ agents:
       "gateway.run.completed",
     ]);
   });
+
+  test("persists a user message and wakes the gateway turn", async () => {
+    const { server, socketPath, store } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              return { text: `Gateway saw: ${input.messages.at(-1)?.content ?? ""}` };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: {
+          actorId: "user-1",
+          presentation: { displayName: "Ryo", sourcePlatform: "tui" },
+          sessionId: session.id,
+          text: "please start",
+        },
+      }),
+    );
+
+    const messages = await readMessages(client, 5);
+
+    expect(messages[0]).toMatchObject({
+      id: "message-1",
+      result: {
+        event: {
+          actorId: "user-1",
+          payload: {
+            presentation: { displayName: "Ryo", sourcePlatform: "tui" },
+            text: "please start",
+          },
+          sessionId: session.id,
+          type: "user.message",
+        },
+      },
+    });
+    expect(messages.slice(1).map((message) => eventType(message))).toEqual([
+      "user.message",
+      "gateway.run.started",
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+  });
 });
 
 async function openServer(
