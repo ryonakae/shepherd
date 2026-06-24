@@ -62,6 +62,7 @@ export type HerdrControlClient = Pick<
   | "readAgent"
   | "readPane"
   | "runPaneCommand"
+  | "sendPaneText"
   | "sendAgentMessage"
   | "splitPane"
   | "startAgent"
@@ -322,6 +323,18 @@ export class HerdrOrchestrator {
   }): Promise<unknown> {
     const { herdrSessionName, paneId, ...request } = params;
     return this.#clientForSession(herdrSessionName).runPaneCommand({
+      ...request,
+      pane_id: paneId,
+    });
+  }
+
+  sendPaneText(params: {
+    herdrSessionName: string;
+    paneId: string;
+    text: string;
+  }): Promise<unknown> {
+    const { herdrSessionName, paneId, ...request } = params;
+    return this.#clientForSession(herdrSessionName).sendPaneText({
       ...request,
       pane_id: paneId,
     });

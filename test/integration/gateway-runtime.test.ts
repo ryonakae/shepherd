@@ -155,6 +155,9 @@ function openFakeHerdrClient(
     async runPaneCommand() {
       return { ran: true };
     },
+    async sendPaneText() {
+      return { sentText: true };
+    },
     async sendAgentMessage() {
       return { sent: true };
     },

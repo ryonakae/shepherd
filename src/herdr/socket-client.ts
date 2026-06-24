@@ -93,6 +93,10 @@ export class HerdrSocketClient {
     return this.request("pane.get", params);
   }
 
+  sendPaneText(params: { pane_id: string; text: string }): Promise<unknown> {
+    return this.request("pane.send_text", params);
+  }
+
   runPaneCommand(params: { command: string; pane_id: string }): Promise<unknown> {
     return this.request("pane.run", params);
   }

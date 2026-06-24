@@ -66,6 +66,10 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).getPane(params);
   }
 
+  async sendPaneText(params: Parameters<HerdrSocketClient["sendPaneText"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).sendPaneText(params);
+  }
+
   async runPaneCommand(
     params: Parameters<HerdrSocketClient["runPaneCommand"]>[0],
   ): Promise<unknown> {

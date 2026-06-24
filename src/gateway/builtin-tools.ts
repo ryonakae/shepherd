@@ -91,6 +91,12 @@ type ReadPaneInput = {
   workingContextSlug: string;
 };
 
+type SendPaneTextInput = {
+  paneId: string;
+  text: string;
+  workingContextSlug: string;
+};
+
 type WaitForAgentInput = {
   status: "blocked" | "done" | "idle" | "unknown" | "working";
   target: string;
@@ -385,6 +391,22 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "read_pane",
+  });
+
+  registry.register({
+    description: "Send literal text to a Herdr pane.",
+    execute: (input: SendPaneTextInput) =>
+      deps.herdr.sendPaneText({
+        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        paneId: input.paneId,
+        text: input.text,
+      }),
+    inputSchema: Type.Object({
+      paneId: Type.String({ minLength: 1 }),
+      text: Type.String({ minLength: 1 }),
+      workingContextSlug: Type.String({ minLength: 1 }),
+    }),
+    name: "send_pane_text",
   });
 
   registry.register({

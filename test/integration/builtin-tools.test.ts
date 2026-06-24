@@ -235,6 +235,13 @@ describe("builtin logical tools", () => {
     ).resolves.toEqual({ text: "pane output" });
     await expect(
       runner.run(
+        "send_pane_text",
+        { paneId: "w1:p2", text: "hello", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ sentText: true });
+    await expect(
+      runner.run(
         "send_agent_message",
         { target: "w1:p1", text: "continue", workingContextSlug: "shepherd" },
         { sessionId },
@@ -322,6 +329,9 @@ function openRunner(options: { allowedRoots?: string[] } = {}): {
       },
       async runPaneCommand() {
         return { ran: true };
+      },
+      async sendPaneText() {
+        return { sentText: true };
       },
       async sendAgentMessage() {
         return { sent: true };

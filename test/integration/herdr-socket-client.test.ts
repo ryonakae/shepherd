@@ -120,6 +120,7 @@ describe("HerdrSocketClient", () => {
     await client.getTab({ tab_id: "w1:t1" });
     await client.listPanes({ tab_id: "w1:t1" });
     await client.getPane({ pane_id: "w1:p1" });
+    await client.sendPaneText({ pane_id: "w1:p1", text: "hello" });
     await client.listAgents({ workspace_id: "w1" });
     await client.getAgent({ target: "claude-impl" });
     await client.focusAgent({ target: "claude-impl" });
@@ -133,6 +134,7 @@ describe("HerdrSocketClient", () => {
       "tab.get",
       "pane.list",
       "pane.get",
+      "pane.send_text",
       "agent.list",
       "agent.get",
       "agent.focus",

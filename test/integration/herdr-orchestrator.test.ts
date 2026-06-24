@@ -307,6 +307,37 @@ describe("HerdrOrchestrator", () => {
       ["shepherd-api", "pane.get", { pane_id: "w1:p1" }],
     ]);
   });
+
+  test("sends literal text to a Herdr pane", async () => {
+    const { sqlite } = openMigratedDatabase();
+    const calls: unknown[] = [];
+    const orchestrator = new HerdrOrchestrator({
+      herdr: {
+        async createWorkspace() {
+          throw new Error("not used");
+        },
+        async createTab() {
+          throw new Error("not used");
+        },
+        ...unusedHerdrMethods(),
+        async sendPaneText(params) {
+          calls.push(params);
+          return { sent: true };
+        },
+      },
+      sqlite,
+    });
+
+    await expect(
+      orchestrator.sendPaneText({
+        herdrSessionName: "shepherd-api",
+        paneId: "w1:p1",
+        text: "hello",
+      }),
+    ).resolves.toEqual({ sent: true });
+
+    expect(calls).toEqual([{ pane_id: "w1:p1", text: "hello" }]);
+  });
 });
 
 function openMigratedDatabase(): {
@@ -360,6 +391,9 @@ function unusedHerdrMethods(): Omit<HerdrControlClient, "createTab" | "createWor
       throw new Error("not used");
     },
     async runPaneCommand() {
+      throw new Error("not used");
+    },
+    async sendPaneText() {
       throw new Error("not used");
     },
     async sendAgentMessage() {
