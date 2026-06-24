@@ -11,6 +11,7 @@ import {
   type GatewayProviderFactoryDependencies,
 } from "./provider-factory.js";
 import { GatewayRunner } from "./runner.js";
+import { buildGatewaySystemPrompt } from "./system-prompt.js";
 import { LogicalToolRunner } from "./tools.js";
 
 export type GatewayRuntimeHerdrClient = HerdrControlClient & {
@@ -57,6 +58,10 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
       ? { createCodexProvider: options.createCodexProvider }
       : {}),
     ...(options.generateText !== undefined ? { generateText: options.generateText } : {}),
+    system: buildGatewaySystemPrompt({
+      agents: options.config.agents,
+      defaultAgent: options.config.default_agent,
+    }),
   });
 
   return {

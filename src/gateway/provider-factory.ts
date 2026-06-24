@@ -10,6 +10,7 @@ import {
 export type GatewayProviderFactoryDependencies = {
   createCodexProvider?: CodexAppServerFactory;
   generateText?: AiSdkGenerateText;
+  system?: string;
 };
 
 export function createGatewayProviderFromConfig(
@@ -29,6 +30,7 @@ export function createGatewayProviderFromConfig(
     model: config.gateway.model,
     ...(deps.createCodexProvider !== undefined ? { createProvider: deps.createCodexProvider } : {}),
     ...(deps.generateText !== undefined ? { generateText: deps.generateText } : {}),
+    ...(deps.system !== undefined ? { system: deps.system } : {}),
     ...(providerConfig.settings !== undefined
       ? { defaultSettings: providerConfig.settings as CodexAppServerSettings }
       : {}),
