@@ -34,6 +34,25 @@ const apiKeyProviderSchema = Type.Object(
 
 export const gatewayProviderSchema = Type.Union([codexProviderSchema, apiKeyProviderSchema]);
 
+const slackPlatformSchema = Type.Object(
+  {
+    allow_customize: Type.Optional(Type.Boolean()),
+    allowed_channels: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    allowed_teams: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    allowed_users: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    app_token_env: Type.String({ minLength: 1 }),
+    bot_token_env: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+const platformsSchema = Type.Object(
+  {
+    slack: Type.Optional(slackPlatformSchema),
+  },
+  { additionalProperties: true },
+);
+
 export const shepherdConfigSchema = Type.Object(
   {
     agents: Type.Record(Type.String({ minLength: 1 }), agentProfileSchema, { minProperties: 1 }),
@@ -61,7 +80,7 @@ export const shepherdConfigSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
-    platforms: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+    platforms: Type.Optional(platformsSchema),
     providers: Type.Record(Type.String({ minLength: 1 }), gatewayProviderSchema, {
       minProperties: 1,
     }),

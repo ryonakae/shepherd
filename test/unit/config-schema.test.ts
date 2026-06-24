@@ -28,6 +28,41 @@ describe("Shepherd config schema", () => {
 
     expect(result.ok).toBe(false);
   });
+
+  test("accepts Slack platform config with env-backed tokens", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        platforms: {
+          slack: {
+            allow_customize: true,
+            allowed_channels: ["C123"],
+            allowed_teams: ["T123"],
+            allowed_users: ["U123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects literal Slack tokens in platform config", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        platforms: {
+          slack: {
+            app_token: "xapp-secret",
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+  });
 });
 
 function minimalConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {

@@ -5,7 +5,7 @@ Shepherd orchestrates Herdr-managed coding agents from a shared TUI and messagin
 ## Features
 
 - **Herdr-first orchestration:** Shepherd stores session state, then controls Herdr sessions, workspaces, tabs, panes, and agents.
-- **Shared session stream:** TUI and Slack are planned to read and write the same Shepherd session event log.
+- **Shared session stream:** TUI and Slack read and write the same Shepherd session event log through platform adapters.
 - **Typed foundation:** The MVP starts with TypeScript, Vitest, Biome, SQLite migrations, Drizzle schema generation, and TypeBox/Ajv runtime schemas.
 
 ## Getting Started
@@ -37,6 +37,16 @@ Apply committed SQLite migrations to a local database:
 SHEPHERD_DB_PATH=/tmp/shepherd.sqlite pnpm db:migrate
 ```
 
+Slack Socket Mode config references environment variable names, not literal tokens:
+
+```yaml
+platforms:
+  slack:
+    app_token_env: SLACK_APP_TOKEN
+    bot_token_env: SLACK_BOT_TOKEN
+    allow_customize: true
+```
+
 Build TypeScript into `dist`:
 
 ```bash
@@ -58,6 +68,8 @@ pnpm build
 - `src/config`: TypeBox/Ajv runtime configuration contracts.
 - `src/daemon`: local daemon utilities, including JSON Lines framing.
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
+- `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
+- `src/platforms/slack`: Slack inbound normalization, Socket Mode wrapper, and outbound delivery.
 - `test/unit`: pure logic and contract tests.
 - `test/integration`: SQLite and cross-module integration tests.
 - `docs/plans`: product and implementation plans for the Shepherd MVP.

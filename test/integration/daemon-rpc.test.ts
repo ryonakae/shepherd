@@ -272,11 +272,67 @@ agents:
       "gateway.run.completed",
     ]);
   });
+
+  test("publishes appended and gateway message events to the delivery fanout", async () => {
+    const delivered: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureDeliveryFanout() {
+        return {
+          async deliverEvent(event) {
+            delivered.push({ id: event.id, type: event.type });
+          },
+        };
+      },
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate() {
+              return { text: "Gateway response" };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: {
+          sessionId: session.id,
+          text: "please start",
+        },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() => delivered.length === 4);
+
+    expect(delivered).toEqual([
+      expect.objectContaining({ type: "user.message" }),
+      expect.objectContaining({ type: "gateway.run.started" }),
+      expect.objectContaining({ type: "gateway.message" }),
+      expect.objectContaining({ type: "gateway.run.completed" }),
+    ]);
+  });
 });
 
 async function openServer(
   options: {
     configPath?: string;
+    configureDeliveryFanout?: () => {
+      deliverEvent(event: ReturnType<EventStore["appendEvent"]>): Promise<unknown>;
+    };
     configureGatewayRunner?: (store: EventStore) => GatewayRunner;
   } = {},
 ): Promise<{
@@ -292,6 +348,9 @@ async function openServer(
   const store = new EventStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdDaemonServer({
+    ...(options.configureDeliveryFanout
+      ? { deliveryFanout: options.configureDeliveryFanout() }
+      : {}),
     ...(options.configureGatewayRunner
       ? { gatewayRunner: options.configureGatewayRunner(store) }
       : {}),
@@ -348,4 +407,14 @@ function readMessages(socket: Socket, count: number): Promise<unknown[]> {
 
 function eventType(message: unknown): string | undefined {
   return (message as { params?: { event?: { type?: string } } }).params?.event?.type;
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > 1_000) {
+      throw new Error("Timed out while waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }

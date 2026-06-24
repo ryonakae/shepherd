@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
+    "@slack/bolt": "^4.7.3",
     "@slack/web-api": "^7.17.0",
     "ai": "^6.0.208",
     "ai-sdk-provider-codex-cli": "^1.2.2",

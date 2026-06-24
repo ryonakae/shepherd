@@ -7,9 +7,14 @@ import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
 type ShepherdDaemonServerOptions = {
   configPath?: string;
+  deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
   socketPath: string;
   store: EventStore;
+};
+
+type EventDeliveryFanout = {
+  deliverEvent(event: EventRecord): Promise<unknown>;
 };
 
 type GatewayTurnRunner = Pick<GatewayRunner, "runTurn">;
@@ -36,6 +41,7 @@ export class ShepherdDaemonServer {
   readonly #server: Server;
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
+  readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #store: EventStore;
   readonly #subscriptions = new Map<string, Set<Socket>>();
@@ -43,6 +49,7 @@ export class ShepherdDaemonServer {
 
   constructor(options: ShepherdDaemonServerOptions) {
     this.#configPath = options.configPath;
+    this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
@@ -115,7 +122,7 @@ export class ShepherdDaemonServer {
     }
 
     if (request.method === "session.append_event") {
-      this.#appendEvent(socket, request);
+      void this.#appendEvent(socket, request);
       return;
     }
 
@@ -162,7 +169,7 @@ export class ShepherdDaemonServer {
     }
   }
 
-  #appendEvent(socket: Socket, request: RpcRequest): void {
+  async #appendEvent(socket: Socket, request: RpcRequest): Promise<void> {
     const params = request.params as {
       actorId?: string;
       idempotencyKey?: string;
@@ -193,7 +200,7 @@ export class ShepherdDaemonServer {
       id: request.id,
       result: { event: toWireEvent(event) },
     });
-    this.#broadcastEvent(event);
+    await this.#publishEvent(event);
   }
 
   async #appendUserMessage(socket: Socket, request: RpcRequest): Promise<void> {
@@ -241,14 +248,14 @@ export class ShepherdDaemonServer {
       id: request.id,
       result: { event: toWireEvent(event) },
     });
-    this.#broadcastEvent(event);
+    await this.#publishEvent(event);
 
     if (this.#gatewayRunner) {
       const result = await this.#collectGatewayTurnResult(params.sessionId, event.id, [
         { content: params.text, role: "user" },
       ]);
       for (const gatewayEvent of result.events) {
-        this.#broadcastEvent(gatewayEvent);
+        await this.#publishEvent(gatewayEvent);
       }
     }
   }
@@ -298,7 +305,7 @@ export class ShepherdDaemonServer {
         result: result.output,
       });
       for (const event of result.events) {
-        this.#broadcastEvent(event);
+        await this.#publishEvent(event);
       }
     } catch (error) {
       this.#write(socket, {
@@ -332,6 +339,11 @@ export class ShepherdDaemonServer {
     for (const socket of this.#subscriptions.get(event.sessionId) ?? []) {
       this.#writeEvent(socket, event);
     }
+  }
+
+  async #publishEvent(event: EventRecord): Promise<void> {
+    this.#broadcastEvent(event);
+    await this.#deliveryFanout?.deliverEvent(event);
   }
 
   #writeEvent(socket: Socket, event: EventRecord): void {

@@ -185,6 +185,16 @@ Deliverables:
 - Slack authorship mirroring with `chat:write.customize` and fallback actor labels
 - platform/user/channel allowlist checks
 
+Implemented so far:
+
+- outbound Slack delivery through Web API `chat.postMessage`
+- Slack thread/session binding store
+- Slack message event normalization and DB append path
+- session delivery fanout with Slack echo prevention
+- daemon delivery publication hook
+- Bolt Socket Mode wrapper for Slack message events
+- Slack platform config schema using environment variable names for tokens
+
 Slack behavior:
 
 - new Slack thread creates a Shepherd session

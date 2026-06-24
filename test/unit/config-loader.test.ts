@@ -39,6 +39,14 @@ agents:
 context:
   allowed_roots:
     - /Users/ryo.nakae/Dev
+
+platforms:
+  slack:
+    app_token_env: SLACK_APP_TOKEN
+    bot_token_env: SLACK_BOT_TOKEN
+    allow_customize: true
+    allowed_teams:
+      - T123
 `);
 
     const result = loadShepherdConfig(path);
@@ -50,6 +58,7 @@ context:
       if (result.value.providers.openai?.type === "openai") {
         expect(result.value.providers.openai.api_key_env).toBe("OPENAI_API_KEY");
       }
+      expect(result.value.platforms?.slack?.bot_token_env).toBe("SLACK_BOT_TOKEN");
     }
   });
 
