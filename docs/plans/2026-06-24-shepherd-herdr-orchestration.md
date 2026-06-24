@@ -8,6 +8,24 @@ Shepherd is a lightweight orchestration gateway for Herdr-managed agents.
 
 Users talk to Shepherd from a TUI or messaging platforms such as Slack. Shepherd stores the conversation and orchestration state, then controls Herdr sessions, workspaces, tabs, panes, and agents. The gateway LLM acts as a Herdr control-plane operator. It should not become a general coding agent; implementation work is delegated to agents and terminals running inside Herdr panes.
 
+## First implementation step
+
+Before implementing daemon, DB, Herdr, gateway, TUI, or Slack behavior, set up the implementation foundation and quality gates.
+
+The first code change should establish:
+
+- `mise` managed Node.js latest LTS and pnpm latest stable
+- TypeScript package setup
+- Vitest unit and integration test setup
+- Biome linting, formatting, and import organization
+- Husky and lint-staged pre-commit workflow
+- full pre-commit quality gate for typecheck, tests, lint, format, and Drizzle migration/schema consistency
+- SQLite foundation using `node:sqlite` and Drizzle
+- TypeBox/Ajv runtime schema validation foundation
+- at least one real tested utility, not a placeholder test
+
+Detailed decisions are in [Implementation foundation and quality gates](shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md).
+
 ## Product direction
 
 Shepherd differs from Hermes Agent in two ways:
@@ -27,6 +45,7 @@ This file is the parent plan. Detailed decisions live in child plans:
 - [Gateway providers, Herdr agents, and context](shepherd-herdr-orchestration/2026-06-24-gateway-providers-agents-context.md)
 - [Session event stream and messaging sync](shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md)
 - [Architecture references](shepherd-herdr-orchestration/2026-06-24-architecture-references.md)
+- [Implementation foundation and quality gates](shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md)
 - [MVP implementation roadmap](shepherd-herdr-orchestration/2026-06-24-implementation-roadmap.md)
 
 ## Core decisions

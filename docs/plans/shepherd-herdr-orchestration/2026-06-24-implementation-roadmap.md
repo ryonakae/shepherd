@@ -8,6 +8,35 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Break the Shepherd MVP into implementation phases while preserving the design decisions from the parent and child plans.
 
+## Phase 0: Implementation foundation
+
+Deliverables:
+
+- `mise` tool versions for Node.js latest LTS and pnpm latest stable
+- single TypeScript package setup
+- ESM + `NodeNext` TypeScript configuration
+- Vitest unit and integration test setup
+- Biome linting, formatting, and import organization
+- Husky pre-commit hook
+- lint-staged staged-file Biome auto-fix
+- strict pre-commit quality gate:
+  - typecheck
+  - tests
+  - full Biome check
+  - Drizzle migration/schema consistency check
+- SQLite foundation with `node:sqlite` and Drizzle
+- generated SQL migrations committed to the repo
+- TypeBox + Ajv runtime schema validation foundation
+- initial real tested utility, not a placeholder test
+
+Rules:
+
+- Keep the repo as a single package for MVP.
+- Do not include Markdown docs in the Biome gate.
+- Use Drizzle as a typed SQL/schema layer, not as a way to hide recovery or idempotency SQL.
+- Use TypeBox/Ajv for JSON Schema first runtime contracts and logical tool schemas.
+- Keep external Herdr, Slack, and gateway provider SDKs out of the foundation commit unless they are required by the first tested scaffold.
+
 ## Phase 1: Core daemon and DB
 
 Deliverables:
