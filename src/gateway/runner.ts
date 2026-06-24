@@ -25,18 +25,25 @@ export type GatewayProviderOutput = {
   text: string;
 };
 
+export type GatewaySummaryUpdater = {
+  maybeUpdate(sessionId: string): Promise<unknown>;
+};
+
 export class GatewayRunner {
   readonly #events: EventStore;
   readonly #provider: GatewayProvider;
+  readonly #summaryUpdater: GatewaySummaryUpdater | undefined;
   readonly #tools: LogicalToolRunner;
 
   constructor(options: {
     events: EventStore;
     provider: GatewayProvider;
+    summaryUpdater?: GatewaySummaryUpdater;
     tools: LogicalToolRunner;
   }) {
     this.#events = options.events;
     this.#provider = options.provider;
+    this.#summaryUpdater = options.summaryUpdater;
     this.#tools = options.tools;
   }
 
@@ -63,6 +70,7 @@ export class GatewayRunner {
         sessionId: input.sessionId,
         type: "gateway.run.completed",
       });
+      await this.#updateSummary(input.sessionId);
       return output;
     } catch (error) {
       this.#events.appendEvent({
@@ -74,6 +82,24 @@ export class GatewayRunner {
         type: "gateway.run.failed",
       });
       throw error;
+    }
+  }
+
+  async #updateSummary(sessionId: string): Promise<void> {
+    if (!this.#summaryUpdater) {
+      return;
+    }
+
+    try {
+      await this.#summaryUpdater.maybeUpdate(sessionId);
+    } catch (error) {
+      this.#events.appendEvent({
+        payload: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+        sessionId,
+        type: "summary.update.failed",
+      });
     }
   }
 }

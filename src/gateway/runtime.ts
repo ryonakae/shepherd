@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
+import { SessionSummaryStore } from "@/db/session-summary.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
 import { type HerdrControlClient, HerdrOrchestrator } from "@/herdr/orchestrator.js";
 import { herdrSocketPathForNamedSession } from "@/herdr/session.js";
@@ -11,6 +12,7 @@ import {
   type GatewayProviderFactoryDependencies,
 } from "./provider-factory.js";
 import { GatewayRunner } from "./runner.js";
+import { GatewaySummaryUpdater } from "./summary.js";
 import { buildGatewaySystemPrompt } from "./system-prompt.js";
 import { LogicalToolRunner } from "./tools.js";
 import { GatewayRunStore, GatewayTurnQueue } from "./turn-queue.js";
@@ -68,6 +70,11 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
   const runner = new GatewayRunner({
     events: options.events,
     provider,
+    summaryUpdater: new GatewaySummaryUpdater({
+      events: options.events,
+      provider,
+      summaries: new SessionSummaryStore(options.sqlite),
+    }),
     tools,
   });
 

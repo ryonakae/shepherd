@@ -178,5 +178,6 @@ export const sessionSummaries = sqliteTable("session_summaries", {
     .references(() => sessions.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  summarizedThroughEventId: integer("summarized_through_event_id").notNull().default(0),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

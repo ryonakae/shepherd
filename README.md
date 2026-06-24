@@ -81,6 +81,7 @@ shepherd watch --session <session-id> --after 0
 - `src/daemon`: local daemon utilities, including JSON Lines framing.
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
+- `src/gateway`: provider adapters, logical tools, turn queueing, context, and summary updates.
 - `src/platforms/slack`: Slack inbound normalization, Socket Mode wrapper, and outbound delivery.
 - `src/tui`: daemon socket client used by TUI-style local surfaces.
 - `test/unit`: pure logic and contract tests.

@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
 import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
@@ -12,6 +13,7 @@ type ShepherdDaemonServerOptions = {
   gatewayRunner?: GatewayTurnRunner;
   socketPath: string;
   store: EventStore;
+  summaries?: Pick<SessionSummaryStore, "getSummary">;
 };
 
 type EventDeliveryFanout = {
@@ -53,6 +55,7 @@ export class ShepherdDaemonServer {
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #store: EventStore;
+  readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
 
@@ -62,6 +65,7 @@ export class ShepherdDaemonServer {
     this.#gatewayRunner = options.gatewayRunner;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
+    this.#summaries = options.summaries;
     this.#server = createServer((socket) => this.#handleConnection(socket));
   }
 
@@ -147,10 +151,14 @@ export class ShepherdDaemonServer {
       return [];
     }
 
+    const summary = this.#summaries?.getSummary(input.sessionId)?.content;
     const result = await this.#collectGatewayTurnResult(
       input.sessionId,
       event.id,
-      buildGatewayMessagesFromEvents(this.#store.listRecentEvents(input.sessionId, 40)),
+      buildGatewayMessagesFromEvents(
+        this.#store.listRecentEvents(input.sessionId, 40),
+        summary ? { summary } : {},
+      ),
     );
     for (const gatewayEvent of result.events) {
       await this.#publishEvent(gatewayEvent);

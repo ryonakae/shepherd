@@ -1,8 +1,18 @@
 import type { EventRecord } from "@/db/event-store.js";
 import type { GatewayMessage } from "./runner.js";
 
-export function buildGatewayMessagesFromEvents(events: EventRecord[]): GatewayMessage[] {
+export function buildGatewayMessagesFromEvents(
+  events: EventRecord[],
+  options: { summary?: string } = {},
+): GatewayMessage[] {
   const messages: GatewayMessage[] = [];
+
+  if (options.summary) {
+    messages.push({
+      content: `Session summary so far:\n${options.summary}`,
+      role: "system",
+    });
+  }
 
   for (const event of events) {
     if (event.type === "user.message") {

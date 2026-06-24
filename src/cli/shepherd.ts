@@ -8,6 +8,7 @@ import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { SessionSummaryStore } from "@/db/session-summary.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
@@ -150,6 +151,7 @@ async function main(): Promise<void> {
   const { sqlite } = openSqlite(command.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
+  const summaries = new SessionSummaryStore(sqlite);
   recoverDaemonState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
   const gatewayRuntime = config
@@ -174,6 +176,7 @@ async function main(): Promise<void> {
     ...(gatewayRuntime ? { gatewayRunner: gatewayRuntime.runner } : {}),
     socketPath: command.socketPath,
     store: events,
+    summaries,
     ...(command.configPath ? { configPath: command.configPath } : {}),
   });
 

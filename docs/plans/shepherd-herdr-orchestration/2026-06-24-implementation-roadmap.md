@@ -199,6 +199,7 @@ Implemented so far:
 - startup recovery notes for queued/running gateway runs without automatic replay
 - API-key backed gateway providers for OpenAI, Anthropic, and OpenRouter
 - recent event context builder for gateway turns
+- threshold-based `session_summary` updates and summary-aware gateway context
 
 Slack behavior:
 

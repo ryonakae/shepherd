@@ -8,6 +8,7 @@ import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { SessionSummaryStore } from "@/db/session-summary.js";
 import { GatewayRunner } from "@/gateway/runner.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 
@@ -329,6 +330,59 @@ agents:
     ]);
   });
 
+  test("includes stored session summary when waking the gateway", async () => {
+    const generatedMessages: unknown[] = [];
+    const { server, socketPath, store, summaries } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              generatedMessages.push(input.messages);
+              return { text: "I have summary context." };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    summaries.upsertSummary({
+      content: "Existing durable session summary.",
+      sessionId: session.id,
+      summarizedThroughEventId: 1,
+    });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: {
+          sessionId: session.id,
+          text: "new user message",
+        },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() => generatedMessages.length === 1);
+
+    expect(generatedMessages[0]).toEqual([
+      {
+        content: "Session summary so far:\nExisting durable session summary.",
+        role: "system",
+      },
+      { content: "new user message", role: "user" },
+    ]);
+  });
+
   test("publishes appended and gateway message events to the delivery fanout", async () => {
     const delivered: unknown[] = [];
     const { server, socketPath, store } = await openServer({
@@ -462,6 +516,7 @@ async function openServer(
   server: ShepherdDaemonServer;
   socketPath: string;
   store: EventStore;
+  summaries: SessionSummaryStore;
 }> {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-daemon-"));
   tempDirs.push(dir);
@@ -469,6 +524,7 @@ async function openServer(
   const { sqlite } = openSqlite(join(dir, "test.sqlite"));
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const store = new EventStore(sqlite);
+  const summaries = new SessionSummaryStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdDaemonServer({
     ...(options.configureDeliveryFanout
@@ -479,11 +535,12 @@ async function openServer(
       : {}),
     socketPath,
     store,
+    summaries,
     ...(options.configPath ? { configPath: options.configPath } : {}),
   });
   await server.start();
 
-  return { server, socketPath, store };
+  return { server, socketPath, store, summaries };
 }
 
 function writeTempFile(name: string, contents: string): string {

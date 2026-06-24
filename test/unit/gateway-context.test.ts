@@ -25,6 +25,23 @@ describe("buildGatewayMessagesFromEvents", () => {
       },
     ]);
   });
+
+  test("prepends an existing session summary as system context", () => {
+    expect(
+      buildGatewayMessagesFromEvents(
+        [event({ payload: { text: "hello" }, type: "user.message" })],
+        {
+          summary: "User asked for a Slack sync implementation.",
+        },
+      ),
+    ).toEqual([
+      {
+        content: "Session summary so far:\nUser asked for a Slack sync implementation.",
+        role: "system",
+      },
+      { content: "hello", role: "user" },
+    ]);
+  });
 });
 
 function event(input: { payload: unknown; type: string }): EventRecord {

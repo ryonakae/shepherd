@@ -1,0 +1,1 @@
+ALTER TABLE `session_summaries` ADD `summarized_through_event_id` integer DEFAULT 0 NOT NULL;
