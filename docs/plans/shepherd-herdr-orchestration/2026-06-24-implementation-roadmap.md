@@ -200,6 +200,7 @@ Implemented so far:
 - API-key backed gateway providers for OpenAI, Anthropic, and OpenRouter
 - recent event context builder for gateway turns
 - threshold-based `session_summary` updates and summary-aware gateway context
+- Herdr named-session CLI lifecycle wrapper before socket requests
 
 Slack behavior:
 

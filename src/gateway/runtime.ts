@@ -3,9 +3,8 @@ import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
+import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
 import { type HerdrControlClient, HerdrOrchestrator } from "@/herdr/orchestrator.js";
-import { herdrSocketPathForNamedSession } from "@/herdr/session.js";
-import { HerdrSocketClient } from "@/herdr/socket-client.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
 import {
   createGatewayProviderFromConfig,
@@ -38,8 +37,8 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     createClient:
       options.createHerdrClient ??
       ((herdrSessionName) =>
-        new HerdrSocketClient({
-          socketPath: herdrSocketPathForNamedSession(herdrSessionName),
+        new ManagedHerdrSocketClient({
+          herdrSessionName,
         })),
   });
   const herdr = new HerdrOrchestrator({
