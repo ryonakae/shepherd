@@ -5,6 +5,7 @@ import {
   createGatewayProviderFromConfig,
   type GatewayProviderFactoryDependencies,
 } from "@/gateway/provider-factory.js";
+import type { LogicalToolRunner } from "@/gateway/tools.js";
 
 describe("createGatewayProviderFromConfig", () => {
   test("creates the configured Codex CLI app-server provider", async () => {
@@ -40,16 +41,49 @@ describe("createGatewayProviderFromConfig", () => {
     ]);
   });
 
-  test("rejects non-Codex providers until adapters are implemented", () => {
+  test("creates API key backed AI SDK providers", async () => {
+    const config = openConfig();
+    config.providers.gateway = {
+      api_key_env: "OPENAI_API_KEY",
+      type: "openai",
+    };
+    config.gateway.model = "gpt-4.1";
+    const calls: unknown[] = [];
+
+    const provider = createGatewayProviderFromConfig(config, {
+      environment: { OPENAI_API_KEY: "test-key" },
+      generateText: async (options) => {
+        calls.push(options.model);
+        return { text: "ok" };
+      },
+    });
+    await expect(
+      provider.generate({
+        messages: [{ content: "hello", role: "user" }],
+        sessionId: "session-1",
+        tools: {
+          list: () => [],
+          run: async () => ({}),
+        } as unknown as LogicalToolRunner,
+      }),
+    ).resolves.toEqual({ text: "ok" });
+    await provider.close();
+
+    expect(calls).toHaveLength(1);
+  });
+
+  test("requires configured API key environment variables", () => {
     const config = openConfig();
     config.providers.gateway = {
       api_key_env: "OPENAI_API_KEY",
       type: "openai",
     };
 
-    expect(() => createGatewayProviderFromConfig(config)).toThrow(
-      "Gateway provider type is not implemented: openai",
-    );
+    expect(() =>
+      createGatewayProviderFromConfig(config, {
+        environment: {},
+      }),
+    ).toThrow("Missing required environment variable: OPENAI_API_KEY");
   });
 });
 

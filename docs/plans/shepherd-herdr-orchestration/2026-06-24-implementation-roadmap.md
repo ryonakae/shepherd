@@ -197,6 +197,7 @@ Implemented so far:
 - CLI daemon wiring for Slack runtime, delivery fanout, and daemon-backed inbound messages
 - local session client plus `shepherd send` / `shepherd watch` for TUI-style attach and resume
 - startup recovery notes for queued/running gateway runs without automatic replay
+- API-key backed gateway providers for OpenAI, Anthropic, and OpenRouter
 
 Slack behavior:
 
