@@ -168,6 +168,104 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     });
   });
 
+  test("records approval requests and responses as delivered session events", async () => {
+    const delivered: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureDeliveryFanout() {
+        return {
+          async deliverEvent(event) {
+            delivered.push({ payload: event.payload, type: event.type });
+          },
+        };
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "approval-1",
+        method: "approval.request",
+        params: {
+          approvalId: "codex-tool-1",
+          provider: "codex",
+          request: { command: "pnpm test" },
+          sessionId: session.id,
+          text: "Codex requests approval to run pnpm test.",
+        },
+      }),
+    );
+
+    const requestMessages = await readMessages(client, 2);
+
+    client.write(
+      encodeJsonLine({
+        id: "approval-2",
+        method: "approval.respond",
+        params: {
+          approvalId: "codex-tool-1",
+          decision: "approved",
+          responderActorId: "tui:user",
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    const responseMessages = await readMessages(client, 2);
+    const messages = [...requestMessages, ...responseMessages];
+
+    expect(messages[0]).toMatchObject({
+      method: "session.event",
+      params: { event: { type: "approval.requested" } },
+    });
+    expect(messages[1]).toMatchObject({
+      id: "approval-1",
+      result: {
+        event: {
+          payload: {
+            approvalId: "codex-tool-1",
+            provider: "codex",
+            request: { command: "pnpm test" },
+            text: "Codex requests approval to run pnpm test.",
+          },
+          type: "approval.requested",
+        },
+      },
+    });
+    expect(messages[2]).toMatchObject({
+      method: "session.event",
+      params: { event: { type: "approval.responded" } },
+    });
+    expect(messages[3]).toMatchObject({
+      id: "approval-2",
+      result: {
+        event: {
+          actorId: "tui:user",
+          payload: {
+            approvalId: "codex-tool-1",
+            decision: "approved",
+            text: "Approval approved: codex-tool-1",
+          },
+          type: "approval.responded",
+        },
+      },
+    });
+    expect(delivered).toEqual([
+      expect.objectContaining({ type: "approval.requested" }),
+      expect.objectContaining({ type: "approval.responded" }),
+    ]);
+  });
+
   test("reloads config through RPC", async () => {
     const configPath = writeTempFile(
       "shepherd.yaml",

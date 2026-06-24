@@ -25,6 +25,22 @@ export type RenameSessionInput = {
   title: string | null;
 };
 
+export type RequestApprovalInput = {
+  approvalId: string;
+  provider: string;
+  request: unknown;
+  sessionId: string;
+  text?: string;
+};
+
+export type RespondApprovalInput = {
+  approvalId: string;
+  decision: "approved" | "denied";
+  reason?: string;
+  responderActorId?: string;
+  sessionId: string;
+};
+
 type PendingRequest = {
   reject(error: Error): void;
   resolve(value: unknown): void;
@@ -100,6 +116,14 @@ export class ShepherdSessionClient {
         workingContextId: string | null;
       };
     };
+  }
+
+  async requestApproval(input: RequestApprovalInput): Promise<{ event: WireEventRecord }> {
+    return (await this.#request("approval.request", input)) as { event: WireEventRecord };
+  }
+
+  async respondApproval(input: RespondApprovalInput): Promise<{ event: WireEventRecord }> {
+    return (await this.#request("approval.respond", input)) as { event: WireEventRecord };
   }
 
   async subscribe(input: SubscribeInput): Promise<{ replayed: number; subscribed: true }> {

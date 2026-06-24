@@ -210,6 +210,7 @@ Implemented so far:
 - conservative daemon restart recovery for queued/running gateway turns
 - clearer Herdr named-session startup errors with session and socket context
 - gateway progress narration guidance in the gateway system prompt
+- approval request/response event recording and delivery surface
 
 Slack behavior:
 

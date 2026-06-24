@@ -7,7 +7,12 @@ export type SessionDeliveryFanoutResult = DeliveryResult & {
   targetId: string;
 };
 
-const deliverableEventTypes = new Set(["gateway.message", "user.message"]);
+const deliverableEventTypes = new Set([
+  "approval.requested",
+  "approval.responded",
+  "gateway.message",
+  "user.message",
+]);
 
 export class SessionDeliveryFanout {
   readonly #bindings: SessionBindingStore;

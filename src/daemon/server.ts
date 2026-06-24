@@ -47,6 +47,22 @@ export type ReceiveUserMessageInput = {
   text: string;
 };
 
+export type ReceiveApprovalRequestInput = {
+  approvalId: string;
+  provider: string;
+  request: unknown;
+  sessionId: string;
+  text?: string;
+};
+
+export type ReceiveApprovalResponseInput = {
+  approvalId: string;
+  decision: "approved" | "denied";
+  reason?: string;
+  responderActorId?: string;
+  sessionId: string;
+};
+
 export class ShepherdDaemonServer {
   readonly #configPath: string | undefined;
   readonly #server: Server;
@@ -115,6 +131,54 @@ export class ShepherdDaemonServer {
     const gatewayEvents = await this.#wakeGatewayForUserMessage(input, event);
 
     return { event, gatewayEvents };
+  }
+
+  async receiveApprovalRequest(input: ReceiveApprovalRequestInput): Promise<{
+    event: EventRecord;
+  }> {
+    const event = this.#store.appendEvent({
+      idempotencyKey: `approval:${input.approvalId}:requested`,
+      payload: {
+        approvalId: input.approvalId,
+        provider: input.provider,
+        request: input.request,
+        text: input.text ?? `Approval requested by ${input.provider}: ${input.approvalId}`,
+      },
+      sessionId: input.sessionId,
+      type: "approval.requested",
+    });
+    await this.#publishEvent(event);
+
+    return { event };
+  }
+
+  async receiveApprovalResponse(input: ReceiveApprovalResponseInput): Promise<{
+    event: EventRecord;
+  }> {
+    if (input.responderActorId) {
+      this.#store.upsertActor({
+        displayName: input.responderActorId,
+        id: input.responderActorId,
+        kind: "user",
+        presentation: {},
+      });
+    }
+
+    const event = this.#store.appendEvent({
+      idempotencyKey: `approval:${input.approvalId}:response`,
+      payload: {
+        approvalId: input.approvalId,
+        decision: input.decision,
+        text: `Approval ${input.decision}: ${input.approvalId}`,
+        ...(input.reason ? { reason: input.reason } : {}),
+      },
+      sessionId: input.sessionId,
+      type: "approval.responded",
+      ...(input.responderActorId ? { actorId: input.responderActorId } : {}),
+    });
+    await this.#publishEvent(event);
+
+    return { event };
   }
 
   #storeUserMessage(input: ReceiveUserMessageInput): EventRecord {
@@ -207,6 +271,16 @@ export class ShepherdDaemonServer {
 
     if (request.method === "session.rename") {
       this.#renameSession(socket, request);
+      return;
+    }
+
+    if (request.method === "approval.request") {
+      void this.#requestApproval(socket, request);
+      return;
+    }
+
+    if (request.method === "approval.respond") {
+      void this.#respondApproval(socket, request);
       return;
     }
 
@@ -338,6 +412,68 @@ export class ShepherdDaemonServer {
       result: { session: toWireSession(session) },
     });
     void this.#publishEvent(event);
+  }
+
+  async #requestApproval(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      approvalId?: string;
+      provider?: string;
+      request?: unknown;
+      sessionId?: string;
+      text?: string;
+    };
+    if (!params?.sessionId || !params.approvalId || !params.provider) {
+      this.#write(socket, {
+        error: { message: "sessionId, approvalId, and provider are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const result = await this.receiveApprovalRequest({
+      approvalId: params.approvalId,
+      provider: params.provider,
+      request: params.request ?? {},
+      sessionId: params.sessionId,
+      ...(params.text ? { text: params.text } : {}),
+    });
+    this.#write(socket, {
+      id: request.id,
+      result: { event: toWireEvent(result.event) },
+    });
+  }
+
+  async #respondApproval(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      approvalId?: string;
+      decision?: string;
+      reason?: string;
+      responderActorId?: string;
+      sessionId?: string;
+    };
+    if (
+      !params?.sessionId ||
+      !params.approvalId ||
+      (params.decision !== "approved" && params.decision !== "denied")
+    ) {
+      this.#write(socket, {
+        error: { message: "sessionId, approvalId, and decision are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const result = await this.receiveApprovalResponse({
+      approvalId: params.approvalId,
+      decision: params.decision,
+      sessionId: params.sessionId,
+      ...(params.reason ? { reason: params.reason } : {}),
+      ...(params.responderActorId ? { responderActorId: params.responderActorId } : {}),
+    });
+    this.#write(socket, {
+      id: request.id,
+      result: { event: toWireEvent(result.event) },
+    });
   }
 
   #reloadConfig(socket: Socket, request: RpcRequest): void {
