@@ -48,20 +48,59 @@ export class HerdrSessionLifecycle {
       return { socketPath, started: false };
     }
 
-    this.#spawnProcess(this.#command, ["--session", name]);
-    await this.#waitForSocket(socketPath);
+    let startFailure: Error | undefined;
+    try {
+      const child = this.#spawnProcess(this.#command, ["--session", name]);
+      if (typeof child.once === "function") {
+        child.once("error", (error) => {
+          startFailure = error;
+        });
+        child.once("exit", (code, signal) => {
+          if (!this.#exists(socketPath)) {
+            startFailure = new Error(
+              `Herdr exited before creating the session socket (code ${code ?? "null"}, signal ${
+                signal ?? "null"
+              })`,
+            );
+          }
+        });
+      }
+    } catch (error) {
+      throw this.#startError(name, socketPath, error);
+    }
+    await this.#waitForSocket(name, socketPath, () => startFailure);
 
     return { socketPath, started: true };
   }
 
-  async #waitForSocket(socketPath: string): Promise<void> {
+  async #waitForSocket(
+    name: string,
+    socketPath: string,
+    startFailure: () => Error | undefined,
+  ): Promise<void> {
     const startedAt = Date.now();
     while (!this.#exists(socketPath)) {
+      const failure = startFailure();
+      if (failure) {
+        throw this.#startError(name, socketPath, failure);
+      }
+
       if (Date.now() - startedAt > this.#timeoutMs) {
-        throw new Error(`Timed out waiting for Herdr session socket: ${socketPath}`);
+        throw this.#startError(
+          name,
+          socketPath,
+          new Error(`Timed out after ${this.#timeoutMs}ms waiting for the session socket`),
+        );
       }
 
       await new Promise((resolve) => setTimeout(resolve, this.#pollIntervalMs));
     }
+  }
+
+  #startError(name: string, socketPath: string, cause: unknown): Error {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return new Error(
+      `Failed to start Herdr named session "${name}" with "${this.#command} --session ${name}" for socket ${socketPath}: ${message}`,
+    );
   }
 }

@@ -207,6 +207,9 @@ Implemented so far:
 - session title rename flow through daemon RPC and CLI
 - basic SQLite event audit log through `shepherd audit`
 - explicit Herdr session/workspace attach through the gateway logical toolset
+- conservative daemon restart recovery for queued/running gateway turns
+- clearer Herdr named-session startup errors with session and socket context
+- gateway progress narration guidance in the gateway system prompt
 
 Slack behavior:
 
@@ -219,11 +222,7 @@ Slack behavior:
 
 Deliverables:
 
-- title/rename flow
-- conservative daemon restart recovery from DB
-- recovery notes for uncertain in-flight gateway/tool work
-- clearer tool errors for Herdr command start failures
-- gateway progress narration for long-running Herdr agents
+- Complete for MVP.
 
 ## Deferred
 

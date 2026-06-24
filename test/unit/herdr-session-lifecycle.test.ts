@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { describe, expect, test } from "vitest";
 import { HerdrSessionLifecycle } from "@/herdr/session-lifecycle.js";
 
@@ -41,5 +42,37 @@ describe("HerdrSessionLifecycle", () => {
       started: true,
     });
     expect(spawned).toEqual([{ args: ["--session", "shepherd-api"], command: "herdr" }]);
+  });
+
+  test("wraps Herdr spawn failures with session and socket context", async () => {
+    const lifecycle = new HerdrSessionLifecycle({
+      configDir: "/config/herdr",
+      exists: () => false,
+      spawnProcess() {
+        throw new Error("ENOENT");
+      },
+    });
+
+    await expect(lifecycle.ensureNamedSession("shepherd-api")).rejects.toThrow(
+      'Failed to start Herdr named session "shepherd-api" with "herdr --session shepherd-api" for socket /config/herdr/sessions/shepherd-api/herdr.sock: ENOENT',
+    );
+  });
+
+  test("reports Herdr exits before the socket appears", async () => {
+    const child = new EventEmitter() as ChildProcess;
+    const lifecycle = new HerdrSessionLifecycle({
+      configDir: "/config/herdr",
+      exists: () => false,
+      pollIntervalMs: 1,
+      spawnProcess() {
+        queueMicrotask(() => child.emit("exit", 127, null));
+        return child;
+      },
+      timeoutMs: 100,
+    });
+
+    await expect(lifecycle.ensureNamedSession("shepherd-api")).rejects.toThrow(
+      "Herdr exited before creating the session socket",
+    );
   });
 });
