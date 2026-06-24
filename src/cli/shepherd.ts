@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { argv, env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { loadShepherdConfig } from "@/config/load.js";
+import { recoverDaemonState } from "@/daemon/recovery.js";
 import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
   const { sqlite } = openSqlite(command.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
+  recoverDaemonState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
   const gatewayRuntime = config
     ? createGatewayRuntime({

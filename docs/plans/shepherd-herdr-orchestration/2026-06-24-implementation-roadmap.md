@@ -196,6 +196,7 @@ Implemented so far:
 - Slack platform config schema using environment variable names for tokens
 - CLI daemon wiring for Slack runtime, delivery fanout, and daemon-backed inbound messages
 - local session client plus `shepherd send` / `shepherd watch` for TUI-style attach and resume
+- startup recovery notes for queued/running gateway runs without automatic replay
 
 Slack behavior:
 

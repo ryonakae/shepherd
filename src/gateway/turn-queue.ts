@@ -70,6 +70,17 @@ export class GatewayRunStore {
     });
   }
 
+  markRecoveryRequired(id: string, recovery: unknown): GatewayRunRecord {
+    const now = Date.now();
+    this.#sqlite
+      .prepare(
+        "update gateway_runs set status = 'recovery_required', recovery_json = ?, updated_at = ? where id = ?",
+      )
+      .run(JSON.stringify(recovery), now, id);
+
+    return this.getRun(id);
+  }
+
   getRun(id: string): GatewayRunRecord {
     const row = this.#sqlite.prepare("select * from gateway_runs where id = ?").get(id) as
       | GatewayRunRow
@@ -85,6 +96,16 @@ export class GatewayRunStore {
     const rows = this.#sqlite
       .prepare("select * from gateway_runs where session_id = ? order by created_at asc, id asc")
       .all(sessionId) as GatewayRunRow[];
+
+    return rows.map(mapGatewayRun);
+  }
+
+  listRecoverableRuns(): GatewayRunRecord[] {
+    const rows = this.#sqlite
+      .prepare(
+        "select * from gateway_runs where status in ('queued', 'running') order by created_at asc, id asc",
+      )
+      .all() as GatewayRunRow[];
 
     return rows.map(mapGatewayRun);
   }
