@@ -8,6 +8,18 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Break the Shepherd MVP into implementation phases while preserving the design decisions from the parent and child plans.
 
+## Overall implementation status
+
+Status as of commit `f8d2766`: core MVP implementation is complete and verified with `pnpm check`.
+
+The implementation covers foundation, DB/event stream, daemon socket RPC, TUI-style CLI attach, Slack MVP, gateway providers, Herdr orchestration, session summaries, restart recovery, idempotency, audit, explicit Herdr attach, and approval event recording.
+
+Known MVP limits are tracked in the child plans and Deferred section:
+
+- Provider-specific approval response routing back into Codex app-server or worker-agent approval APIs is deferred.
+- A standalone Hermes-style `shepherd-tools` stdio callback binary is deferred; MVP uses the AI SDK tool bridge over Shepherd logical tools.
+- Dedicated Herdr event subscription/progress streaming is deferred; MVP uses wait/read operations, tool events, recovery notes, summaries, and gateway prompt narration.
+
 ## Phase 0: Implementation foundation
 
 Deliverables:
@@ -76,7 +88,7 @@ Config areas:
 - platform allowlists
 - working context allowed roots
 - deterministic logical tool policy gates
-- provider-native approval forwarding and event recording
+- provider-native approval event recording and delivery surface
 
 ## Phase 2: Herdr integration
 
@@ -91,7 +103,7 @@ Deliverables:
 - start/list/get/read/send/focus agent
 - event subscription or polling for agent status
 - Shepherd-managed naming
-- `send_agent_message` high-level tool using `pane.send_input`
+- `send_agent_message` high-level tool using Herdr `agent.send`
 
 Rules:
 
@@ -114,7 +126,7 @@ Deliverables:
 - env-only API key resolution for API-key providers
 - Codex app-server process lifecycle
 - stateless Codex app-server calls using Shepherd DB history
-- internal `shepherd-tools` stdio callback for Codex app-server
+- AI SDK executable tool bridge for Codex app-server and API-key providers
 - provider-independent Shepherd logical tool registry
 - provider adapter translation from logical tools to provider wire format
 - policy-based toolset selection
@@ -224,10 +236,13 @@ Slack behavior:
 
 Deliverables:
 
-- Complete for MVP.
+- Complete for core MVP.
 
 ## Deferred
 
+- provider-specific approval response bridge back into Codex app-server or worker-agent approval APIs
+- standalone Hermes-style `shepherd-tools` stdio callback binary
+- dedicated Herdr event subscription/progress streaming adapter
 - session/channel/message provider override
 - full Hermes-style auxiliary model suite
 - `codexExec` fallback for Codex gateway

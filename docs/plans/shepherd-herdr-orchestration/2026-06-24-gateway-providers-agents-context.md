@@ -8,6 +8,29 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Define how Shepherd configures the gateway LLM, Herdr worker agents, and conversation context.
 
+## Implementation status
+
+Status as of commit `f8d2766`: core gateway/provider/context MVP is implemented, with provider-specific bridges deferred where noted.
+
+Implemented:
+
+- config schema for provider registry, `gateway.default_provider`, `gateway.model`, `providers.*`, `default_agent`, `agents.*`, `context.allowed_roots`, and `auxiliary.summary`.
+- Codex app-server provider factory through `ai-sdk-provider-codex-cli`, plus OpenAI, Anthropic, and OpenRouter API-key providers.
+- environment-only API key lookup for API-key providers.
+- provider-independent logical tool registry converted to AI SDK tools with TypeBox/Ajv runtime validation.
+- gateway prompt builder with Herdr control-plane role, progress narration guidance, default agent, and `when` descriptions.
+- recent event context builder and threshold-based `session_summary` updates.
+- Herdr orchestration tools listed below, including `herdr_read`, attach, pane text send, waits, and agent messaging.
+- deterministic tool visibility/policy gates and logical tool call/result/denial events.
+- approval request/response event surface in the daemon/TUI/delivery layer.
+
+MVP limits:
+
+- The dedicated Hermes-style `shepherd-tools` stdio helper is not a separate binary; MVP uses the AI SDK executable tool bridge around the same Shepherd logical tools.
+- Provider-native approval requests can be recorded and delivered as Shepherd events, but response plumbing back into Codex app-server or worker-agent-specific approval APIs is deferred.
+- `auxiliary.summary` is reserved in config, but summary generation currently uses the gateway provider/model.
+- Rich Herdr progress detection is prompt and event-context based, not a separate auxiliary progress model.
+
 ## Gateway LLM role
 
 The gateway LLM is a Herdr control-plane operator. It decides how to use Shepherd and Herdr tools. It is not the main coding agent.
@@ -51,7 +74,7 @@ Gateway tools are provider-independent Shepherd logical tools. Shepherd owns the
 
 Provider adapters only translate the same logical tool registry into provider-specific wire formats:
 
-- Codex app-server uses the internal `shepherd-tools` stdio callback.
+- Codex app-server uses the MVP AI SDK executable tool bridge. A standalone internal `shepherd-tools` stdio callback remains an implementation option after MVP.
 - OpenAI, OpenRouter, and Anthropic use normal function/tool calling through their AI SDK-backed adapters.
 - A future direct Codex OAuth Responses provider would use normal Responses function tools.
 
@@ -106,7 +129,7 @@ Decisions:
 - Do not allow API key literals in config for MVP.
 - Codex OAuth reads the Shepherd daemon user's existing Codex CLI login.
 - Gateway Codex auth and Herdr worker Codex auth are separate when Shepherd and Herdr run on different machines.
-- `approvalPolicy` configures provider-native approval behavior. Shepherd forwards and records provider approval requests, but MVP Shepherd policy remains deterministic allow/deny.
+- `approvalPolicy` configures provider-native approval behavior where the provider supports it. Shepherd has an approval event surface for recording and delivery; provider-specific response plumbing is deferred.
 
 ## Codex gateway provider
 
@@ -129,8 +152,8 @@ Rationale:
 Important limitation:
 
 - Codex CLI providers do not use normal AI SDK custom tools the same way API providers do.
-- MVP uses the Hermes-style pattern: Shepherd starts an internal `shepherd-tools` stdio callback for the Codex app-server runtime and exposes only curated Shepherd/Herdr orchestration tools through it.
-- This callback is an implementation detail, not a user-facing MCP integration surface.
+- MVP uses the same Shepherd logical tool registry through the AI SDK tool bridge. A later Codex-specific `shepherd-tools` stdio callback can replace this transport without changing logical tool definitions.
+- Any callback remains an implementation detail, not a user-facing MCP integration surface.
 - Do not let Codex operate directly on the Shepherd daemon environment.
 
 Initial Shepherd logical tools:
@@ -145,13 +168,14 @@ Initial Shepherd logical tools:
 - `open_pane`
 - `run_pane_command`
 - `read_pane`
+- `send_pane_text`
 - `wait_for_herdr_event`
 - `send_agent_message`
 - `wait_for_agent`
 - `read_agent_output`
 - gateway progress narration for long-running Herdr agents
 
-Do not expose through `shepherd-tools`:
+Do not expose through the Shepherd logical tool bridge:
 
 - generic shell/file/edit tools already owned by Codex or worker agents
 - arbitrary Herdr raw socket methods
@@ -183,7 +207,7 @@ A Pi/OpenCode-style direct Codex OAuth Responses provider is a useful future exp
 - Shepherd/Herdr tools would be passed as normal Responses function tools.
 - It avoids the Codex app-server tool callback, but directly targets ChatGPT/Codex backend endpoints and carries more maintenance risk.
 
-Do not make this the MVP default. Keep `codexAppServer` plus internal `shepherd-tools` callback as the MVP path.
+Do not make this the MVP default. Keep `codexAppServer` plus Shepherd logical tools as the MVP path.
 
 ## Herdr worker agents
 

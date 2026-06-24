@@ -8,6 +8,22 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Define the implementation foundation, test strategy, linting, formatting, and pre-commit gates before MVP code starts.
 
+## Implementation status
+
+Status as of commit `f8d2766`: complete.
+
+Implemented:
+
+- `mise.toml` pins Node.js `24.18.0` and pnpm `11.9.0`.
+- single private TypeScript package with ESM and `NodeNext`.
+- strict TypeScript config, build config, and `@/*` imports for `src/*`.
+- Vitest unit/integration tests with external systems faked in tests.
+- Biome lint/format/import organization gate excluding Markdown docs.
+- Husky pre-commit hook with lint-staged staged-file Biome fixes plus full typecheck, test, lint, format, and Drizzle check.
+- SQLite via `node:sqlite`, Drizzle schema, committed migrations, and migration consistency check.
+- TypeBox/Ajv for config and logical tool runtime schemas.
+- non-placeholder tests across naming, JSON Lines, config, DB, daemon, delivery, Slack, gateway, and Herdr adapters.
+
 ## Runtime and package management
 
 Shepherd starts as a single TypeScript package.

@@ -8,6 +8,28 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Define the source-of-truth event model and how TUI and messaging platforms stay synchronized.
 
+## Implementation status
+
+Status as of commit `f8d2766`: core event stream, TUI sync, Slack sync, delivery, queueing, and recovery MVP are implemented.
+
+Implemented:
+
+- SQLite tables and stores for sessions, session bindings, events, gateway runs, actors, delivery receipts, working contexts, Herdr bindings, logical tool calls, and session summaries.
+- ordered event stream with idempotency keys, replay cursors, and live Unix socket subscriptions.
+- TUI client/CLI surface for `send`, `watch`, `rename`, `audit`, approval request, and approval response.
+- Slack Socket Mode inbound normalization, thread/session binding, allowlists, and duplicate inbound event handling.
+- outbound Slack delivery through delivery fanout, delivery receipts, and `chat:write.customize` presentation when enabled.
+- per-session gateway turn queueing with concurrent sessions allowed.
+- daemon restart recovery that marks queued/running gateway runs as `recovery_required` and emits recovery note events.
+- side-effect idempotency for delivery receipts, event appends, summary updates, and logical tool calls.
+- approval request/response events delivered to subscribed TUI clients and platform fanout.
+
+MVP limits:
+
+- Approval responses are recorded and delivered in Shepherd, but provider/worker-agent-specific callback routing is deferred.
+- TUI reconnect behavior is supported by replay cursors, but there is no full-screen TUI application yet.
+- Herdr state events are represented through logical tool events and wait/read results; a dedicated Herdr event subscription stream is deferred.
+
 ## Source of truth
 
 Shepherd DB is the source of truth, not Slack and not Herdr.
@@ -216,8 +238,8 @@ Policy should cover:
 MVP approval behavior:
 
 - Shepherd policy performs deterministic allow/deny checks before logical tool execution.
-- Provider-native approval requests from Codex app-server or worker agents are forwarded to TUI/Slack and recorded as events.
-- Approval responses are recorded and routed back to the requesting provider/agent.
+- Provider-native approval requests can enter Shepherd through the approval event surface and are delivered to TUI/Slack when recorded.
+- Approval responses are recorded and delivered as Shepherd events. Routing those responses back into provider/agent-specific approval APIs is deferred.
 - Shepherd does not implement smart approval or adaptive risk scoring in MVP.
 
 Slack access control should be explicit. Do not let arbitrary workspaces/users create sessions unless configured.

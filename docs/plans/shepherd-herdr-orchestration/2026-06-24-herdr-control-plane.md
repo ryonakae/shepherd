@@ -8,6 +8,25 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Define how Shepherd maps its sessions and working contexts onto Herdr sessions, workspaces, tabs, panes, and agents.
 
+## Implementation status
+
+Status as of commit `f8d2766`: MVP control-plane implementation is complete, with the limits noted below.
+
+Implemented:
+
+- Herdr named-session validation and CLI lifecycle through `herdr --session <name>`.
+- reusable Herdr socket client and managed client pool.
+- workspace create/list/get/focus, tab create/list/get, pane split/list/get/read/run/send-text, agent start/list/get/read/send/focus, and wait wrappers.
+- Shepherd workspace layout creation with `agents`, `tests`, `logs`, `review`, and `scratch` tabs.
+- Herdr DB bindings for created and explicitly attached workspaces.
+- gateway logical tools for `herdr_read`, `ensure_herdr_workspace`, `attach_herdr_workspace`, `open_pane`, `run_pane_command`, `send_pane_text`, `read_pane`, `start_agent`, `send_agent_message`, `read_agent_output`, and waits.
+
+MVP limits:
+
+- Herdr event subscription is not a dedicated streaming adapter yet; MVP uses `agent.wait` and `wait.output` plus Shepherd event records.
+- `send_agent_message` uses Herdr `agent.send`, not the older draft's internal `pane.send_input` example.
+- Explicit attach is included in MVP only when the user asks for it; broad attach/discovery modes remain out of scope.
+
 ## Herdr facts used
 
 From Herdr documentation and source:
@@ -98,25 +117,10 @@ Allowed root scanning is opt-in. Shepherd must not scan the whole home directory
 Use Herdr APIs at the right level:
 
 - `agent.start` for configured worker agents.
-- `send_agent_message` as a Shepherd-level tool that resolves the agent's pane and internally uses Herdr `pane.send_input` with submit keys.
+- `send_agent_message` as a Shepherd-level tool that sends through Herdr `agent.send`.
 - `pane.split`, `pane.run`, `pane.read`, and related pane APIs for tests, servers, logs, and shells.
 - `agent.read` / `pane.read` for result summarization.
 - `events.subscribe` / waits for Herdr state changes.
-
-`send_agent_message` default behavior:
-
-```json
-{
-  "method": "pane.send_input",
-  "params": {
-    "pane_id": "w1:p2",
-    "text": "...task prompt...",
-    "keys": ["enter"]
-  }
-}
-```
-
-Agent profiles may later override `submit_keys`, but the MVP default is `['enter']`.
 
 ## Autonomy boundary
 
@@ -128,7 +132,7 @@ For non-Shepherd Herdr resources:
 
 - Do not attach unless the user explicitly asks.
 - Once attached, record the binding in Shepherd DB.
-- Do not add attach modes in MVP.
+- Do not add broad discovery/auto-attach modes in MVP.
 - The prompt must remind the gateway LLM that non-Shepherd resources are user-owned.
 
 ## DB bindings

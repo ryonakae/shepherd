@@ -8,6 +8,23 @@ Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchest
 
 Record which existing systems Shepherd should learn from, and what not to copy.
 
+## Implementation status
+
+Status as of commit `f8d2766`: reference decisions have been applied to the MVP implementation.
+
+Applied:
+
+- Hermes-inspired gateway/provider/session-summary shape, while keeping Herdr as the execution surface.
+- Pi/OpenCode-inspired provider registry, `default_agent`, and `when` agent descriptions.
+- Herdr-first terminal/workspace/agent orchestration through named sessions and socket APIs.
+- NanoClaw-style platform adapter separation and delivery router with platform identifiers mapped to Shepherd sessions.
+- NemoClaw-style conservative policy/recovery mindset, without adding sandbox lifecycle machinery to MVP.
+- AI SDK provider packages for OpenAI, Anthropic, OpenRouter, and Codex app-server.
+
+Deferred by design:
+
+- complex plugin hooks, smart approval, admin tiers, full dashboard machinery, arbitrary npm provider loading, direct Codex OAuth Responses integration, and sandbox/network policy systems.
+
 ## Hermes Agent
 
 Hermes is the primary reference for:
@@ -139,7 +156,7 @@ Use initially:
 - Anthropic provider package
 - `ai-sdk-provider-codex-cli` for Codex app-server gateway
 
-For Codex app-server tool access, follow the Hermes-style internal callback pattern: expose a curated Shepherd/Herdr tool subset to Codex while keeping the callback hidden from users and keeping Shepherd as the policy and execution owner.
+For Codex app-server tool access, expose a curated Shepherd/Herdr tool subset while keeping Shepherd as the policy and execution owner. The MVP implementation uses the AI SDK executable tool bridge; a Hermes-style internal callback can replace the transport later without changing Shepherd logical tools.
 
 Do not depend on:
 

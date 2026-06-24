@@ -8,6 +8,27 @@ Shepherd is a lightweight orchestration gateway for Herdr-managed agents.
 
 Users talk to Shepherd from a TUI or messaging platforms such as Slack. Shepherd stores the conversation and orchestration state, then controls Herdr sessions, workspaces, tabs, panes, and agents. The gateway LLM acts as a Herdr control-plane operator. It should not become a general coding agent; implementation work is delegated to agents and terminals running inside Herdr panes.
 
+## Implementation status
+
+Status as of commit `f8d2766`: core MVP is implemented and verified with `pnpm check`.
+
+Implemented:
+
+- foundation quality gate, TypeScript, Vitest, Biome, Husky, lint-staged, SQLite, Drizzle, TypeBox/Ajv
+- daemon SQLite event stream, Unix socket JSON Lines RPC, TUI replay/live subscription, send/watch/rename/audit CLI
+- Slack Socket Mode inbound, outbound delivery fanout, delivery receipts, allowlists, actor presentation/customize support
+- gateway provider registry for Codex app-server, OpenAI, Anthropic, and OpenRouter through the AI SDK adapter layer
+- provider-independent logical tool registry with policy gates, event logging, and idempotent side-effect tool records
+- Herdr named-session lifecycle, socket wrapper, resource inspection, workspace/tab/pane/agent orchestration, waits, pane text send, and explicit attach
+- session summaries, recent-context gateway turns, per-session gateway turn queueing, and conservative daemon restart recovery
+- approval request/response event recording and delivery surface
+
+Important MVP limits:
+
+- Provider-specific approval callbacks are not fully bridged back into Codex app-server or worker agents yet. Shepherd records and delivers approval request/response events; provider-specific response plumbing is deferred.
+- The Codex gateway uses the AI SDK tool bridge around Shepherd logical tools. A standalone Hermes-style `shepherd-tools` stdio helper is not a separate implemented binary in this MVP.
+- Long-running Herdr progress narration is implemented as gateway prompt guidance plus structured tool/session events. Rich daemon-generated Herdr progress subscriptions are deferred.
+
 ## First implementation step
 
 Before implementing daemon, DB, Herdr, gateway, TUI, or Slack behavior, set up the implementation foundation and quality gates.
@@ -139,7 +160,7 @@ MVP providers:
 
 Shepherd must not depend on Vercel AI Gateway or a Vercel account.
 
-For the Codex gateway, Shepherd uses a Hermes-style internal `shepherd-tools` stdio callback to expose curated Shepherd/Herdr orchestration tools to the Codex app-server runtime. This is an implementation detail, not a user-facing MCP integration surface.
+For the MVP Codex gateway, Shepherd exposes curated Shepherd/Herdr orchestration tools through the AI SDK executable tool bridge around the Codex app-server provider. A Hermes-style internal `shepherd-tools` stdio callback remains a future implementation option, not a user-facing MCP integration surface.
 
 Gateway tools are provider-independent Shepherd logical tools. Shepherd owns the tool registry, policy checks, execution, event logging, and result projection; each provider adapter only translates those tools to its own transport.
 
@@ -204,6 +225,6 @@ Policy combines:
 - working context allowed roots
 - gateway logical toolset visibility
 
-MVP approval handling is limited to deterministic policy gates plus provider-native approval forwarding. Shepherd records approval requests/responses and delivers them to TUI/Slack, but it does not make smart approval decisions.
+MVP approval handling is limited to deterministic policy gates plus provider-native approval event forwarding. Shepherd records approval requests/responses and delivers them to TUI/Slack, but it does not make smart approval decisions. Provider-specific response routing back into Codex app-server or worker-agent approval APIs is deferred.
 
 Avoid Hermes-style plugin hooks, smart approval, and complex admin tiers in the first version.
