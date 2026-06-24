@@ -23,6 +23,7 @@ describe("createGatewayRuntime", () => {
     const { events, sqlite } = openMigratedDatabase();
     const session = events.createSession({ id: "session-abcdef123456" });
     const closed: string[] = [];
+    const progressEvents: unknown[] = [];
     const startedAgents: unknown[] = [];
     const runtime = createGatewayRuntime({
       config: openConfig(),
@@ -34,7 +35,7 @@ describe("createGatewayRuntime", () => {
         return provider;
       },
       createHerdrClient(sessionName) {
-        return openFakeHerdrClient(sessionName, { closed, startedAgents });
+        return openFakeHerdrClient(sessionName, { closed, progressEvents, startedAgents });
       },
       events,
       generateText: async (options) => {
@@ -47,6 +48,9 @@ describe("createGatewayRuntime", () => {
         });
         return { text: "Started Claude in Herdr." };
       },
+      receiveHerdrProgress: async (input) => {
+        progressEvents.push(input);
+      },
       sqlite,
     });
 
@@ -56,6 +60,7 @@ describe("createGatewayRuntime", () => {
         sessionId: session.id,
       }),
     ).resolves.toEqual({ text: "Started Claude in Herdr." });
+    await waitFor(() => progressEvents.length === 1);
 
     await runtime.close();
 
@@ -67,6 +72,18 @@ describe("createGatewayRuntime", () => {
         name: "claude-impl",
         tab_id: "w1:agents",
         workspace_id: "w1",
+      },
+    ]);
+    expect(progressEvents).toEqual([
+      {
+        herdrSessionName: "shepherd-main",
+        rawEvent: {
+          data: { agent: "claude-impl", status: "idle" },
+          id: "evt-1",
+          type: "agent.status",
+        },
+        sessionId: session.id,
+        workspaceId: "w1",
       },
     ]);
     expect(closed).toEqual(["codex", "shepherd-main"]);
@@ -104,8 +121,9 @@ function openConfig(): ShepherdConfig {
 
 function openFakeHerdrClient(
   sessionName: string,
-  state: { closed: string[]; startedAgents: unknown[] },
+  state: { closed: string[]; progressEvents: unknown[]; startedAgents: unknown[] },
 ): HerdrControlClient & { close(): void } {
+  let sentProgress = false;
   return {
     close() {
       state.closed.push(sessionName);
@@ -172,12 +190,30 @@ function openFakeHerdrClient(
       return { status: "idle" };
     },
     async waitForEvent() {
-      return { type: "agent.status" };
+      if (sentProgress) {
+        return new Promise(() => undefined);
+      }
+      sentProgress = true;
+      return {
+        data: { agent: "claude-impl", status: "idle" },
+        id: "evt-1",
+        type: "agent.status",
+      };
     },
     async waitForOutput() {
       return { matched: true };
     },
   };
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > 1_000) {
+      throw new Error("Timed out while waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 function openMigratedDatabase(): {

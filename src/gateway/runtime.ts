@@ -6,6 +6,10 @@ import { WorkingContextStore } from "@/db/working-contexts.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
 import { type HerdrControlClient, HerdrOrchestrator } from "@/herdr/orchestrator.js";
+import {
+  type HerdrProgressReceiverInput,
+  HerdrProgressSubscriptionManager,
+} from "@/herdr/progress-subscriptions.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
 import {
   createGatewayProviderFromConfig,
@@ -26,6 +30,7 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
   config: ShepherdConfig;
   createHerdrClient?: (herdrSessionName: string) => GatewayRuntimeHerdrClient;
   events: EventStore;
+  receiveHerdrProgress?: (input: HerdrProgressReceiverInput) => Promise<unknown>;
   sqlite: DatabaseSync;
 };
 
@@ -43,8 +48,17 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
           herdrSessionName,
         })),
   });
+  const herdrProgressSubscriptions = options.receiveHerdrProgress
+    ? new HerdrProgressSubscriptionManager({
+        receiveProgress: options.receiveHerdrProgress,
+        sourceForSession: (herdrSessionName) => herdrClients.get(herdrSessionName),
+      })
+    : undefined;
   const herdr = new HerdrOrchestrator({
     clientForSession: (herdrSessionName) => herdrClients.get(herdrSessionName),
+    onWorkspaceBound: (binding) => {
+      herdrProgressSubscriptions?.subscribe(binding);
+    },
     sqlite: options.sqlite,
   });
   const registry = createBuiltinToolRegistry({
@@ -86,6 +100,7 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
 
   return {
     async close() {
+      herdrProgressSubscriptions?.close();
       await provider.close();
       herdrClients.closeAll();
     },

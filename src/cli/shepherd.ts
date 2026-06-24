@@ -242,14 +242,15 @@ async function main(): Promise<void> {
   const summaries = new SessionSummaryStore(sqlite);
   recoverDaemonState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
+  let server: ShepherdDaemonServer;
   const gatewayRuntime = config
     ? createGatewayRuntime({
         config,
         events,
+        receiveHerdrProgress: async (input) => server.receiveHerdrProgress(input),
         sqlite,
       })
     : undefined;
-  let server: ShepherdDaemonServer;
   const platformRuntime = config
     ? createPlatformRuntime({
         config,

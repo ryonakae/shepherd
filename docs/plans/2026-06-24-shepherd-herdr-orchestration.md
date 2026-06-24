@@ -22,13 +22,13 @@ Implemented:
 - Herdr named-session lifecycle, socket wrapper, resource inspection, workspace/tab/pane/agent orchestration, waits, pane text send, and explicit attach
 - session summaries, recent-context gateway turns, per-session gateway turn queueing, and conservative daemon restart recovery
 - approval request/response event recording and delivery surface
-- dedicated Herdr `events.wait` wrapper, progress adapter, and daemon RPC surface that records compact `herdr.progress` session events for gateway context and live delivery
+- dedicated Herdr `events.wait` wrapper, progress adapter, daemon RPC surface, and automatic workspace-bound subscription lifecycle that records compact `herdr.progress` session events for gateway context and live delivery
 
 Important MVP limits:
 
 - Provider-specific approval callbacks are not fully bridged back into Codex app-server or worker agents yet. Shepherd records and delivers approval request/response events; provider-specific response plumbing is deferred.
 - The Codex gateway uses the AI SDK tool bridge around Shepherd logical tools. A standalone Hermes-style `shepherd-tools` stdio helper is not a separate implemented binary in this MVP.
-- Long-running Herdr progress narration is implemented as gateway prompt guidance plus structured tool/session events. Herdr event waits can now be recorded and delivered as compact `herdr.progress` signals; automatic daemon-managed Herdr progress subscription lifecycle is deferred.
+- Long-running Herdr progress narration is implemented as gateway prompt guidance plus structured tool/session events. Shepherd starts daemon-managed Herdr progress subscriptions when gateway orchestration binds a workspace, then records and delivers compact `herdr.progress` signals.
 
 ## First implementation step
 

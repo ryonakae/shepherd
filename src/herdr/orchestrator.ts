@@ -87,6 +87,10 @@ export type HerdrWorkspaceBinding = {
   workspaceId: string;
 };
 
+export type HerdrWorkspaceBindingEvent = HerdrWorkspaceBinding & {
+  sessionId: string;
+};
+
 export type HerdrAgentBinding = {
   agentName: string;
   paneId: string;
@@ -104,11 +108,13 @@ export type HerdrPaneBinding = {
 
 export class HerdrOrchestrator {
   readonly #clientForSession: (herdrSessionName: string) => HerdrControlClient;
+  readonly #onWorkspaceBound: ((binding: HerdrWorkspaceBindingEvent) => void) | undefined;
   readonly #sqlite: DatabaseSync;
 
   constructor(options: {
     clientForSession?: (herdrSessionName: string) => HerdrControlClient;
     herdr?: HerdrControlClient;
+    onWorkspaceBound?: (binding: HerdrWorkspaceBindingEvent) => void;
     sqlite: DatabaseSync;
   }) {
     if (!options.clientForSession && !options.herdr) {
@@ -117,12 +123,14 @@ export class HerdrOrchestrator {
 
     this.#clientForSession =
       options.clientForSession ?? (() => options.herdr as HerdrControlClient);
+    this.#onWorkspaceBound = options.onWorkspaceBound;
     this.#sqlite = options.sqlite;
   }
 
   async ensureWorkspace(input: EnsureWorkspaceInput): Promise<HerdrWorkspaceBinding> {
     const existing = this.#getBinding(input.sessionId);
     if (existing) {
+      this.#emitWorkspaceBound(input.sessionId, existing);
       return existing;
     }
 
@@ -164,11 +172,14 @@ export class HerdrOrchestrator {
         now,
       );
 
-    return {
+    const binding = {
       herdrSessionName: input.herdrSessionName,
       tabs,
       workspaceId,
     };
+    this.#emitWorkspaceBound(input.sessionId, binding);
+
+    return binding;
   }
 
   attachWorkspace(input: AttachWorkspaceInput): HerdrWorkspaceBinding {
@@ -200,11 +211,14 @@ export class HerdrOrchestrator {
         now,
       );
 
-    return {
+    const binding = {
       herdrSessionName: input.herdrSessionName,
       tabs,
       workspaceId: input.workspaceId,
     };
+    this.#emitWorkspaceBound(input.sessionId, binding);
+
+    return binding;
   }
 
   readHerdr(input: HerdrReadInput): Promise<unknown> {
@@ -412,5 +426,9 @@ export class HerdrOrchestrator {
         : {},
       workspaceId: row.workspace_id,
     };
+  }
+
+  #emitWorkspaceBound(sessionId: string, binding: HerdrWorkspaceBinding): void {
+    this.#onWorkspaceBound?.({ ...binding, sessionId });
   }
 }

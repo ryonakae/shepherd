@@ -19,6 +19,7 @@ describe("HerdrOrchestrator", () => {
   test("creates a Shepherd workspace layout and records the Herdr binding", async () => {
     const { sqlite, store } = openMigratedDatabase();
     const session = store.createSession({ id: "session-abcdef123456" });
+    const bound: unknown[] = [];
     const calls: unknown[] = [];
     const orchestrator = new HerdrOrchestrator({
       herdr: {
@@ -31,6 +32,9 @@ describe("HerdrOrchestrator", () => {
           return { tab_id: `w1:t${calls.length}` };
         },
         ...unusedHerdrMethods(),
+      },
+      onWorkspaceBound(binding) {
+        bound.push(binding);
       },
       sqlite,
     });
@@ -58,11 +62,26 @@ describe("HerdrOrchestrator", () => {
       { cwd: "/repo", label: "shepherd-review-slack-sync-session" },
     ]);
     expect(calls).toHaveLength(6);
+    expect(bound).toEqual([
+      {
+        herdrSessionName: "shepherd-api",
+        sessionId: session.id,
+        tabs: {
+          agents: "w1:t2",
+          logs: "w1:t4",
+          review: "w1:t5",
+          scratch: "w1:t6",
+          tests: "w1:t3",
+        },
+        workspaceId: "w1",
+      },
+    ]);
   });
 
   test("returns an existing binding without creating another Herdr workspace", async () => {
     const { sqlite, store } = openMigratedDatabase();
     const session = store.createSession({ id: "session-abcdef123456" });
+    const bound: unknown[] = [];
     const orchestrator = new HerdrOrchestrator({
       herdr: {
         async createWorkspace() {
@@ -72,6 +91,9 @@ describe("HerdrOrchestrator", () => {
           throw new Error("should not create tabs twice");
         },
         ...unusedHerdrMethods(),
+      },
+      onWorkspaceBound(binding) {
+        bound.push(binding);
       },
       sqlite,
     });
@@ -102,11 +124,20 @@ describe("HerdrOrchestrator", () => {
       tabs: { agents: "w1:t1" },
       workspaceId: "w1",
     });
+    expect(bound).toEqual([
+      {
+        herdrSessionName: "shepherd-api",
+        sessionId: session.id,
+        tabs: { agents: "w1:t1" },
+        workspaceId: "w1",
+      },
+    ]);
   });
 
   test("attaches an existing Herdr workspace when explicitly requested", async () => {
     const { sqlite, store } = openMigratedDatabase();
     const session = store.createSession({ id: "session-abcdef123456" });
+    const bound: unknown[] = [];
     const orchestrator = new HerdrOrchestrator({
       herdr: {
         async createWorkspace() {
@@ -116,6 +147,9 @@ describe("HerdrOrchestrator", () => {
           throw new Error("should not create tabs while attaching");
         },
         ...unusedHerdrMethods(),
+      },
+      onWorkspaceBound(binding) {
+        bound.push(binding);
       },
       sqlite,
     });
@@ -129,6 +163,12 @@ describe("HerdrOrchestrator", () => {
       }),
     ).toEqual({
       herdrSessionName: "manual-main",
+      tabs: { agents: "w1:t1" },
+      workspaceId: "w1",
+    });
+    expect(bound).toContainEqual({
+      herdrSessionName: "manual-main",
+      sessionId: session.id,
       tabs: { agents: "w1:t1" },
       workspaceId: "w1",
     });

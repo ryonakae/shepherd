@@ -24,7 +24,7 @@ Implemented:
 
 MVP limits:
 
-- Herdr event wait/progress recording is implemented, but automatic daemon-managed subscription lifecycle is not started by default yet.
+- Herdr event wait/progress recording and automatic daemon-managed subscription lifecycle are implemented for Shepherd-bound workspaces.
 - `send_agent_message` uses Herdr `agent.send`, not the older draft's internal `pane.send_input` example.
 - Explicit attach is included in MVP only when the user asks for it; broad attach/discovery modes remain out of scope.
 
