@@ -8,6 +8,8 @@ import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { GatewayRunner } from "@/gateway/runner.js";
+import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 
 const tempDirs: string[] = [];
 const servers: ShepherdDaemonServer[] = [];
@@ -145,9 +147,70 @@ agents:
       { id: "reload-1", result: { ok: true } },
     ]);
   });
+
+  test("runs a gateway turn through RPC and broadcasts resulting events", async () => {
+    const { server, socketPath, store } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate() {
+              return { text: "I will start Herdr work now." };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "gateway-1",
+        method: "gateway.run_turn",
+        params: {
+          messages: [{ content: "please coordinate this", role: "user" }],
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    const messages = await readMessages(client, 4);
+
+    expect(messages[0]).toEqual({
+      id: "gateway-1",
+      result: { text: "I will start Herdr work now." },
+    });
+    expect(messages.slice(1).map((message) => eventType(message))).toEqual([
+      "gateway.run.started",
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+  });
 });
 
-async function openServer(options: { configPath?: string } = {}): Promise<{
+async function openServer(
+  options: {
+    configPath?: string;
+    configureGatewayRunner?: (store: EventStore) => GatewayRunner;
+  } = {},
+): Promise<{
   server: ShepherdDaemonServer;
   socketPath: string;
   store: EventStore;
@@ -160,6 +223,9 @@ async function openServer(options: { configPath?: string } = {}): Promise<{
   const store = new EventStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdDaemonServer({
+    ...(options.configureGatewayRunner
+      ? { gatewayRunner: options.configureGatewayRunner(store) }
+      : {}),
     socketPath,
     store,
     ...(options.configPath ? { configPath: options.configPath } : {}),
@@ -209,4 +275,8 @@ function readMessages(socket: Socket, count: number): Promise<unknown[]> {
     socket.on("data", onData);
     socket.once("error", reject);
   });
+}
+
+function eventType(message: unknown): string | undefined {
+  return (message as { params?: { event?: { type?: string } } }).params?.event?.type;
 }

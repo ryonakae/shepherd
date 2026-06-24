@@ -143,6 +143,14 @@ export class EventStore {
     return mapEvent(row);
   }
 
+  getLatestEventId(sessionId: string): number {
+    const row = this.#sqlite
+      .prepare("select max(id) as latest_event_id from events where session_id = ?")
+      .get(sessionId) as { latest_event_id: number | null } | undefined;
+
+    return row?.latest_event_id ?? 0;
+  }
+
   listEvents(sessionId: string, afterEventId = 0, limit = 100): EventRecord[] {
     const rows = this.#sqlite
       .prepare("select * from events where session_id = ? and id > ? order by id asc limit ?")

@@ -2,13 +2,17 @@ import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
 type ShepherdDaemonServerOptions = {
   configPath?: string;
+  gatewayRunner?: GatewayTurnRunner;
   socketPath: string;
   store: EventStore;
 };
+
+type GatewayTurnRunner = Pick<GatewayRunner, "runTurn">;
 
 type RpcRequest = {
   id?: string | number;
@@ -25,12 +29,14 @@ export class ShepherdDaemonServer {
   readonly #server: Server;
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
+  readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #store: EventStore;
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
 
   constructor(options: ShepherdDaemonServerOptions) {
     this.#configPath = options.configPath;
+    this.#gatewayRunner = options.gatewayRunner;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
     this.#server = createServer((socket) => this.#handleConnection(socket));
@@ -108,6 +114,11 @@ export class ShepherdDaemonServer {
 
     if (request.method === "config.reload") {
       this.#reloadConfig(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.run_turn") {
+      void this.#runGatewayTurn(socket, request);
       return;
     }
 
@@ -189,6 +200,47 @@ export class ShepherdDaemonServer {
     });
   }
 
+  async #runGatewayTurn(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#gatewayRunner) {
+      this.#write(socket, {
+        error: { message: "Gateway runner is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as { messages?: unknown; sessionId?: string };
+    if (!params?.sessionId || !isGatewayMessages(params.messages)) {
+      this.#write(socket, {
+        error: { message: "sessionId and messages are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const afterEventId = this.#store.getLatestEventId(params.sessionId);
+
+    try {
+      const output = await this.#gatewayRunner.runTurn({
+        messages: params.messages,
+        sessionId: params.sessionId,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: output,
+      });
+
+      for (const event of this.#store.listEvents(params.sessionId, afterEventId, 500)) {
+        this.#broadcastEvent(event);
+      }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
   #broadcastEvent(event: EventRecord): void {
     for (const socket of this.#subscriptions.get(event.sessionId) ?? []) {
       this.#writeEvent(socket, event);
@@ -212,6 +264,20 @@ export class ShepherdDaemonServer {
       subscribers.delete(socket);
     }
   }
+}
+
+function isGatewayMessages(value: unknown): value is GatewayMessage[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return value.every(
+    (message) =>
+      typeof message === "object" &&
+      message !== null &&
+      typeof (message as GatewayMessage).content === "string" &&
+      ["assistant", "system", "user"].includes((message as GatewayMessage).role),
+  );
 }
 
 function toWireEvent(event: EventRecord): EventWireRecord {
