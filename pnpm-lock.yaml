@@ -17,6 +17,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.1
