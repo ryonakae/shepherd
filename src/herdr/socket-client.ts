@@ -49,8 +49,28 @@ export class HerdrSocketClient {
     return this.request("workspace.create", params);
   }
 
+  listWorkspaces(): Promise<unknown> {
+    return this.request("workspace.list");
+  }
+
+  getWorkspace(params: { workspace_id: string }): Promise<unknown> {
+    return this.request("workspace.get", params);
+  }
+
+  focusWorkspace(params: { workspace_id: string }): Promise<unknown> {
+    return this.request("workspace.focus", params);
+  }
+
   createTab(params: { label: string; workspace_id?: string }): Promise<unknown> {
     return this.request("tab.create", params);
+  }
+
+  listTabs(params: { workspace_id?: string } = {}): Promise<unknown> {
+    return this.request("tab.list", params);
+  }
+
+  getTab(params: { tab_id: string }): Promise<unknown> {
+    return this.request("tab.get", params);
   }
 
   splitPane(params: {
@@ -63,6 +83,14 @@ export class HerdrSocketClient {
     workspace_id?: string;
   }): Promise<unknown> {
     return this.request("pane.split", params);
+  }
+
+  listPanes(params: { tab_id?: string; workspace_id?: string } = {}): Promise<unknown> {
+    return this.request("pane.list", params);
+  }
+
+  getPane(params: { pane_id: string }): Promise<unknown> {
+    return this.request("pane.get", params);
   }
 
   runPaneCommand(params: { command: string; pane_id: string }): Promise<unknown> {
@@ -83,6 +111,18 @@ export class HerdrSocketClient {
     target: string;
   }): Promise<unknown> {
     return this.request("agent.read", params);
+  }
+
+  listAgents(params: { workspace_id?: string } = {}): Promise<unknown> {
+    return this.request("agent.list", params);
+  }
+
+  getAgent(params: { target: string }): Promise<unknown> {
+    return this.request("agent.get", params);
+  }
+
+  focusAgent(params: { target: string }): Promise<unknown> {
+    return this.request("agent.focus", params);
   }
 
   startAgent(params: {

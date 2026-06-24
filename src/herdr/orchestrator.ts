@@ -49,6 +49,16 @@ export type HerdrControlClient = Pick<
   HerdrSocketClient,
   | "createTab"
   | "createWorkspace"
+  | "focusAgent"
+  | "focusWorkspace"
+  | "getAgent"
+  | "getPane"
+  | "getTab"
+  | "getWorkspace"
+  | "listAgents"
+  | "listPanes"
+  | "listTabs"
+  | "listWorkspaces"
   | "readAgent"
   | "readPane"
   | "runPaneCommand"
@@ -58,6 +68,16 @@ export type HerdrControlClient = Pick<
   | "waitForAgent"
   | "waitForOutput"
 >;
+
+export type HerdrReadInput =
+  | { herdrSessionName: string; resource: "agents"; workspaceId?: string }
+  | { herdrSessionName: string; resource: "agent"; target: string }
+  | { herdrSessionName: string; resource: "panes"; tabId?: string; workspaceId?: string }
+  | { herdrSessionName: string; paneId: string; resource: "pane" }
+  | { herdrSessionName: string; resource: "tabs"; workspaceId?: string }
+  | { herdrSessionName: string; resource: "tab"; tabId: string }
+  | { herdrSessionName: string; resource: "workspaces" }
+  | { herdrSessionName: string; resource: "workspace"; workspaceId: string };
 
 export type HerdrWorkspaceBinding = {
   herdrSessionName: string;
@@ -183,6 +203,35 @@ export class HerdrOrchestrator {
       tabs,
       workspaceId: input.workspaceId,
     };
+  }
+
+  readHerdr(input: HerdrReadInput): Promise<unknown> {
+    const herdr = this.#clientForSession(input.herdrSessionName);
+    switch (input.resource) {
+      case "agents":
+        return herdr.listAgents(
+          input.workspaceId === undefined ? {} : { workspace_id: input.workspaceId },
+        );
+      case "agent":
+        return herdr.getAgent({ target: input.target });
+      case "panes":
+        return herdr.listPanes({
+          ...(input.tabId !== undefined ? { tab_id: input.tabId } : {}),
+          ...(input.workspaceId !== undefined ? { workspace_id: input.workspaceId } : {}),
+        });
+      case "pane":
+        return herdr.getPane({ pane_id: input.paneId });
+      case "tabs":
+        return herdr.listTabs(
+          input.workspaceId === undefined ? {} : { workspace_id: input.workspaceId },
+        );
+      case "tab":
+        return herdr.getTab({ tab_id: input.tabId });
+      case "workspaces":
+        return herdr.listWorkspaces();
+      case "workspace":
+        return herdr.getWorkspace({ workspace_id: input.workspaceId });
+    }
   }
 
   async startAgent(input: StartAgentInput): Promise<HerdrAgentBinding> {

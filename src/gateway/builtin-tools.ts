@@ -42,6 +42,15 @@ type ResolveWorkingContextInput = {
   slug?: string;
 };
 
+type HerdrReadInput = {
+  paneId?: string;
+  resource: "agent" | "agents" | "pane" | "panes" | "tab" | "tabs" | "workspace" | "workspaces";
+  tabId?: string;
+  target?: string;
+  workingContextSlug: string;
+  workspaceId?: string;
+};
+
 type HerdrStartAgentInput = EnsureHerdrWorkspaceInput & {
   agentName: string;
   agentProfile: string;
@@ -146,6 +155,82 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       slug: Type.Optional(Type.String({ minLength: 1 })),
     }),
     name: "resolve_working_context",
+  });
+
+  registry.register({
+    description: "Inspect Herdr workspaces, tabs, panes, or agents through Shepherd bindings.",
+    execute: (input: HerdrReadInput) => {
+      const herdrSessionName = herdrSessionNameForWorkingContext(input.workingContextSlug);
+      switch (input.resource) {
+        case "agent":
+          if (!input.target) {
+            throw new Error("target is required for agent reads");
+          }
+          return deps.herdr.readHerdr({
+            herdrSessionName,
+            resource: "agent",
+            target: input.target,
+          });
+        case "pane":
+          if (!input.paneId) {
+            throw new Error("paneId is required for pane reads");
+          }
+          return deps.herdr.readHerdr({ herdrSessionName, paneId: input.paneId, resource: "pane" });
+        case "tab":
+          if (!input.tabId) {
+            throw new Error("tabId is required for tab reads");
+          }
+          return deps.herdr.readHerdr({ herdrSessionName, resource: "tab", tabId: input.tabId });
+        case "workspace":
+          if (!input.workspaceId) {
+            throw new Error("workspaceId is required for workspace reads");
+          }
+          return deps.herdr.readHerdr({
+            herdrSessionName,
+            resource: "workspace",
+            workspaceId: input.workspaceId,
+          });
+        case "agents":
+          return deps.herdr.readHerdr({
+            herdrSessionName,
+            resource: "agents",
+            ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+          });
+        case "panes":
+          return deps.herdr.readHerdr({
+            herdrSessionName,
+            resource: "panes",
+            ...(input.tabId !== undefined ? { tabId: input.tabId } : {}),
+            ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+          });
+        case "tabs":
+          return deps.herdr.readHerdr({
+            herdrSessionName,
+            resource: "tabs",
+            ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+          });
+        case "workspaces":
+          return deps.herdr.readHerdr({ herdrSessionName, resource: "workspaces" });
+      }
+    },
+    inputSchema: Type.Object({
+      paneId: Type.Optional(Type.String({ minLength: 1 })),
+      resource: Type.Union([
+        Type.Literal("workspaces"),
+        Type.Literal("workspace"),
+        Type.Literal("tabs"),
+        Type.Literal("tab"),
+        Type.Literal("panes"),
+        Type.Literal("pane"),
+        Type.Literal("agents"),
+        Type.Literal("agent"),
+      ]),
+      tabId: Type.Optional(Type.String({ minLength: 1 })),
+      target: Type.Optional(Type.String({ minLength: 1 })),
+      workingContextSlug: Type.String({ minLength: 1 }),
+      workspaceId: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+    name: "herdr_read",
   });
 
   registry.register({

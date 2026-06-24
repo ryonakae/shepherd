@@ -133,6 +133,45 @@ describe("builtin logical tools", () => {
     });
   });
 
+  test("herdr_read inspects Herdr resources by working context", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "herdr_read",
+        { resource: "workspaces", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual([{ workspace_id: "w1" }]);
+    await expect(
+      runner.run(
+        "herdr_read",
+        { paneId: "w1:p1", resource: "pane", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toEqual({ pane_id: "w1:p1" });
+  });
+
+  test("herdr_read requires ids for singular resources", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run("herdr_read", { resource: "pane", workingContextSlug: "shepherd" }, { sessionId }),
+    ).rejects.toThrow("paneId is required for pane reads");
+  });
+
+  test("herdr_read validates known resource names", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "herdr_read",
+        { resource: "servers", workingContextSlug: "shepherd" },
+        { sessionId },
+      ),
+    ).rejects.toThrow("Invalid input for logical tool");
+  });
+
   test("herdr_send_agent_message and herdr_read_agent delegate to Herdr", async () => {
     const { runner, sessionId } = openRunner();
 
@@ -244,6 +283,36 @@ function openRunner(options: { allowedRoots?: string[] } = {}): {
       },
       async createTab(params) {
         return { tab_id: `w1:${params.label}` };
+      },
+      async focusAgent() {
+        return { focused: true };
+      },
+      async focusWorkspace() {
+        return { focused: true };
+      },
+      async getAgent(params) {
+        return { target: params.target };
+      },
+      async getPane(params) {
+        return { pane_id: params.pane_id };
+      },
+      async getTab(params) {
+        return { tab_id: params.tab_id };
+      },
+      async getWorkspace(params) {
+        return { workspace_id: params.workspace_id };
+      },
+      async listAgents() {
+        return [{ target: "claude-impl" }];
+      },
+      async listPanes() {
+        return [{ pane_id: "w1:p1" }];
+      },
+      async listTabs() {
+        return [{ tab_id: "w1:agents" }];
+      },
+      async listWorkspaces() {
+        return [{ workspace_id: "w1" }];
       },
       async readPane() {
         return { text: "pane output" };

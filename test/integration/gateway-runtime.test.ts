@@ -116,6 +116,36 @@ function openFakeHerdrClient(
     async createWorkspace() {
       return { workspace_id: "w1" };
     },
+    async focusAgent() {
+      return { focused: true };
+    },
+    async focusWorkspace() {
+      return { focused: true };
+    },
+    async getAgent(params) {
+      return { target: params.target };
+    },
+    async getPane(params) {
+      return { pane_id: params.pane_id };
+    },
+    async getTab(params) {
+      return { tab_id: params.tab_id };
+    },
+    async getWorkspace(params) {
+      return { workspace_id: params.workspace_id };
+    },
+    async listAgents() {
+      return [{ target: "claude" }];
+    },
+    async listPanes() {
+      return [{ pane_id: "w1:p1" }];
+    },
+    async listTabs() {
+      return [{ tab_id: "w1:agents" }];
+    },
+    async listWorkspaces() {
+      return [{ workspace_id: "w1" }];
+    },
     async readPane() {
       return { text: "pane output" };
     },

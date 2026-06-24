@@ -28,12 +28,42 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).createWorkspace(params);
   }
 
+  async listWorkspaces(): Promise<unknown> {
+    return (await this.#getClient()).listWorkspaces();
+  }
+
+  async getWorkspace(params: Parameters<HerdrSocketClient["getWorkspace"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).getWorkspace(params);
+  }
+
+  async focusWorkspace(
+    params: Parameters<HerdrSocketClient["focusWorkspace"]>[0],
+  ): Promise<unknown> {
+    return (await this.#getClient()).focusWorkspace(params);
+  }
+
   async createTab(params: { label: string; workspace_id?: string }): Promise<unknown> {
     return (await this.#getClient()).createTab(params);
   }
 
+  async listTabs(params: Parameters<HerdrSocketClient["listTabs"]>[0] = {}): Promise<unknown> {
+    return (await this.#getClient()).listTabs(params);
+  }
+
+  async getTab(params: Parameters<HerdrSocketClient["getTab"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).getTab(params);
+  }
+
   async splitPane(params: Parameters<HerdrSocketClient["splitPane"]>[0]): Promise<unknown> {
     return (await this.#getClient()).splitPane(params);
+  }
+
+  async listPanes(params: Parameters<HerdrSocketClient["listPanes"]>[0] = {}): Promise<unknown> {
+    return (await this.#getClient()).listPanes(params);
+  }
+
+  async getPane(params: Parameters<HerdrSocketClient["getPane"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).getPane(params);
   }
 
   async runPaneCommand(
@@ -48,6 +78,18 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
 
   async readAgent(params: Parameters<HerdrSocketClient["readAgent"]>[0]): Promise<unknown> {
     return (await this.#getClient()).readAgent(params);
+  }
+
+  async listAgents(params: Parameters<HerdrSocketClient["listAgents"]>[0] = {}): Promise<unknown> {
+    return (await this.#getClient()).listAgents(params);
+  }
+
+  async getAgent(params: Parameters<HerdrSocketClient["getAgent"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).getAgent(params);
+  }
+
+  async focusAgent(params: Parameters<HerdrSocketClient["focusAgent"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).focusAgent(params);
   }
 
   async sendAgentMessage(

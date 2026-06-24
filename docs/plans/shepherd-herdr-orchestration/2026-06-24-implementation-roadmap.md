@@ -202,6 +202,7 @@ Implemented so far:
 - threshold-based `session_summary` updates and summary-aware gateway context
 - Herdr named-session CLI lifecycle wrapper before socket requests
 - plan-name Herdr logical tools for pane run/read/open and wait operations
+- Herdr resource list/get/focus socket wrapper and `herdr_read` inspection tool
 - allowed-root working context discovery and resolution tools
 - persisted logical tool idempotency records with completed-result reuse
 - session title rename flow through daemon RPC and CLI

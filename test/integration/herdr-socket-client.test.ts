@@ -106,6 +106,38 @@ describe("HerdrSocketClient", () => {
       "wait.output",
     ]);
   });
+
+  test("uses list/get/focus socket methods for Herdr inspection", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    await client.listWorkspaces();
+    await client.getWorkspace({ workspace_id: "w1" });
+    await client.focusWorkspace({ workspace_id: "w1" });
+    await client.listTabs({ workspace_id: "w1" });
+    await client.getTab({ tab_id: "w1:t1" });
+    await client.listPanes({ tab_id: "w1:t1" });
+    await client.getPane({ pane_id: "w1:p1" });
+    await client.listAgents({ workspace_id: "w1" });
+    await client.getAgent({ target: "claude-impl" });
+    await client.focusAgent({ target: "claude-impl" });
+    client.close();
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "workspace.list",
+      "workspace.get",
+      "workspace.focus",
+      "tab.list",
+      "tab.get",
+      "pane.list",
+      "pane.get",
+      "agent.list",
+      "agent.get",
+      "agent.focus",
+    ]);
+  });
 });
 
 async function openFakeHerdrServer(

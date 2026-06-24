@@ -264,6 +264,49 @@ describe("HerdrOrchestrator", () => {
 
     expect(selectedSessions).toEqual(["shepherd-api", "shepherd-api"]);
   });
+
+  test("reads Herdr resources through the selected named session client", async () => {
+    const { sqlite } = openMigratedDatabase();
+    const calls: unknown[] = [];
+    const orchestrator = new HerdrOrchestrator({
+      clientForSession(sessionName) {
+        return {
+          async createWorkspace() {
+            throw new Error("not used");
+          },
+          async createTab() {
+            throw new Error("not used");
+          },
+          ...unusedHerdrMethods(),
+          async listWorkspaces() {
+            calls.push([sessionName, "workspace.list"]);
+            return [{ workspace_id: "w1" }];
+          },
+          async getPane(params) {
+            calls.push([sessionName, "pane.get", params]);
+            return { pane_id: params.pane_id };
+          },
+        };
+      },
+      sqlite,
+    });
+
+    await expect(
+      orchestrator.readHerdr({ herdrSessionName: "shepherd-api", resource: "workspaces" }),
+    ).resolves.toEqual([{ workspace_id: "w1" }]);
+    await expect(
+      orchestrator.readHerdr({
+        herdrSessionName: "shepherd-api",
+        paneId: "w1:p1",
+        resource: "pane",
+      }),
+    ).resolves.toEqual({ pane_id: "w1:p1" });
+
+    expect(calls).toEqual([
+      ["shepherd-api", "workspace.list"],
+      ["shepherd-api", "pane.get", { pane_id: "w1:p1" }],
+    ]);
+  });
 });
 
 function openMigratedDatabase(): {
@@ -280,6 +323,36 @@ function openMigratedDatabase(): {
 
 function unusedHerdrMethods(): Omit<HerdrControlClient, "createTab" | "createWorkspace"> {
   return {
+    async focusAgent() {
+      throw new Error("not used");
+    },
+    async focusWorkspace() {
+      throw new Error("not used");
+    },
+    async getAgent() {
+      throw new Error("not used");
+    },
+    async getPane() {
+      throw new Error("not used");
+    },
+    async getTab() {
+      throw new Error("not used");
+    },
+    async getWorkspace() {
+      throw new Error("not used");
+    },
+    async listAgents() {
+      throw new Error("not used");
+    },
+    async listPanes() {
+      throw new Error("not used");
+    },
+    async listTabs() {
+      throw new Error("not used");
+    },
+    async listWorkspaces() {
+      throw new Error("not used");
+    },
     async readAgent() {
       throw new Error("not used");
     },
