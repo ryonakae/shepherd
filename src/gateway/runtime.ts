@@ -13,6 +13,7 @@ import {
 import { GatewayRunner } from "./runner.js";
 import { buildGatewaySystemPrompt } from "./system-prompt.js";
 import { LogicalToolRunner } from "./tools.js";
+import { GatewayRunStore, GatewayTurnQueue } from "./turn-queue.js";
 
 export type GatewayRuntimeHerdrClient = HerdrControlClient & {
   close(): void;
@@ -27,7 +28,7 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
 
 export type GatewayRuntime = {
   close(): Promise<void>;
-  runner: GatewayRunner;
+  runner: GatewayTurnQueue;
 };
 
 export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRuntime {
@@ -64,15 +65,20 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     }),
   });
 
+  const runner = new GatewayRunner({
+    events: options.events,
+    provider,
+    tools,
+  });
+
   return {
     async close() {
       await provider.close();
       herdrClients.closeAll();
     },
-    runner: new GatewayRunner({
-      events: options.events,
-      provider,
-      tools,
+    runner: new GatewayTurnQueue({
+      runStore: new GatewayRunStore(options.sqlite),
+      runner,
     }),
   };
 }
