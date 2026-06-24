@@ -68,6 +68,7 @@ This file is the parent plan. Detailed decisions live in child plans:
 - [Herdr control-plane mapping](shepherd-herdr-orchestration/2026-06-24-herdr-control-plane.md)
 - [Gateway providers, Herdr agents, and context](shepherd-herdr-orchestration/2026-06-24-gateway-providers-agents-context.md)
 - [Session event stream and messaging sync](shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md)
+- [Slack access scope](shepherd-herdr-orchestration/2026-06-24-slack-access-scope.md)
 - [Architecture references](shepherd-herdr-orchestration/2026-06-24-architecture-references.md)
 - [Implementation foundation and quality gates](shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md)
 - [MVP implementation roadmap](shepherd-herdr-orchestration/2026-06-24-implementation-roadmap.md)
