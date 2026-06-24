@@ -1,1 +1,73 @@
-# shepherd
+# Shepherd
+
+Shepherd orchestrates Herdr-managed coding agents from a shared TUI and messaging event stream.
+
+## Features
+
+- **Herdr-first orchestration:** Shepherd stores session state, then controls Herdr sessions, workspaces, tabs, panes, and agents.
+- **Shared session stream:** TUI and Slack are planned to read and write the same Shepherd session event log.
+- **Typed foundation:** The MVP starts with TypeScript, Vitest, Biome, SQLite migrations, Drizzle schema generation, and TypeBox/Ajv runtime schemas.
+
+## Getting Started
+
+```bash
+mise trust
+mise install
+pnpm install
+pnpm check
+```
+
+## Requirements
+
+- Node.js 24.18.0 or newer
+- pnpm 11.9.0 or newer
+- `mise` for local tool version management
+
+## Usage
+
+Run the test suite:
+
+```bash
+pnpm test
+```
+
+Apply committed SQLite migrations to a local database:
+
+```bash
+SHEPHERD_DB_PATH=/tmp/shepherd.sqlite pnpm db:migrate
+```
+
+Build TypeScript into `dist`:
+
+```bash
+pnpm build
+```
+
+## Common Commands
+
+- `pnpm typecheck`: run strict TypeScript checks without emitting files.
+- `pnpm test`: run Vitest unit and integration tests.
+- `pnpm lint`: run Biome linting and import organization checks.
+- `pnpm format:check`: check Biome formatting.
+- `pnpm db:generate`: generate Drizzle SQL migrations from `src/db/schema.ts`.
+- `pnpm db:check`: verify generated Drizzle migrations are consistent.
+- `pnpm check`: run the full local quality gate.
+
+## Project Layout
+
+- `src/config`: TypeBox/Ajv runtime configuration contracts.
+- `src/daemon`: local daemon utilities, including JSON Lines framing.
+- `src/db`: SQLite connection, migration application, and Drizzle schema.
+- `test/unit`: pure logic and contract tests.
+- `test/integration`: SQLite and cross-module integration tests.
+- `docs/plans`: product and implementation plans for the Shepherd MVP.
+
+## Notes
+
+TypeScript source supports `@/*` imports for files under `src`. The build uses `tsc-alias` so emitted JavaScript can run from `dist`.
+
+`pnpm-workspace.yaml` is present only for pnpm 11 build-script approvals. Shepherd is still a single-package project for the MVP.
+
+## License
+
+[MIT](LICENSE)

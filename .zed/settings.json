@@ -1,0 +1,19 @@
+{
+  "languages": {
+    "JavaScript": {
+      "prettier": {
+        "allowed": false
+      }
+    },
+    "JSON": {
+      "prettier": {
+        "allowed": false
+      }
+    },
+    "TypeScript": {
+      "prettier": {
+        "allowed": false
+      }
+    }
+  }
+}

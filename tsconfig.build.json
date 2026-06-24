@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "sourceMap": true
+  },
+  "exclude": ["dist", "node_modules", "test/**/*.ts", "vitest.config.ts"]
+}

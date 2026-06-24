@@ -1,0 +1,8 @@
+export PATH="$(mise where node)/bin:$(mise where pnpm)/bin:$PATH"
+
+pnpm lint-staged
+pnpm typecheck
+pnpm test
+pnpm lint
+pnpm format:check
+pnpm db:check
