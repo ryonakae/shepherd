@@ -1,15 +1,33 @@
 import { createConnection, type Socket } from "node:net";
 import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
-import type { EventRecord } from "@/db/event-store.js";
+import type { EventRecord, SessionMetadata } from "@/db/event-store.js";
 
 export type WireEventRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
+};
+
+export type WireSessionRecord = {
+  createdAt: string;
+  id: string;
+  metadata: SessionMetadata;
+  status: "active" | "archived";
+  title: string | null;
+  updatedAt: string;
+  workingContextId: string | null;
 };
 
 export type SubscribeInput = {
   afterEventId?: number;
   onEvent(event: WireEventRecord): void;
   sessionId: string;
+};
+
+export type CreateSessionInput = {
+  slackAutoBind?: {
+    channelId: string;
+  };
+  title?: string | null;
+  workingContextId?: string;
 };
 
 export type SendUserMessageInput = {
@@ -105,29 +123,19 @@ export class ShepherdSessionClient {
     });
   }
 
+  async createSession(input: CreateSessionInput = {}): Promise<{ session: WireSessionRecord }> {
+    return (await this.#request("session.create", input)) as { session: WireSessionRecord };
+  }
+
   async sendUserMessage(input: SendUserMessageInput): Promise<{ event: WireEventRecord }> {
     return (await this.#request("session.user_message", input)) as { event: WireEventRecord };
   }
 
   async renameSession(input: RenameSessionInput): Promise<{
-    session: {
-      createdAt: string;
-      id: string;
-      status: "active" | "archived";
-      title: string | null;
-      updatedAt: string;
-      workingContextId: string | null;
-    };
+    session: WireSessionRecord;
   }> {
     return (await this.#request("session.rename", input)) as {
-      session: {
-        createdAt: string;
-        id: string;
-        status: "active" | "archived";
-        title: string | null;
-        updatedAt: string;
-        workingContextId: string | null;
-      };
+      session: WireSessionRecord;
     };
   }
 

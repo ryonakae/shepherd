@@ -306,6 +306,11 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    if (request.method === "session.create") {
+      this.#createSession(socket, request);
+      return;
+    }
+
     if (request.method === "session.append_event") {
       void this.#appendEvent(socket, request);
       return;
@@ -382,6 +387,38 @@ export class ShepherdDaemonServer {
     for (const event of replay) {
       this.#writeEvent(socket, event);
     }
+  }
+
+  #createSession(socket: Socket, request: RpcRequest): void {
+    const params = request.params as {
+      slackAutoBind?: { channelId?: unknown };
+      title?: unknown;
+      workingContextId?: unknown;
+    };
+    const channelId = params?.slackAutoBind?.channelId;
+
+    if (params?.slackAutoBind !== undefined && typeof channelId !== "string") {
+      this.#write(socket, {
+        error: { message: "slackAutoBind.channelId must be a string" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const session = this.#store.createSession({
+      ...(typeof params?.title === "string" ? { title: params.title } : {}),
+      ...(typeof params?.workingContextId === "string"
+        ? { workingContextId: params.workingContextId }
+        : {}),
+      ...(typeof channelId === "string"
+        ? { metadata: { slackAutoBind: { channelId, status: "pending" } } }
+        : {}),
+    });
+
+    this.#write(socket, {
+      id: request.id,
+      result: { session: toWireSession(session) },
+    });
   }
 
   async #appendEvent(socket: Socket, request: RpcRequest): Promise<void> {

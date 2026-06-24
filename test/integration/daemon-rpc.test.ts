@@ -28,6 +28,45 @@ afterEach(async () => {
 });
 
 describe("ShepherdDaemonServer JSON Lines RPC", () => {
+  test("creates sessions with optional Slack auto-bind metadata", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "create-1",
+        method: "session.create",
+        params: {
+          slackAutoBind: { channelId: "C123" },
+          title: "TUI session",
+        },
+      }),
+    );
+
+    const [response] = await readMessages(client, 1);
+
+    expect(response).toMatchObject({
+      id: "create-1",
+      result: {
+        session: {
+          metadata: {
+            slackAutoBind: {
+              channelId: "C123",
+              status: "pending",
+            },
+          },
+          title: "TUI session",
+        },
+      },
+    });
+    const sessionId = (response as { result: { session: { id: string } } }).result.session.id;
+    expect(store.getSession(sessionId)).toMatchObject({
+      metadata: { slackAutoBind: { channelId: "C123", status: "pending" } },
+      title: "TUI session",
+    });
+  });
+
   test("replays subscribed session events after a cursor", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);

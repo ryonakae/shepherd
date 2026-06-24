@@ -23,6 +23,32 @@ afterEach(async () => {
 });
 
 describe("ShepherdSessionClient", () => {
+  test("creates sessions through the daemon socket", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const client = await ShepherdSessionClient.connect(socketPath);
+    clients.push(client);
+
+    const result = await client.createSession({
+      slackAutoBind: { channelId: "C123" },
+      title: "TUI session",
+    });
+
+    expect(result.session).toMatchObject({
+      metadata: {
+        slackAutoBind: {
+          channelId: "C123",
+          status: "pending",
+        },
+      },
+      title: "TUI session",
+    });
+    expect(store.getSession(result.session.id)).toMatchObject({
+      metadata: { slackAutoBind: { channelId: "C123", status: "pending" } },
+    });
+  });
+
   test("subscribes to replayed and live session events", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);

@@ -15,14 +15,14 @@ Implemented today:
 - `shepherd daemon` starts the local daemon.
 - `shepherd send --session <id> --text <text>` appends a TUI-originated message.
 - `shepherd watch --session <id>` subscribes to a known session.
-- `src/tui/client.ts` has a typed daemon socket client for send, subscribe, rename, approval, and logical tools.
+- `src/tui/client.ts` has a typed daemon socket client for creating sessions, send, subscribe, rename, approval, and logical tools.
 
 Missing today:
 
 - Full-screen TUI command.
 - Default `shepherd` command behavior.
 - Daemon autostart.
-- Session creation/listing over daemon RPC.
+- Session listing over daemon RPC.
 - Local cwd to working-context creation from TUI startup.
 - Resume/continue flows in the TUI.
 
