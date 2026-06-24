@@ -10,7 +10,7 @@ Define the source-of-truth event model and how TUI and messaging platforms stay 
 
 ## Implementation status
 
-Status as of commit `f8d2766`: core event stream, TUI sync, Slack sync, delivery, queueing, and recovery MVP are implemented.
+Status as of 2026-06-24 latest `main`: core event stream, TUI sync, Slack sync, delivery, queueing, and recovery MVP are implemented.
 
 Implemented:
 

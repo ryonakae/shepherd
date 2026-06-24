@@ -10,7 +10,7 @@ Record which existing systems Shepherd should learn from, and what not to copy.
 
 ## Implementation status
 
-Status as of commit `f8d2766`: reference decisions have been applied to the MVP implementation.
+Status as of 2026-06-24 latest `main`: reference decisions have been applied to the MVP implementation.
 
 Applied:
 

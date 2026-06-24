@@ -10,7 +10,7 @@ Define how Shepherd configures the gateway LLM, Herdr worker agents, and convers
 
 ## Implementation status
 
-Status as of commit `f8d2766`: core gateway/provider/context MVP is implemented, with provider-specific bridges deferred where noted.
+Status as of 2026-06-24 latest `main`: core gateway/provider/context MVP is implemented, with provider-specific bridges deferred where noted.
 
 Implemented:
 

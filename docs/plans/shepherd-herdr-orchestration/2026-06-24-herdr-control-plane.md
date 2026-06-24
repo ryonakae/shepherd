@@ -10,7 +10,7 @@ Define how Shepherd maps its sessions and working contexts onto Herdr sessions, 
 
 ## Implementation status
 
-Status as of commit `f8d2766`: MVP control-plane implementation is complete, with the limits noted below.
+Status as of 2026-06-24 latest `main`: MVP control-plane implementation is complete, with the limits noted below.
 
 Implemented:
 

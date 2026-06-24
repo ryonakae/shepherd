@@ -10,7 +10,7 @@ Define the implementation foundation, test strategy, linting, formatting, and pr
 
 ## Implementation status
 
-Status as of commit `f8d2766`: complete.
+Status as of 2026-06-24 latest `main`: complete.
 
 Implemented:
 

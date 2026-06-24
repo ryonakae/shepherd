@@ -10,7 +10,7 @@ Users talk to Shepherd from a TUI or messaging platforms such as Slack. Shepherd
 
 ## Implementation status
 
-Status as of commit `f8d2766`: core MVP is implemented and verified with `pnpm check`.
+Status as of 2026-06-24 latest `main`: core MVP is implemented and verified with `pnpm check` and `pnpm build`.
 
 Implemented:
 

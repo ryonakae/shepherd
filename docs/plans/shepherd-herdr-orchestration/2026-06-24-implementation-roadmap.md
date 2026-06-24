@@ -10,7 +10,7 @@ Break the Shepherd MVP into implementation phases while preserving the design de
 
 ## Overall implementation status
 
-Status as of commit `f8d2766`: core MVP implementation is complete and verified with `pnpm check`.
+Status as of 2026-06-24 latest `main`: core MVP implementation is complete and verified with `pnpm check` and `pnpm build`.
 
 The implementation covers foundation, DB/event stream, daemon socket RPC, TUI-style CLI attach, Slack MVP, gateway providers, message/session/channel provider overrides, Herdr orchestration, daemon logical tool RPC, `shepherd-tools` stdio helper, session summaries, restart recovery, idempotency, audit, explicit Herdr attach, and approval event recording.
 
@@ -19,6 +19,12 @@ Known MVP limits are tracked in the child plans and Deferred section:
 - Provider-specific approval response routing back into Codex app-server or worker-agent approval APIs is deferred.
 - A standalone Hermes-style `shepherd-tools` stdio callback binary is implemented over daemon `tool.list`/`tool.run`; the Codex gateway still uses the AI SDK tool bridge by default.
 - Herdr event wait/progress recording, delivery, and automatic daemon-managed subscription lifecycle are implemented for Shepherd-bound workspaces.
+
+Completion audit:
+
+- Non-deferred MVP phases 0 through 6 are complete.
+- The Deferred section is intentionally outside the MVP implementation boundary.
+- Current verification commands are `pnpm check` and `pnpm build`.
 
 ## Phase 0: Implementation foundation
 
