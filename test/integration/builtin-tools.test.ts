@@ -5,8 +5,10 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { WorkingContextStore } from "@/db/working-contexts.js";
 import { createBuiltinToolRegistry } from "@/gateway/builtin-tools.js";
 import { LogicalToolRunner } from "@/gateway/tools.js";
+import { WorkingContextResolver } from "@/gateway/working-contexts.js";
 import { HerdrOrchestrator } from "@/herdr/orchestrator.js";
 
 const tempDirs: string[] = [];
@@ -47,6 +49,30 @@ describe("builtin logical tools", () => {
     ).resolves.toMatchObject({
       herdrSessionName: "shepherd-shepherd",
       workspaceId: "w1",
+    });
+  });
+
+  test("working context tools discover and resolve allowed project roots", async () => {
+    const { runner, sessionId } = openRunner({ allowedRoots: ["/repo"] });
+
+    await expect(
+      runner.run("workspace_discovery", { scanAllowedRoots: false }, { sessionId }),
+    ).resolves.toMatchObject({
+      allowedRoots: ["/repo"],
+      candidates: [],
+      recent: [],
+    });
+    await expect(
+      runner.run(
+        "resolve_working_context",
+        { label: "Shepherd", path: "/repo/shepherd" },
+        { sessionId },
+      ),
+    ).resolves.toMatchObject({
+      herdrSessionName: "shepherd-shepherd",
+      label: "Shepherd",
+      path: "/repo/shepherd",
+      slug: "shepherd",
     });
   });
 
@@ -163,7 +189,7 @@ describe("builtin logical tools", () => {
   });
 });
 
-function openRunner(): {
+function openRunner(options: { allowedRoots?: string[] } = {}): {
   events: EventStore;
   runner: LogicalToolRunner;
   sessionId: string;
@@ -216,6 +242,10 @@ function openRunner(): {
     },
     events,
     herdr,
+    workingContexts: new WorkingContextResolver({
+      allowedRoots: options.allowedRoots ?? [],
+      store: new WorkingContextStore(sqlite),
+    }),
   });
   const runner = new LogicalToolRunner({
     events,

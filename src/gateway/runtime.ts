@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { WorkingContextStore } from "@/db/working-contexts.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
 import { type HerdrControlClient, HerdrOrchestrator } from "@/herdr/orchestrator.js";
@@ -15,6 +16,7 @@ import { GatewaySummaryUpdater } from "./summary.js";
 import { buildGatewaySystemPrompt } from "./system-prompt.js";
 import { LogicalToolRunner } from "./tools.js";
 import { GatewayRunStore, GatewayTurnQueue } from "./turn-queue.js";
+import { WorkingContextResolver } from "./working-contexts.js";
 
 export type GatewayRuntimeHerdrClient = HerdrControlClient & {
   close(): void;
@@ -49,6 +51,10 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     agents: options.config.agents,
     events: options.events,
     herdr,
+    workingContexts: new WorkingContextResolver({
+      allowedRoots: options.config.context?.allowed_roots ?? [],
+      store: new WorkingContextStore(options.sqlite),
+    }),
   });
   const tools = new LogicalToolRunner({
     events: options.events,

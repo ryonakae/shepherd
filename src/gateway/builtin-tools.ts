@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
+import type { WorkingContextResolver } from "@/gateway/working-contexts.js";
 import { herdrSessionNameForWorkingContext } from "@/herdr/naming.js";
 import type { HerdrOrchestrator } from "@/herdr/orchestrator.js";
 import { LogicalToolRegistry } from "./tools.js";
@@ -9,6 +10,7 @@ export type BuiltinToolDependencies = {
   agents?: ShepherdConfig["agents"];
   events: EventStore;
   herdr: HerdrOrchestrator;
+  workingContexts?: WorkingContextResolver;
 };
 
 type SessionReadInput = {
@@ -21,6 +23,16 @@ type EnsureHerdrWorkspaceInput = {
   taskSlug: string;
   workingContextSlug: string;
   workingDirectory: string;
+};
+
+type WorkspaceDiscoveryInput = {
+  scanAllowedRoots?: boolean;
+};
+
+type ResolveWorkingContextInput = {
+  label?: string;
+  path?: string;
+  slug?: string;
 };
 
 type HerdrStartAgentInput = EnsureHerdrWorkspaceInput & {
@@ -95,6 +107,38 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
     }),
     name: "session_read",
+  });
+
+  registry.register({
+    description: "Discover recent and optionally allowed-root working context candidates.",
+    execute: (input: WorkspaceDiscoveryInput) => {
+      if (!deps.workingContexts) {
+        throw new Error("Working context resolver is not configured");
+      }
+
+      return deps.workingContexts.discover(input);
+    },
+    inputSchema: Type.Object({
+      scanAllowedRoots: Type.Optional(Type.Boolean()),
+    }),
+    name: "workspace_discovery",
+  });
+
+  registry.register({
+    description: "Resolve or create a working context from a known slug or allowed path.",
+    execute: (input: ResolveWorkingContextInput) => {
+      if (!deps.workingContexts) {
+        throw new Error("Working context resolver is not configured");
+      }
+
+      return deps.workingContexts.resolve(input);
+    },
+    inputSchema: Type.Object({
+      label: Type.Optional(Type.String({ minLength: 1 })),
+      path: Type.Optional(Type.String({ minLength: 1 })),
+      slug: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+    name: "resolve_working_context",
   });
 
   registry.register({

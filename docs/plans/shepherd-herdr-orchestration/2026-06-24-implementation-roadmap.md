@@ -202,6 +202,7 @@ Implemented so far:
 - threshold-based `session_summary` updates and summary-aware gateway context
 - Herdr named-session CLI lifecycle wrapper before socket requests
 - plan-name Herdr logical tools for pane run/read/open and wait operations
+- allowed-root working context discovery and resolution tools
 
 Slack behavior:
 
