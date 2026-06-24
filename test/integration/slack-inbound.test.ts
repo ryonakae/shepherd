@@ -152,34 +152,147 @@ describe("SlackInboundHandler", () => {
     expect(stores.events.listEvents(first?.session.id ?? "")).toHaveLength(1);
   });
 
-  test("ignores messages outside configured allowlists", async () => {
+  test("applies team, channel, and user allowlists as an AND policy", async () => {
     const { stores } = openSlackInboundHarness();
+    const debugLogs: unknown[] = [];
     const handler = new SlackInboundHandler(stores, {
+      logger: {
+        debug(message, metadata) {
+          debugLogs.push({ message, metadata });
+        },
+      },
       policy: {
-        allowedChannels: ["C999"],
+        allowedChannels: ["C123"],
         allowedTeams: ["T123"],
         allowedUsers: ["U123"],
       },
     });
 
-    await expect(
-      handler.handleMessageEvent({
+    const allowed = await handler.handleMessageEvent({
+      channel: "C123",
+      team: "T123",
+      text: "allowed",
+      ts: "1700000001.000001",
+      type: "message",
+      user: "U123",
+    });
+    const wrongTeam = await handler.handleMessageEvent({
+      channel: "C123",
+      team: "T999",
+      text: "blocked by team",
+      ts: "1700000002.000001",
+      type: "message",
+      user: "U123",
+    });
+    const wrongChannel = await handler.handleMessageEvent({
+      channel: "C999",
+      team: "T123",
+      text: "blocked by channel",
+      ts: "1700000003.000001",
+      type: "message",
+      user: "U123",
+    });
+    const wrongUser = await handler.handleMessageEvent({
+      channel: "C123",
+      team: "T123",
+      text: "blocked by user",
+      ts: "1700000004.000001",
+      type: "message",
+      user: "U999",
+    });
+
+    expect(allowed?.event.type).toBe("user.message");
+    expect(wrongTeam).toBeUndefined();
+    expect(wrongChannel).toBeUndefined();
+    expect(wrongUser).toBeUndefined();
+    expect(stores.sqlite.prepare("select count(*) as count from sessions").get()).toEqual({
+      count: 1,
+    });
+    expect(stores.sqlite.prepare("select count(*) as count from events").get()).toEqual({
+      count: 1,
+    });
+    expect(debugLogs).toEqual([
+      {
+        message: "slack policy denied: team",
+        metadata: { channelId: "C123", teamId: "T999", userId: "U123" },
+      },
+      {
+        message: "slack policy denied: channel",
+        metadata: { channelId: "C999", teamId: "T123", userId: "U123" },
+      },
+      {
+        message: "slack policy denied: user",
+        metadata: { channelId: "C123", teamId: "T123", userId: "U999" },
+      },
+    ]);
+  });
+
+  test("treats unset allowlists as unrestricted for that axis", async () => {
+    const { handler } = openSlackInboundHarness({
+      policy: {
+        allowedChannels: ["C123"],
+      },
+    });
+
+    const result = await handler.handleMessageEvent({
+      channel: "C123",
+      team: "T999",
+      text: "allowed without team or user allowlists",
+      ts: "1700000001.000001",
+      type: "message",
+      user: "U999",
+    });
+
+    expect(result?.event.type).toBe("user.message");
+  });
+
+  test("does not store bot, edit, or delete message events", async () => {
+    const { handler, stores } = openSlackInboundHarness();
+
+    for (const event of [
+      {
+        bot_id: "B123",
         channel: "C123",
-        team: "T123",
-        text: "blocked",
+        text: "bot",
         ts: "1700000001.000001",
         type: "message",
+      },
+      {
+        channel: "C123",
+        subtype: "message_changed",
+        text: "edited",
+        ts: "1700000002.000001",
+        type: "message",
         user: "U123",
-      }),
-    ).resolves.toBeUndefined();
+      },
+      {
+        channel: "C123",
+        subtype: "message_deleted",
+        ts: "1700000003.000001",
+        type: "message",
+        user: "U123",
+      },
+    ]) {
+      await expect(handler.handleMessageEvent(event)).resolves.toBeUndefined();
+    }
+
+    expect(stores.sqlite.prepare("select count(*) as count from sessions").get()).toEqual({
+      count: 0,
+    });
+    expect(stores.sqlite.prepare("select count(*) as count from events").get()).toEqual({
+      count: 0,
+    });
   });
 });
 
-function openSlackInboundHarness(): {
+function openSlackInboundHarness(
+  options: ConstructorParameters<typeof SlackInboundHandler>[1] = {},
+): {
   handler: SlackInboundHandler;
   stores: {
     bindings: SessionBindingStore;
     events: EventStore;
+    sqlite: ReturnType<typeof openSqlite>["sqlite"];
   };
 } {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-slack-inbound-"));
@@ -191,10 +304,11 @@ function openSlackInboundHarness(): {
   const stores = {
     bindings: new SessionBindingStore(sqlite),
     events: new EventStore(sqlite),
+    sqlite,
   };
 
   return {
-    handler: new SlackInboundHandler(stores),
+    handler: new SlackInboundHandler(stores, options),
     stores,
   };
 }

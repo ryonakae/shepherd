@@ -6,7 +6,7 @@ import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionDeliveryFanout } from "@/delivery/fanout.js";
 import { DeliveryReceiptStore, DeliveryRouter } from "@/delivery/router.js";
 import { SlackDeliveryAdapter, type SlackPostMessageClient } from "./slack/delivery.js";
-import { SlackInboundHandler } from "./slack/inbound.js";
+import { SlackInboundHandler, type SlackPolicyLogMetadata } from "./slack/inbound.js";
 import {
   createSlackBoltApp,
   type SlackBoltLikeApp,
@@ -19,12 +19,18 @@ export type PlatformRuntime = {
   start(): Promise<void>;
 };
 
+export type PlatformLogger = {
+  debug?: (message: string, metadata?: Record<string, unknown>) => void;
+  warn?: (message: string, metadata?: Record<string, unknown>) => void;
+};
+
 export type PlatformRuntimeOptions = {
   config: ShepherdConfig;
   createSlackApp?: (tokens: { appToken: string; botToken: string }) => SlackBoltLikeApp;
   createSlackWebClient?: (botToken: string) => SlackPostMessageClient;
   environment?: NodeJS.ProcessEnv;
   events: EventStore;
+  logger?: PlatformLogger;
   receiveUserMessage(input: {
     actorId: string;
     idempotencyKey: string;
@@ -54,6 +60,13 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
   const receipts = new DeliveryReceiptStore(options.sqlite);
   const parts: RuntimePart[] = [];
   const adapters: Record<string, SlackDeliveryAdapter> = {};
+  const logger = options.logger ?? consolePlatformLogger;
+
+  if (!slack.allowed_users) {
+    logger.warn?.("slack policy warning: allowed_users is not configured", {
+      reason: "slack_allowed_users_missing",
+    });
+  }
 
   const botToken = requireEnv(options.environment ?? process.env, slack.bot_token_env);
   const appToken = requireEnv(options.environment ?? process.env, slack.app_token_env);
@@ -71,6 +84,11 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
       async appendUserMessage(input) {
         const result = await options.receiveUserMessage(input);
         return result.event;
+      },
+      logger: {
+        debug(message: string, metadata: SlackPolicyLogMetadata) {
+          logger.debug?.(message, metadata);
+        },
       },
       policy: {
         ...(slack.allowed_channels ? { allowedChannels: slack.allowed_channels } : {}),
@@ -105,6 +123,15 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
     },
   };
 }
+
+const consolePlatformLogger: PlatformLogger = {
+  debug(message, metadata) {
+    console.debug(message, metadata ?? {});
+  },
+  warn(message, metadata) {
+    console.warn(message, metadata ?? {});
+  },
+};
 
 function noOpRuntime(): PlatformRuntime {
   return {

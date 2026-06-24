@@ -15,6 +15,16 @@ export type SlackInboundPolicy = {
   allowedUsers?: readonly string[];
 };
 
+export type SlackInboundLogger = {
+  debug?: (message: string, metadata: SlackPolicyLogMetadata) => void;
+};
+
+export type SlackPolicyLogMetadata = {
+  channelId: string;
+  teamId: string;
+  userId: string;
+};
+
 export type NormalizedSlackMessage = {
   actor: {
     displayName: string;
@@ -57,11 +67,13 @@ export class SlackInboundHandler {
   readonly #appendUserMessage: SlackUserMessageAppender;
   readonly #bindings: SessionBindingStore;
   readonly #events: EventStore;
+  readonly #logger: SlackInboundLogger | undefined;
 
   constructor(
     stores: { bindings: SessionBindingStore; events: EventStore },
     options: {
       appendUserMessage?: SlackUserMessageAppender;
+      logger?: SlackInboundLogger;
       policy?: SlackInboundPolicy;
     } = {},
   ) {
@@ -90,6 +102,7 @@ export class SlackInboundHandler {
       });
     this.#bindings = stores.bindings;
     this.#events = stores.events;
+    this.#logger = options.logger;
     this.#policy = options.policy ?? {};
   }
 
@@ -101,7 +114,13 @@ export class SlackInboundHandler {
       return undefined;
     }
 
-    if (!isAllowedSlackMessage(message, this.#policy)) {
+    const denialReason = getSlackPolicyDenialReason(message, this.#policy);
+    if (denialReason) {
+      this.#logger?.debug?.(`slack policy denied: ${denialReason}`, {
+        channelId: message.channelId,
+        teamId: message.teamId,
+        userId: message.actor.sourceUserId,
+      });
       return undefined;
     }
 
@@ -142,15 +161,23 @@ export class SlackInboundHandler {
   }
 }
 
-function isAllowedSlackMessage(
+function getSlackPolicyDenialReason(
   message: NormalizedSlackMessage,
   policy: SlackInboundPolicy,
-): boolean {
-  return (
-    isAllowed(policy.allowedTeams, message.teamId) &&
-    isAllowed(policy.allowedChannels, message.channelId) &&
-    isAllowed(policy.allowedUsers, message.actor.sourceUserId)
-  );
+): "channel" | "team" | "user" | undefined {
+  if (!isAllowed(policy.allowedTeams, message.teamId)) {
+    return "team";
+  }
+
+  if (!isAllowed(policy.allowedChannels, message.channelId)) {
+    return "channel";
+  }
+
+  if (!isAllowed(policy.allowedUsers, message.actor.sourceUserId)) {
+    return "user";
+  }
+
+  return undefined;
 }
 
 function isAllowed(allowedValues: readonly string[] | undefined, value: string): boolean {

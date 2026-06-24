@@ -37,7 +37,7 @@ Apply committed SQLite migrations to a local database:
 SHEPHERD_DB_PATH=/tmp/shepherd.sqlite pnpm db:migrate
 ```
 
-Slack Socket Mode config references environment variable names, not literal tokens:
+Slack Socket Mode config references environment variable names, not literal tokens. Keep Slack access scoped with team, channel, and user allowlists:
 
 ```yaml
 platforms:
@@ -45,7 +45,15 @@ platforms:
     app_token_env: SLACK_APP_TOKEN
     bot_token_env: SLACK_BOT_TOKEN
     allow_customize: true
+    allowed_teams:
+      - T1234567890
+    allowed_channels:
+      - C1234567890
+    allowed_users:
+      - U1234567890
 ```
+
+Messages denied by these allowlists are ignored and logged at debug level with the denied axis and Slack IDs. If Slack is enabled without `allowed_users`, the daemon starts with a warning because that leaves sender access unrestricted for that axis.
 
 Build TypeScript into `dist`:
 

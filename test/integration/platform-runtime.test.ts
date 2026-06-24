@@ -56,6 +56,89 @@ describe("createPlatformRuntime", () => {
     ).toThrow("Missing required environment variable: SLACK_BOT_TOKEN");
   });
 
+  test("warns when Slack is enabled without an allowed user list", () => {
+    const { events, sqlite } = openHarness();
+    const warnings: unknown[] = [];
+
+    createPlatformRuntime({
+      config: minimalConfig({
+        platforms: {
+          slack: {
+            allowed_channels: ["C123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+      createSlackApp() {
+        return new FakeSlackApp();
+      },
+      createSlackWebClient() {
+        return fakeSlackWebClient();
+      },
+      environment: {
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+      },
+      events,
+      logger: {
+        warn(message, metadata) {
+          warnings.push({ message, metadata });
+        },
+      },
+      receiveUserMessage: async () => {
+        throw new Error("unexpected message");
+      },
+      sqlite,
+    });
+
+    expect(warnings).toEqual([
+      {
+        message: "slack policy warning: allowed_users is not configured",
+        metadata: { reason: "slack_allowed_users_missing" },
+      },
+    ]);
+  });
+
+  test("does not warn when Slack allowed_users is configured", () => {
+    const { events, sqlite } = openHarness();
+    const warnings: unknown[] = [];
+
+    createPlatformRuntime({
+      config: minimalConfig({
+        platforms: {
+          slack: {
+            allowed_users: ["U123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+          },
+        },
+      }),
+      createSlackApp() {
+        return new FakeSlackApp();
+      },
+      createSlackWebClient() {
+        return fakeSlackWebClient();
+      },
+      environment: {
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+      },
+      events,
+      logger: {
+        warn(message, metadata) {
+          warnings.push({ message, metadata });
+        },
+      },
+      receiveUserMessage: async () => {
+        throw new Error("unexpected message");
+      },
+      sqlite,
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
   test("wires Slack inbound messages through the daemon user message receiver", async () => {
     const { events, sqlite } = openHarness();
     const app = new FakeSlackApp();
