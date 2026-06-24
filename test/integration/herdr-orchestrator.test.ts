@@ -104,6 +104,80 @@ describe("HerdrOrchestrator", () => {
     });
   });
 
+  test("attaches an existing Herdr workspace when explicitly requested", async () => {
+    const { sqlite, store } = openMigratedDatabase();
+    const session = store.createSession({ id: "session-abcdef123456" });
+    const orchestrator = new HerdrOrchestrator({
+      herdr: {
+        async createWorkspace() {
+          throw new Error("should not create workspace while attaching");
+        },
+        async createTab() {
+          throw new Error("should not create tabs while attaching");
+        },
+        ...unusedHerdrMethods(),
+      },
+      sqlite,
+    });
+
+    expect(
+      orchestrator.attachWorkspace({
+        herdrSessionName: "manual-main",
+        sessionId: session.id,
+        tabs: { agents: "w1:t1" },
+        workspaceId: "w1",
+      }),
+    ).toEqual({
+      herdrSessionName: "manual-main",
+      tabs: { agents: "w1:t1" },
+      workspaceId: "w1",
+    });
+
+    await expect(
+      orchestrator.ensureWorkspace({
+        herdrSessionName: "ignored",
+        sessionId: session.id,
+        taskSlug: "Ignored",
+        workingDirectory: "/repo",
+      }),
+    ).resolves.toEqual({
+      herdrSessionName: "manual-main",
+      tabs: { agents: "w1:t1" },
+      workspaceId: "w1",
+    });
+  });
+
+  test("refuses to attach a different Herdr workspace over an existing binding", () => {
+    const { sqlite, store } = openMigratedDatabase();
+    const session = store.createSession({ id: "session-abcdef123456" });
+    const orchestrator = new HerdrOrchestrator({
+      herdr: {
+        async createWorkspace() {
+          throw new Error("not used");
+        },
+        async createTab() {
+          throw new Error("not used");
+        },
+        ...unusedHerdrMethods(),
+      },
+      sqlite,
+    });
+
+    orchestrator.attachWorkspace({
+      herdrSessionName: "manual-main",
+      sessionId: session.id,
+      workspaceId: "w1",
+    });
+
+    expect(() =>
+      orchestrator.attachWorkspace({
+        herdrSessionName: "manual-main",
+        sessionId: session.id,
+        workspaceId: "w2",
+      }),
+    ).toThrow("Shepherd session already has a Herdr binding");
+  });
+
   test("starts an agent in the Shepherd agents tab", async () => {
     const { sqlite, store } = openMigratedDatabase();
     const session = store.createSession({ id: "session-abcdef123456" });

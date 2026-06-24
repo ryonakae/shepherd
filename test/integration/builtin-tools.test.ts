@@ -52,6 +52,42 @@ describe("builtin logical tools", () => {
     });
   });
 
+  test("attach_herdr_workspace records an explicit existing Herdr binding", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await expect(
+      runner.run(
+        "attach_herdr_workspace",
+        {
+          confirmedUserRequestedAttach: true,
+          herdrSessionName: "manual-main",
+          tabs: { agents: "w1:t1" },
+          workspaceId: "w1",
+        },
+        { sessionId },
+      ),
+    ).resolves.toEqual({
+      herdrSessionName: "manual-main",
+      tabs: { agents: "w1:t1" },
+      workspaceId: "w1",
+    });
+
+    await expect(
+      runner.run(
+        "ensure_herdr_workspace",
+        {
+          taskSlug: "Review Slack Sync",
+          workingContextSlug: "shepherd",
+          workingDirectory: "/repo",
+        },
+        { sessionId },
+      ),
+    ).resolves.toMatchObject({
+      herdrSessionName: "manual-main",
+      workspaceId: "w1",
+    });
+  });
+
   test("working context tools discover and resolve allowed project roots", async () => {
     const { runner, sessionId } = openRunner({ allowedRoots: ["/repo"] });
 

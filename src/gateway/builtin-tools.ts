@@ -25,6 +25,13 @@ type EnsureHerdrWorkspaceInput = {
   workingDirectory: string;
 };
 
+type AttachHerdrWorkspaceInput = {
+  confirmedUserRequestedAttach: true;
+  herdrSessionName: string;
+  tabs?: Record<string, string>;
+  workspaceId: string;
+};
+
 type WorkspaceDiscoveryInput = {
   scanAllowedRoots?: boolean;
 };
@@ -168,6 +175,27 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingDirectory: Type.String({ minLength: 1 }),
     }),
     name: "ensure_agent_pane",
+  });
+
+  registry.register({
+    description:
+      "Attach the current Shepherd session to an existing Herdr session/workspace only after the user explicitly asks.",
+    execute: (input: AttachHerdrWorkspaceInput, context) =>
+      deps.herdr.attachWorkspace({
+        herdrSessionName: input.herdrSessionName,
+        sessionId: context.sessionId,
+        ...(input.tabs !== undefined ? { tabs: input.tabs } : {}),
+        workspaceId: input.workspaceId,
+      }),
+    inputSchema: Type.Object({
+      confirmedUserRequestedAttach: Type.Literal(true),
+      herdrSessionName: Type.String({ minLength: 1 }),
+      tabs: Type.Optional(
+        Type.Record(Type.String({ minLength: 1 }), Type.String({ minLength: 1 })),
+      ),
+      workspaceId: Type.String({ minLength: 1 }),
+    }),
+    name: "attach_herdr_workspace",
   });
 
   registry.register({

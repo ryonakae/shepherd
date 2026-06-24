@@ -22,6 +22,7 @@ describe("buildGatewaySystemPrompt", () => {
     expect(prompt).toContain("Herdr");
     expect(prompt).toContain("progress");
     expect(prompt).toContain("gateway");
+    expect(prompt).toContain("explicitly asks");
     expect(prompt).toContain("Default Herdr agent profile: implementer");
     expect(prompt).toContain("reviewer: Use for review.");
   });

@@ -10,6 +10,13 @@ export type EnsureWorkspaceInput = {
   workingDirectory: string;
 };
 
+export type AttachWorkspaceInput = {
+  herdrSessionName: string;
+  sessionId: string;
+  tabs?: Record<string, string>;
+  workspaceId: string;
+};
+
 export type HerdrAgentProfile = {
   args?: string[];
   command: string;
@@ -139,6 +146,42 @@ export class HerdrOrchestrator {
       herdrSessionName: input.herdrSessionName,
       tabs,
       workspaceId,
+    };
+  }
+
+  attachWorkspace(input: AttachWorkspaceInput): HerdrWorkspaceBinding {
+    const existing = this.#getBinding(input.sessionId);
+    if (existing) {
+      if (
+        existing.herdrSessionName !== input.herdrSessionName ||
+        existing.workspaceId !== input.workspaceId
+      ) {
+        throw new Error(`Shepherd session already has a Herdr binding: ${input.sessionId}`);
+      }
+
+      return existing;
+    }
+
+    const now = Date.now();
+    const tabs = input.tabs ?? {};
+    this.#sqlite
+      .prepare(
+        "insert into herdr_bindings (id, session_id, herdr_session_name, workspace_id, metadata_json, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        randomUUID(),
+        input.sessionId,
+        input.herdrSessionName,
+        input.workspaceId,
+        JSON.stringify({ attached: true, tabs }),
+        now,
+        now,
+      );
+
+    return {
+      herdrSessionName: input.herdrSessionName,
+      tabs,
+      workspaceId: input.workspaceId,
     };
   }
 
