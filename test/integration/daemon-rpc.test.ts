@@ -266,6 +266,78 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     ]);
   });
 
+  test("records Herdr progress and publishes it to subscribers and delivery fanout", async () => {
+    const delivered: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureDeliveryFanout() {
+        return {
+          async deliverEvent(event) {
+            delivered.push({ payload: event.payload, type: event.type });
+          },
+        };
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "herdr-progress-1",
+        method: "herdr.progress",
+        params: {
+          herdrSessionName: "shepherd-api",
+          rawEvent: {
+            data: { agent: "claude-impl", status: "idle" },
+            id: "evt-1",
+            type: "agent.status",
+          },
+          sessionId: session.id,
+          workspaceId: "w1",
+        },
+      }),
+    );
+
+    const messages = await readMessages(client, 2);
+
+    expect(messages[0]).toMatchObject({
+      method: "session.event",
+      params: {
+        event: {
+          idempotencyKey: "herdr:shepherd-api:event:evt-1",
+          payload: {
+            agent: "claude-impl",
+            eventId: "evt-1",
+            eventType: "agent.status",
+            herdrSessionName: "shepherd-api",
+            status: "idle",
+            text: "Herdr progress agent.status status=idle agent=claude-impl",
+            workspaceId: "w1",
+          },
+          type: "herdr.progress",
+        },
+      },
+    });
+    expect(messages[1]).toMatchObject({
+      id: "herdr-progress-1",
+      result: {
+        event: {
+          type: "herdr.progress",
+        },
+      },
+    });
+    expect(delivered).toEqual([expect.objectContaining({ type: "herdr.progress" })]);
+  });
+
   test("reloads config through RPC", async () => {
     const configPath = writeTempFile(
       "shepherd.yaml",

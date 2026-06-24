@@ -5,6 +5,7 @@ import type { EventRecord, EventStore } from "@/db/event-store.js";
 import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
 import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
+import { toHerdrProgressSignal } from "@/herdr/progress.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
 type ShepherdDaemonServerOptions = {
@@ -61,6 +62,13 @@ export type ReceiveApprovalResponseInput = {
   reason?: string;
   responderActorId?: string;
   sessionId: string;
+};
+
+export type ReceiveHerdrProgressInput = {
+  herdrSessionName: string;
+  rawEvent: unknown;
+  sessionId: string;
+  workspaceId?: string;
 };
 
 export class ShepherdDaemonServer {
@@ -181,6 +189,27 @@ export class ShepherdDaemonServer {
     return { event };
   }
 
+  async receiveHerdrProgress(input: ReceiveHerdrProgressInput): Promise<{
+    event: EventRecord;
+  }> {
+    const payload = toHerdrProgressSignal(input.rawEvent, {
+      herdrSessionName: input.herdrSessionName,
+      ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+    });
+    const idempotencyKey = payload.eventId
+      ? `herdr:${input.herdrSessionName}:event:${payload.eventId}`
+      : undefined;
+    const event = this.#store.appendEvent({
+      payload,
+      sessionId: input.sessionId,
+      type: "herdr.progress",
+      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+    });
+    await this.#publishEvent(event);
+
+    return { event };
+  }
+
   #storeUserMessage(input: ReceiveUserMessageInput): EventRecord {
     if (input.actorId) {
       const presentation = parseActorPresentation(input.presentation);
@@ -281,6 +310,11 @@ export class ShepherdDaemonServer {
 
     if (request.method === "approval.respond") {
       void this.#respondApproval(socket, request);
+      return;
+    }
+
+    if (request.method === "herdr.progress") {
+      void this.#recordHerdrProgress(socket, request);
       return;
     }
 
@@ -469,6 +503,33 @@ export class ShepherdDaemonServer {
       sessionId: params.sessionId,
       ...(params.reason ? { reason: params.reason } : {}),
       ...(params.responderActorId ? { responderActorId: params.responderActorId } : {}),
+    });
+    this.#write(socket, {
+      id: request.id,
+      result: { event: toWireEvent(result.event) },
+    });
+  }
+
+  async #recordHerdrProgress(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      herdrSessionName?: string;
+      rawEvent?: unknown;
+      sessionId?: string;
+      workspaceId?: string;
+    };
+    if (!params?.sessionId || !params.herdrSessionName || params.rawEvent === undefined) {
+      this.#write(socket, {
+        error: { message: "sessionId, herdrSessionName, and rawEvent are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const result = await this.receiveHerdrProgress({
+      herdrSessionName: params.herdrSessionName,
+      rawEvent: params.rawEvent,
+      sessionId: params.sessionId,
+      ...(params.workspaceId !== undefined ? { workspaceId: params.workspaceId } : {}),
     });
     this.#write(socket, {
       id: request.id,

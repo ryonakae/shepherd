@@ -23,12 +23,13 @@ Implemented:
 - daemon restart recovery that marks queued/running gateway runs as `recovery_required` and emits recovery note events.
 - side-effect idempotency for delivery receipts, event appends, summary updates, and logical tool calls.
 - approval request/response events delivered to subscribed TUI clients and platform fanout.
+- Herdr progress events recorded through `herdr.progress` and delivered to subscribed TUI clients and platform fanout.
 
 MVP limits:
 
 - Approval responses are recorded and delivered in Shepherd, but provider/worker-agent-specific callback routing is deferred.
 - TUI reconnect behavior is supported by replay cursors, but there is no full-screen TUI application yet.
-- Herdr event waits can be recorded as compact `herdr.progress` events; automatic daemon-managed Herdr subscription lifecycle is deferred.
+- Herdr event waits can be recorded and delivered as compact `herdr.progress` events; automatic daemon-managed Herdr subscription lifecycle is deferred.
 
 ## Source of truth
 
