@@ -54,6 +54,24 @@ describe("EventStore", () => {
     expect(second).toEqual(first);
     expect(store.listEvents(session.id)).toHaveLength(1);
   });
+
+  test("lists recent events in ascending event order", () => {
+    const store = openMigratedEventStore();
+    const session = store.createSession({ id: "session-1" });
+
+    for (let index = 0; index < 5; index += 1) {
+      store.appendEvent({
+        payload: { text: `event ${index}` },
+        sessionId: session.id,
+        type: "user.message",
+      });
+    }
+
+    expect(store.listRecentEvents(session.id, 2).map((event) => event.payload)).toEqual([
+      { text: "event 3" },
+      { text: "event 4" },
+    ]);
+  });
 });
 
 function openMigratedEventStore(): EventStore {

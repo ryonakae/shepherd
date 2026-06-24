@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
+import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
 import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
@@ -146,9 +147,11 @@ export class ShepherdDaemonServer {
       return [];
     }
 
-    const result = await this.#collectGatewayTurnResult(input.sessionId, event.id, [
-      { content: input.text, role: "user" },
-    ]);
+    const result = await this.#collectGatewayTurnResult(
+      input.sessionId,
+      event.id,
+      buildGatewayMessagesFromEvents(this.#store.listRecentEvents(input.sessionId, 40)),
+    );
     for (const gatewayEvent of result.events) {
       await this.#publishEvent(gatewayEvent);
     }

@@ -1,0 +1,40 @@
+import { describe, expect, test } from "vitest";
+import type { EventRecord } from "@/db/event-store.js";
+import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
+
+describe("buildGatewayMessagesFromEvents", () => {
+  test("projects recent session events into gateway messages", () => {
+    expect(
+      buildGatewayMessagesFromEvents([
+        event({ payload: { text: "hello" }, type: "user.message" }),
+        event({ payload: { text: "working" }, type: "gateway.message" }),
+        event({
+          payload: {
+            message: "Gateway run was in flight during daemon startup.",
+          },
+          type: "recovery.note",
+        }),
+        event({ payload: { tool: "x" }, type: "logical_tool.started" }),
+      ]),
+    ).toEqual([
+      { content: "hello", role: "user" },
+      { content: "working", role: "assistant" },
+      {
+        content: "Recovery note: Gateway run was in flight during daemon startup.",
+        role: "system",
+      },
+    ]);
+  });
+});
+
+function event(input: { payload: unknown; type: string }): EventRecord {
+  return {
+    actorId: null,
+    createdAt: new Date(0),
+    id: 1,
+    idempotencyKey: null,
+    payload: input.payload,
+    sessionId: "session-1",
+    type: input.type,
+  };
+}

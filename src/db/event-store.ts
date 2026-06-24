@@ -235,6 +235,14 @@ export class EventStore {
 
     return rows.map(mapEvent);
   }
+
+  listRecentEvents(sessionId: string, limit = 50): EventRecord[] {
+    const rows = this.#sqlite
+      .prepare("select * from events where session_id = ? order by id desc limit ?")
+      .all(sessionId, limit) as EventRow[];
+
+    return rows.reverse().map(mapEvent);
+  }
 }
 
 function mapSession(row: SessionRow): SessionRecord {

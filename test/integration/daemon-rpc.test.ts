@@ -273,6 +273,62 @@ agents:
     ]);
   });
 
+  test("wakes the gateway with recent session context", async () => {
+    const generatedMessages: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureGatewayRunner(events) {
+        const registry = new LogicalToolRegistry();
+        return new GatewayRunner({
+          events,
+          provider: {
+            async generate(input) {
+              generatedMessages.push(input.messages);
+              return { text: "I remember the context." };
+            },
+          },
+          tools: new LogicalToolRunner({
+            events,
+            policy: { allowedTools: new Set() },
+            registry,
+          }),
+        });
+      },
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    store.appendEvent({
+      payload: { text: "previous user message" },
+      sessionId: session.id,
+      type: "user.message",
+    });
+    store.appendEvent({
+      payload: { text: "previous gateway response" },
+      sessionId: session.id,
+      type: "gateway.message",
+    });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: {
+          sessionId: session.id,
+          text: "new user message",
+        },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() => generatedMessages.length === 1);
+
+    expect(generatedMessages[0]).toEqual([
+      { content: "previous user message", role: "user" },
+      { content: "previous gateway response", role: "assistant" },
+      { content: "new user message", role: "user" },
+    ]);
+  });
+
   test("publishes appended and gateway message events to the delivery fanout", async () => {
     const delivered: unknown[] = [];
     const { server, socketPath, store } = await openServer({
