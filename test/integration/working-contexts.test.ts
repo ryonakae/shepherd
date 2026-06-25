@@ -68,6 +68,37 @@ describe("WorkingContextResolver", () => {
       "outside allowed roots",
     );
   });
+
+  test("reuses working contexts by resolved path", () => {
+    const { root, store } = openHarness();
+    const project = join(root, "api");
+    mkdirSync(project);
+    const resolver = new WorkingContextResolver({ allowedRoots: [root], store });
+
+    const first = resolver.resolve({ path: project });
+    const second = resolver.resolve({ label: "Different Label", path: project });
+
+    expect(second.id).toBe(first.id);
+    expect(second.path).toBe(project);
+    expect(second.label).toBe("Different Label");
+  });
+
+  test("keeps same basename projects as distinct working contexts", () => {
+    const { root, store } = openHarness();
+    const firstProject = join(root, "team-a", "api");
+    const secondProject = join(root, "team-b", "api");
+    mkdirSync(firstProject, { recursive: true });
+    mkdirSync(secondProject, { recursive: true });
+    const resolver = new WorkingContextResolver({ allowedRoots: [root], store });
+
+    const first = resolver.resolve({ path: firstProject });
+    const second = resolver.resolve({ path: secondProject });
+
+    expect(second.id).not.toBe(first.id);
+    expect(second.path).toBe(secondProject);
+    expect(second.slug).not.toBe(first.slug);
+    expect(second.slug.startsWith("api")).toBe(true);
+  });
 });
 
 function openHarness(): {

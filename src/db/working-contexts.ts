@@ -48,6 +48,15 @@ export class WorkingContextStore {
     return row ? mapWorkingContext(row) : undefined;
   }
 
+  findByPath(path: string): WorkingContextRecord | undefined {
+    const resolvedPath = resolve(path);
+    const row = this.#sqlite
+      .prepare("select * from working_contexts where path = ?")
+      .get(resolvedPath) as WorkingContextRow | undefined;
+
+    return row ? mapWorkingContext(row) : undefined;
+  }
+
   listRecent(limit = 20): WorkingContextRecord[] {
     const rows = this.#sqlite
       .prepare("select * from working_contexts order by updated_at desc limit ?")
@@ -59,20 +68,21 @@ export class WorkingContextStore {
   upsert(input: UpsertWorkingContextInput): WorkingContextRecord {
     const path = resolve(input.path);
     const label = input.label ?? basename(path);
-    const slug = input.slug ?? slugifyHerdrName(label);
+    const baseSlug = input.slug ?? slugifyHerdrName(label);
     const now = Date.now();
-    const existing = this.findBySlug(slug);
-    const id = existing?.id ?? input.id ?? randomUUID();
-    const createdAt = existing?.createdAt.getTime() ?? now;
+    const existingByPath = this.findByPath(path);
+    const id = existingByPath?.id ?? input.id ?? randomUUID();
+    const createdAt = existingByPath?.createdAt.getTime() ?? now;
+    const slug = this.#allocateSlug(baseSlug, id);
 
     this.#sqlite
       .prepare(
         `insert into working_contexts
           (id, label, path, slug, herdr_session_name, detection_metadata_json, created_at, updated_at)
          values (?, ?, ?, ?, ?, ?, ?, ?)
-         on conflict(slug) do update set
+         on conflict(path) do update set
            label = excluded.label,
-           path = excluded.path,
+           slug = excluded.slug,
            herdr_session_name = excluded.herdr_session_name,
            detection_metadata_json = excluded.detection_metadata_json,
            updated_at = excluded.updated_at`,
@@ -88,8 +98,21 @@ export class WorkingContextStore {
         now,
       );
 
-    return this.findBySlug(slug) as WorkingContextRecord;
+    return this.findByPath(path) as WorkingContextRecord;
   }
+
+  #allocateSlug(baseSlug: string, id: string): string {
+    const existingBySlug = this.findBySlug(baseSlug);
+    if (!existingBySlug || existingBySlug.id === id) {
+      return baseSlug;
+    }
+
+    return disambiguateSlug(baseSlug, id);
+  }
+}
+
+function disambiguateSlug(baseSlug: string, id: string): string {
+  return `${baseSlug}-${id.slice(0, 8)}`;
 }
 
 function mapWorkingContext(row: WorkingContextRow): WorkingContextRecord {

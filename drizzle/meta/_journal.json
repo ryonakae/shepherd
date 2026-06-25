@@ -29,6 +29,13 @@
       "when": 1782320835975,
       "tag": "0003_thankful_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782409493630,
+      "tag": "0004_daily_kinsey_walden",
+      "breakpoints": true
     }
   ]
 }

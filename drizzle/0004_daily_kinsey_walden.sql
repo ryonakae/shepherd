@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `working_contexts_path_idx` ON `working_contexts` (`path`);

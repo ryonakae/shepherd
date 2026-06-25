@@ -12,7 +12,10 @@ export const workingContexts = sqliteTable(
     slug: text("slug").notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [uniqueIndex("working_contexts_slug_idx").on(table.slug)],
+  (table) => [
+    uniqueIndex("working_contexts_slug_idx").on(table.slug),
+    uniqueIndex("working_contexts_path_idx").on(table.path),
+  ],
 );
 
 export const sessions = sqliteTable("sessions", {
