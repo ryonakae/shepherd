@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 
 describe("JSON Lines framing", () => {
   test("encodes one JSON value per newline-delimited frame", () => {

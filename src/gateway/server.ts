@@ -15,9 +15,9 @@ import type { LogicalToolRunner } from "@/gateway/tools.js";
 import { toHerdrProgressSignal } from "@/herdr/progress.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
-type ShepherdDaemonServerOptions = {
+type ShepherdGatewayServerOptions = {
   configPath?: string;
-  daemonId?: string;
+  gatewayId?: string;
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
   gatewayRuns?: ExternalGatewayRunQueue;
@@ -63,7 +63,7 @@ export type PiOwnerKind = "headless_pi" | "tui_pi";
 
 export type PiHandshakeRecord = {
   attached: boolean;
-  daemonId: string;
+  gatewayId: string;
   extensionVersion: string;
   mode: "json" | "print" | "rpc" | "tui";
   ownerId: string;
@@ -119,9 +119,9 @@ export type ReceiveHerdrProgressInput = {
   workspaceId?: string;
 };
 
-export class ShepherdDaemonServer {
+export class ShepherdGatewayServer {
   readonly #configPath: string | undefined;
-  readonly #daemonId: string;
+  readonly #gatewayId: string;
   readonly #server: Server;
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
@@ -141,9 +141,9 @@ export class ShepherdDaemonServer {
   #lastPiHandshake: PiHandshakeRecord | undefined;
   #ownerHeartbeatTimeoutMs = 45_000;
 
-  constructor(options: ShepherdDaemonServerOptions) {
+  constructor(options: ShepherdGatewayServerOptions) {
     this.#configPath = options.configPath;
-    this.#daemonId = options.daemonId ?? "default";
+    this.#gatewayId = options.gatewayId ?? "default";
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
     this.#gatewayRuns = options.gatewayRuns;
@@ -173,14 +173,14 @@ export class ShepherdDaemonServer {
     });
   }
 
-  stop(): Promise<void> {
+  async stop(): Promise<void> {
     for (const socket of this.#sockets) {
       socket.destroy();
     }
     this.#sockets.clear();
     this.#subscriptions.clear();
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       if (!this.#server.listening) {
         resolve();
         return;
@@ -194,6 +194,10 @@ export class ShepherdDaemonServer {
         resolve();
       });
     });
+
+    if (existsSync(this.#socketPath)) {
+      unlinkSync(this.#socketPath);
+    }
   }
 
   waitForPiHandshake(options: { timeoutMs: number }): Promise<PiHandshakeRecord> {
@@ -764,7 +768,7 @@ export class ShepherdDaemonServer {
 
   #recordPiHandshake(socket: Socket, request: RpcRequest): void {
     const params = request.params as {
-      binding?: { daemonId?: unknown; sessionId?: unknown };
+      binding?: { gatewayId?: unknown; sessionId?: unknown };
       extensionVersion?: unknown;
       mode?: unknown;
       piSessionFile?: unknown;
@@ -778,18 +782,18 @@ export class ShepherdDaemonServer {
       return;
     }
 
-    const bindingDaemonId =
-      typeof params.binding?.daemonId === "string" ? params.binding.daemonId : undefined;
-    const bindingMatchesDaemon =
-      bindingDaemonId === undefined || bindingDaemonId === this.#daemonId;
+    const bindingGatewayId =
+      typeof params.binding?.gatewayId === "string" ? params.binding.gatewayId : undefined;
+    const bindingMatchesGateway =
+      bindingGatewayId === undefined || bindingGatewayId === this.#gatewayId;
     const sessionId =
-      bindingMatchesDaemon && typeof params.binding?.sessionId === "string"
+      bindingMatchesGateway && typeof params.binding?.sessionId === "string"
         ? params.binding.sessionId
         : undefined;
     const ownerKind = piOwnerKindForMode(params.mode);
     const handshake: PiHandshakeRecord = {
       attached: sessionId !== undefined,
-      daemonId: this.#daemonId,
+      gatewayId: this.#gatewayId,
       extensionVersion: params.extensionVersion,
       mode: params.mode,
       ownerId: randomUUID(),
@@ -816,7 +820,7 @@ export class ShepherdDaemonServer {
       id: request.id,
       result: {
         attached: handshake.attached,
-        daemonId: handshake.daemonId,
+        gatewayId: handshake.gatewayId,
         ownerId: handshake.ownerId,
         ownerKind: handshake.ownerKind,
         ...(handshake.sessionId !== undefined ? { sessionId: handshake.sessionId } : {}),
@@ -877,7 +881,7 @@ export class ShepherdDaemonServer {
     this.#write(socket, {
       id: request.id,
       result: {
-        daemonId: this.#daemonId,
+        gatewayId: this.#gatewayId,
         ownerId,
         ownerKind,
         session: toWireSession(updated),

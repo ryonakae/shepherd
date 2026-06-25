@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { argv, env, exit, stdin, stdout } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { encodeJsonLine } from "@/daemon/json-lines.js";
+import { encodeJsonLine } from "@/gateway/json-lines.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
 export type ShepherdToolsCommand = { command: "serve"; socketPath: string } | { command: "help" };
@@ -29,7 +29,7 @@ export function parseShepherdToolsArgs(
     const parsed = parseOptions(first === "serve" ? rest : args);
     return {
       command: "serve",
-      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
     };
   }
 

@@ -4,20 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, test } from "vitest";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
-import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
 import { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { GatewayRunner } from "@/gateway/runner.js";
+import { ShepherdGatewayServer } from "@/gateway/server.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 import { GatewayRunStore } from "@/gateway/turn-queue.js";
 
 const tempDirs: string[] = [];
-const servers: ShepherdDaemonServer[] = [];
+const servers: ShepherdGatewayServer[] = [];
 const sockets: Socket[] = [];
 
 afterEach(async () => {
@@ -30,7 +30,7 @@ afterEach(async () => {
   }
 });
 
-describe("ShepherdDaemonServer JSON Lines RPC", () => {
+describe("ShepherdGatewayServer JSON Lines RPC", () => {
   test("creates sessions with optional Slack auto-bind metadata", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);
@@ -406,7 +406,7 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
       id: "pi-handshake-1",
       result: {
         attached: false,
-        daemonId: "default",
+        gatewayId: "default",
         ownerKind: "headless_pi",
       },
     });
@@ -420,8 +420,8 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     });
   });
 
-  test("does not auto-attach a Pi handshake for a different daemon id", async () => {
-    const { server, socketPath } = await openServer({ daemonId: "daemon-current" });
+  test("does not auto-attach a Pi handshake for a different gateway id", async () => {
+    const { server, socketPath } = await openServer({ gatewayId: "gateway-current" });
     servers.push(server);
 
     const client = await connect(socketPath);
@@ -430,7 +430,7 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
         id: "pi-handshake-mismatch-1",
         method: "pi.handshake",
         params: {
-          binding: { daemonId: "daemon-other", sessionId: "session-1" },
+          binding: { gatewayId: "gateway-other", sessionId: "session-1" },
           extensionVersion: "0.1.0",
           mode: "rpc",
         },
@@ -440,7 +440,7 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     await expect(readMessages(client, 1)).resolves.toEqual([
       expect.objectContaining({
         id: "pi-handshake-mismatch-1",
-        result: expect.objectContaining({ attached: false, daemonId: "daemon-current" }),
+        result: expect.objectContaining({ attached: false, gatewayId: "gateway-current" }),
       }),
     ]);
   });
@@ -468,7 +468,7 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     expect(attachResponse).toMatchObject({
       id: "pi-attach-1",
       result: {
-        daemonId: "default",
+        gatewayId: "default",
         ownerKind: "tui_pi",
         session: {
           id: session.id,
@@ -1444,18 +1444,18 @@ async function openServer(
       finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
       hasFinished(gatewayRunId: string): boolean;
     };
-    daemonId?: string;
+    gatewayId?: string;
     enableGatewayRuns?: boolean;
     ownerHeartbeatTimeoutMs?: number;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
 ): Promise<{
-  server: ShepherdDaemonServer;
+  server: ShepherdGatewayServer;
   socketPath: string;
   store: EventStore;
   summaries: SessionSummaryStore;
 }> {
-  const dir = mkdtempSync(join(tmpdir(), "shepherd-daemon-"));
+  const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-"));
   tempDirs.push(dir);
 
   const { sqlite } = openSqlite(join(dir, "test.sqlite"));
@@ -1463,8 +1463,8 @@ async function openServer(
   const store = new EventStore(sqlite);
   const summaries = new SessionSummaryStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
-  const server = new ShepherdDaemonServer({
-    ...(options.daemonId !== undefined ? { daemonId: options.daemonId } : {}),
+  const server = new ShepherdGatewayServer({
+    ...(options.gatewayId !== undefined ? { gatewayId: options.gatewayId } : {}),
     ...(options.configureDeliveryFanout
       ? { deliveryFanout: options.configureDeliveryFanout() }
       : {}),

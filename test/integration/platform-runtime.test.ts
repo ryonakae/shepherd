@@ -57,7 +57,7 @@ describe("createPlatformRuntime", () => {
     ).toThrow("Missing required environment variable: SLACK_BOT_TOKEN");
   });
 
-  test("wires Slack inbound messages through the daemon user message receiver", async () => {
+  test("wires Slack inbound messages through the gateway user message receiver", async () => {
     const { events, sqlite } = openHarness();
     const app = new FakeSlackApp();
     const received: unknown[] = [];

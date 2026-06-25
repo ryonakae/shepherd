@@ -3,7 +3,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
 import type { HerdrSessionLifecycle } from "@/herdr/session-lifecycle.js";
 

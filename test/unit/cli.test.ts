@@ -8,10 +8,11 @@ import {
 } from "@/cli/shepherd.js";
 
 describe("Shepherd CLI", () => {
-  test("parses daemon options", () => {
+  test("parses gateway run options", () => {
     expect(
       parseCliArgs([
-        "daemon",
+        "gateway",
+        "run",
         "--socket",
         "/tmp/shepherd.sock",
         "--db",
@@ -20,31 +21,75 @@ describe("Shepherd CLI", () => {
         "/tmp/shepherd.yaml",
       ]),
     ).toEqual({
-      command: "daemon",
+      action: "run",
+      command: "gateway",
       configPath: "/tmp/shepherd.yaml",
       dbPath: "/tmp/shepherd.sqlite",
       socketPath: "/tmp/shepherd.sock",
     });
   });
 
-  test("uses environment defaults for daemon options", () => {
+  test("uses environment defaults for gateway run options", () => {
     expect(
-      parseCliArgs(["daemon"], {
+      parseCliArgs(["gateway", "run"], {
         SHEPHERD_CONFIG: "/tmp/env.yaml",
         SHEPHERD_DB_PATH: "/tmp/env.sqlite",
-        SHEPHERD_SOCKET_PATH: "/tmp/env.sock",
+        SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/env.sock",
       }),
     ).toEqual({
-      command: "daemon",
+      action: "run",
+      command: "gateway",
       configPath: "/tmp/env.yaml",
       dbPath: "/tmp/env.sqlite",
       socketPath: "/tmp/env.sock",
     });
   });
 
+  test("parses gateway managed actions", () => {
+    expect(
+      parseCliArgs([
+        "gateway",
+        "start",
+        "--socket",
+        "/tmp/shepherd.sock",
+        "--db",
+        "/tmp/shepherd.sqlite",
+        "--config",
+        "/tmp/shepherd.yaml",
+        "--pid",
+        "/tmp/shepherd.pid",
+        "--log",
+        "/tmp/shepherd.log",
+        "--timeout-ms",
+        "2500",
+      ]),
+    ).toEqual({
+      action: "start",
+      command: "gateway",
+      configPath: "/tmp/shepherd.yaml",
+      dbPath: "/tmp/shepherd.sqlite",
+      logPath: "/tmp/shepherd.log",
+      pidPath: "/tmp/shepherd.pid",
+      socketPath: "/tmp/shepherd.sock",
+      timeoutMs: 2500,
+    });
+
+    expect(parseCliArgs(["gateway", "status"])).toMatchObject({
+      action: "status",
+      command: "gateway",
+    });
+  });
+
+  test("rejects old service command", () => {
+    const oldCommand = "dae" + "mon";
+    expect(() => parseCliArgs([oldCommand])).toThrow(`Unknown command: ${oldCommand}`);
+  });
+
   test("renders help", () => {
     expect(parseCliArgs(["--help"])).toEqual({ command: "help" });
-    expect(helpText()).toContain("shepherd daemon");
+    expect(helpText()).toContain("shepherd gateway start");
+    expect(helpText()).toContain("shepherd gateway run");
+    expect(helpText()).not.toContain(`shepherd ${"dae" + "mon"}`);
   });
 
   test("parses send options", () => {
@@ -103,16 +148,16 @@ describe("Shepherd CLI", () => {
     expect(piOpenArgs("/tmp/pi-session.jsonl")).toEqual(["--session", "/tmp/pi-session.jsonl"]);
     expect(
       piOpenEnvironment({
-        daemonId: "daemon-1",
+        gatewayId: "gateway-1",
         environment: { PATH: "/bin" },
         sessionId: "session-1",
         socketPath: "/tmp/shepherd.sock",
       }),
     ).toMatchObject({
       PATH: "/bin",
-      SHEPHERD_DAEMON_ID: "daemon-1",
+      SHEPHERD_GATEWAY_ID: "gateway-1",
       SHEPHERD_SESSION_ID: "session-1",
-      SHEPHERD_SOCKET_PATH: "/tmp/shepherd.sock",
+      SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/shepherd.sock",
     });
   });
 

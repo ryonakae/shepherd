@@ -10,7 +10,7 @@ describe("buildGatewayMessagesFromEvents", () => {
         event({ payload: { text: "working" }, type: "gateway.message" }),
         event({
           payload: {
-            message: "Gateway run was in flight during daemon startup.",
+            message: "Gateway run was in flight during gateway startup.",
           },
           type: "recovery.note",
         }),
@@ -26,7 +26,7 @@ describe("buildGatewayMessagesFromEvents", () => {
       { content: "hello", role: "user" },
       { content: "working", role: "assistant" },
       {
-        content: "Recovery note: Gateway run was in flight during daemon startup.",
+        content: "Recovery note: Gateway run was in flight during gateway startup.",
         role: "system",
       },
       {

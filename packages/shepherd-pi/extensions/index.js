@@ -19,8 +19,8 @@ export default function shepherdPiExtension(pi) {
   pi.on("session_start", async (_event, ctx) => {
     state.binding = findBinding(ctx) ?? bindingFromEnvironment();
     const socketPath =
-      state.binding?.socketPath ?? process.env.SHEPHERD_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
-    state.client = new ShepherdDaemonClient(socketPath);
+      state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
+    state.client = new ShepherdGatewayClient(socketPath);
 
     try {
       await state.client.connect();
@@ -162,7 +162,7 @@ async function recordAssistantTextDelta(state, text) {
 }
 
 async function attachAndSubscribe(pi, ctx, state, sessionId, options) {
-  if (!state.client) throw new Error("Shepherd daemon client is not connected");
+  if (!state.client) throw new Error("Shepherd Gateway client is not connected");
   const result = await state.client.request("pi.attach", {
     mode: ctx.mode,
     piSessionFile: ctx.sessionManager.getSessionFile(),
@@ -173,7 +173,7 @@ async function attachAndSubscribe(pi, ctx, state, sessionId, options) {
   state.ownerKind = result.ownerKind;
   state.sessionId = sessionId;
   state.binding = {
-    daemonId: result.daemonId,
+    gatewayId: result.gatewayId,
     sessionId,
     socketPath: result.socketPath,
   };
@@ -201,7 +201,7 @@ async function registerShepherdTools(pi, state) {
       name: `shepherd_${tool.name}`,
       label: `Shepherd ${tool.name}`,
       description: tool.description,
-      promptSnippet: `Delegate ${tool.name} to the attached Shepherd daemon`,
+      promptSnippet: `Delegate ${tool.name} to the attached Shepherd Gateway`,
       promptGuidelines: [
         `Use shepherd_${tool.name} when the task needs Shepherd or Herdr orchestration.`,
       ],
@@ -243,8 +243,8 @@ async function claimNext(pi, ctx, state) {
 async function ensureClient(state, ctx) {
   if (state.client) return;
   const socketPath =
-    state.binding?.socketPath ?? process.env.SHEPHERD_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
-  state.client = new ShepherdDaemonClient(socketPath);
+    state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
+  state.client = new ShepherdGatewayClient(socketPath);
   await state.client.connect();
   const handshake = await state.client.request("pi.handshake", {
     binding: state.binding,
@@ -270,15 +270,15 @@ function startHeartbeat(state) {
 function bindingFromEnvironment() {
   if (!process.env.SHEPHERD_SESSION_ID) return undefined;
   return {
-    daemonId: process.env.SHEPHERD_DAEMON_ID ?? "default",
+    gatewayId: process.env.SHEPHERD_GATEWAY_ID ?? "default",
     sessionId: process.env.SHEPHERD_SESSION_ID,
-    socketPath: process.env.SHEPHERD_SOCKET_PATH ?? DEFAULT_SOCKET_PATH,
+    socketPath: process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH,
   };
 }
 
 function findBinding(ctx) {
   const entries = ctx.sessionManager.getEntries();
-  const expectedDaemonId = process.env.SHEPHERD_DAEMON_ID;
+  const expectedGatewayId = process.env.SHEPHERD_GATEWAY_ID;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (
@@ -286,7 +286,7 @@ function findBinding(ctx) {
       entry.customType === BINDING_ENTRY_TYPE &&
       entry.data?.sessionId
     ) {
-      if (expectedDaemonId && entry.data.daemonId && entry.data.daemonId !== expectedDaemonId) {
+      if (expectedGatewayId && entry.data.gatewayId && entry.data.gatewayId !== expectedGatewayId) {
         return undefined;
       }
       return entry.data;
@@ -309,7 +309,7 @@ function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-class ShepherdDaemonClient {
+class ShepherdGatewayClient {
   constructor(socketPath) {
     this.socketPath = socketPath;
     this.nextId = 1;
@@ -324,12 +324,12 @@ class ShepherdDaemonClient {
       this.socket.once("connect", resolve);
       this.socket.once("error", reject);
       this.socket.on("data", (chunk) => this.onData(chunk.toString("utf8")));
-      this.socket.on("close", () => this.rejectAll(new Error("Shepherd daemon socket closed")));
+      this.socket.on("close", () => this.rejectAll(new Error("Shepherd Gateway socket closed")));
     });
   }
 
   request(method, params = {}) {
-    if (!this.socket) return Promise.reject(new Error("Shepherd daemon socket is not connected"));
+    if (!this.socket) return Promise.reject(new Error("Shepherd Gateway socket is not connected"));
     const id = `shepherd-pi-${this.nextId++}`;
     this.socket.write(`${JSON.stringify({ id, method, params })}\n`);
     return new Promise((resolve, reject) => {
@@ -345,7 +345,7 @@ class ShepherdDaemonClient {
   close() {
     this.socket?.destroy();
     this.socket = undefined;
-    this.rejectAll(new Error("Shepherd daemon client closed"));
+    this.rejectAll(new Error("Shepherd Gateway client closed"));
   }
 
   onData(chunk) {

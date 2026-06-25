@@ -47,7 +47,7 @@ export class HeadlessPiSupervisor {
           ...process.env,
           ...(this.#environment ?? {}),
           SHEPHERD_SESSION_ID: input.sessionId,
-          SHEPHERD_SOCKET_PATH: this.#socketPath,
+          SHEPHERD_GATEWAY_SOCKET_PATH: this.#socketPath,
         },
       },
     );

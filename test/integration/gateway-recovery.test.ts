@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { recoverDaemonState } from "@/daemon/recovery.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { recoverGatewayState } from "@/gateway/recovery.js";
 import { GatewayRunStore } from "@/gateway/turn-queue.js";
 
 const tempDirs: string[] = [];
@@ -16,14 +16,14 @@ afterEach(() => {
   }
 });
 
-describe("recoverDaemonState", () => {
+describe("recoverGatewayState", () => {
   test("marks in-flight gateway runs as recovery required and emits notes", () => {
     const { events, runStore, sqlite } = openHarness();
     events.createSession({ id: "session-1" });
     const queued = runStore.createQueuedRun({ sessionId: "session-1" });
     const running = runStore.markRunning(runStore.createQueuedRun({ sessionId: "session-1" }).id);
 
-    const result = recoverDaemonState({ events, sqlite });
+    const result = recoverGatewayState({ events, sqlite });
 
     expect(result.gatewayRuns).toEqual([
       expect.objectContaining({ gatewayRunId: queued.id, previousStatus: "queued" }),
@@ -42,7 +42,7 @@ describe("recoverDaemonState", () => {
       "recovery.note",
     ]);
 
-    expect(recoverDaemonState({ events, sqlite }).gatewayRuns).toEqual([]);
+    expect(recoverGatewayState({ events, sqlite }).gatewayRuns).toEqual([]);
     expect(events.listEvents("session-1")).toHaveLength(2);
   });
 });
@@ -52,7 +52,7 @@ function openHarness(): {
   runStore: GatewayRunStore;
   sqlite: ReturnType<typeof openSqlite>["sqlite"];
 } {
-  const dir = mkdtempSync(join(tmpdir(), "shepherd-daemon-recovery-"));
+  const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-recovery-"));
   tempDirs.push(dir);
 
   const { sqlite } = openSqlite(join(dir, "test.sqlite"));

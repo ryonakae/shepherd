@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
-import type { PiHandshakeRecord } from "@/daemon/server.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
+import type { PiHandshakeRecord } from "@/gateway/server.js";
 
 export type PiReadinessResult = {
   handshake: PiHandshakeRecord;
@@ -40,7 +40,7 @@ export async function checkPiReadiness(options: PiReadinessOptions): Promise<PiR
     env: {
       ...process.env,
       ...(options.environment ?? {}),
-      SHEPHERD_SOCKET_PATH: options.socketPath,
+      SHEPHERD_GATEWAY_SOCKET_PATH: options.socketPath,
     },
   });
 
@@ -162,7 +162,7 @@ function missingPiMessage(): string {
 }
 
 function missingExtensionMessage(): string {
-  return `Shepherd Pi extension is not installed or did not handshake.\n\nInstall it with:\n  pi install npm:shepherd-pi\n\nThen restart:\n  shepherd daemon`;
+  return `Shepherd Pi extension is not installed or did not handshake.\n\nInstall it with:\n  pi install npm:shepherd-pi\n\nThen restart:\n  shepherd gateway restart`;
 }
 
 function noModelsMessage(): string {

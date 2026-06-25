@@ -103,7 +103,9 @@ function toSpawnRecord(command: string, args: string[], env: NodeJS.ProcessEnv):
     args,
     command,
     ...(env.SHEPHERD_SESSION_ID !== undefined ? { sessionId: env.SHEPHERD_SESSION_ID } : {}),
-    ...(env.SHEPHERD_SOCKET_PATH !== undefined ? { socketPath: env.SHEPHERD_SOCKET_PATH } : {}),
+    ...(env.SHEPHERD_GATEWAY_SOCKET_PATH !== undefined
+      ? { socketPath: env.SHEPHERD_GATEWAY_SOCKET_PATH }
+      : {}),
   };
 }
 

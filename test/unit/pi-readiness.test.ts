@@ -1,12 +1,12 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "vitest";
-import { encodeJsonLine } from "@/daemon/json-lines.js";
-import type { PiHandshakeRecord } from "@/daemon/server.js";
+import { encodeJsonLine } from "@/gateway/json-lines.js";
 import {
   checkPiReadiness,
   type PiReadinessProcess,
   type PiReadinessSpawn,
 } from "@/gateway/pi-readiness.js";
+import type { PiHandshakeRecord } from "@/gateway/server.js";
 
 describe("checkPiReadiness", () => {
   test("waits for extension handshake and available models", async () => {
@@ -57,8 +57,8 @@ function fakeSpawn(process: FakePiProcess): PiReadinessSpawn {
     process.spawned = {
       args,
       command,
-      ...(options.env.SHEPHERD_SOCKET_PATH !== undefined
-        ? { socketPath: options.env.SHEPHERD_SOCKET_PATH }
+      ...(options.env.SHEPHERD_GATEWAY_SOCKET_PATH !== undefined
+        ? { socketPath: options.env.SHEPHERD_GATEWAY_SOCKET_PATH }
         : {}),
     };
     return process;
@@ -68,7 +68,7 @@ function fakeSpawn(process: FakePiProcess): PiReadinessSpawn {
 function handshake(): PiHandshakeRecord {
   return {
     attached: false,
-    daemonId: "default",
+    gatewayId: "default",
     extensionVersion: "0.1.0",
     mode: "rpc",
     ownerId: "owner-1",

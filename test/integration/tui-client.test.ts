@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, test } from "vitest";
-import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { ShepherdGatewayServer } from "@/gateway/server.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
 const tempDirs: string[] = [];
-const servers: ShepherdDaemonServer[] = [];
+const servers: ShepherdGatewayServer[] = [];
 const clients: ShepherdSessionClient[] = [];
 
 afterEach(async () => {
@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 describe("ShepherdSessionClient", () => {
-  test("creates sessions through the daemon socket", async () => {
+  test("creates sessions through the gateway socket", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);
 
@@ -93,7 +93,7 @@ describe("ShepherdSessionClient", () => {
     });
   });
 
-  test("renames sessions through the daemon socket", async () => {
+  test("renames sessions through the gateway socket", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);
 
@@ -114,7 +114,7 @@ describe("ShepherdSessionClient", () => {
     });
   });
 
-  test("lists and runs logical tools through the daemon socket", async () => {
+  test("lists and runs logical tools through the gateway socket", async () => {
     const { server, socketPath, store } = await openServer({
       configureLogicalTools(events) {
         const registry = new LogicalToolRegistry();
@@ -153,7 +153,7 @@ describe("ShepherdSessionClient", () => {
 async function openServer(
   options: { configureLogicalTools?: (store: EventStore) => LogicalToolRunner } = {},
 ): Promise<{
-  server: ShepherdDaemonServer;
+  server: ShepherdGatewayServer;
   socketPath: string;
   store: EventStore;
 }> {
@@ -164,7 +164,7 @@ async function openServer(
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const store = new EventStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
-  const server = new ShepherdDaemonServer({
+  const server = new ShepherdGatewayServer({
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
       : {}),

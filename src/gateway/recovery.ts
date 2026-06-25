@@ -8,14 +8,14 @@ export type GatewayRunRecoveryNote = {
   sessionId: string;
 };
 
-export type DaemonRecoveryResult = {
+export type GatewayRecoveryResult = {
   gatewayRuns: GatewayRunRecoveryNote[];
 };
 
-export function recoverDaemonState(options: {
+export function recoverGatewayState(options: {
   events: EventStore;
   sqlite: DatabaseSync;
-}): DaemonRecoveryResult {
+}): GatewayRecoveryResult {
   const runStore = new GatewayRunStore(options.sqlite);
   const gatewayRuns: GatewayRunRecoveryNote[] = [];
 
@@ -23,7 +23,7 @@ export function recoverDaemonState(options: {
     const previousStatus = run.status as Extract<GatewayRunStatus, "queued" | "running">;
     const recovery = {
       message:
-        "Gateway run was in flight during daemon startup. Shepherd did not replay it automatically.",
+        "Gateway run was in flight during gateway startup. Shepherd did not replay it automatically.",
       previousStatus,
       recoveredAt: new Date().toISOString(),
     };

@@ -7,11 +7,13 @@ import {
   type ShepherdToolsClient,
   shepherdToolsHelpText,
 } from "@/cli/shepherd-tools.js";
-import { JsonLineDecoder } from "@/daemon/json-lines.js";
+import { JsonLineDecoder } from "@/gateway/json-lines.js";
 
 describe("shepherd-tools", () => {
   test("parses stdio helper arguments", () => {
-    expect(parseShepherdToolsArgs([], { SHEPHERD_SOCKET_PATH: "/tmp/custom.sock" })).toEqual({
+    expect(
+      parseShepherdToolsArgs([], { SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/custom.sock" }),
+    ).toEqual({
       command: "serve",
       socketPath: "/tmp/custom.sock",
     });
@@ -42,7 +44,7 @@ describe("shepherd-tools", () => {
     ).resolves.toEqual({ output: { echoed: "hello" } });
   });
 
-  test("bridges JSON Lines stdio frames to the Shepherd daemon client", async () => {
+  test("bridges JSON Lines stdio frames to the Shepherd gateway client", async () => {
     const writes: string[] = [];
     await runShepherdToolsStdio({
       client: fakeClient(),

@@ -1,6 +1,6 @@
 import { createConnection, type Socket } from "node:net";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
 import type { EventRecord, SessionMetadata } from "@/db/event-store.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 
 export type WireEventRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
@@ -101,7 +101,7 @@ export class ShepherdSessionClient {
     this.#socket = socket;
     this.#socket.on("data", (chunk) => this.#handleData(chunk));
     this.#socket.on("error", (error) => this.#rejectAll(error));
-    this.#socket.on("close", () => this.#rejectAll(new Error("Shepherd daemon socket closed")));
+    this.#socket.on("close", () => this.#rejectAll(new Error("Shepherd gateway socket closed")));
   }
 
   static connect(socketPath: string): Promise<ShepherdSessionClient> {

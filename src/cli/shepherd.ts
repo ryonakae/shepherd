@@ -4,29 +4,52 @@ import { dirname, resolve } from "node:path";
 import { argv, env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { loadShepherdConfig } from "@/config/load.js";
-import { readOrCreateDaemonId } from "@/daemon/identity.js";
-import { recoverDaemonState } from "@/daemon/recovery.js";
-import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { readOrCreateGatewayId } from "@/gateway/identity.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { HeadlessPiSupervisor } from "@/gateway/pi-supervisor.js";
+import {
+  getGatewayStatus,
+  resolveGatewayControlPaths,
+  startGatewayProcess,
+  stopGatewayProcess,
+} from "@/gateway/process-manager.js";
 import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
+import { recoverGatewayState } from "@/gateway/recovery.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
+import { ShepherdGatewayServer } from "@/gateway/server.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
+type GatewayAction = "restart" | "run" | "start" | "status" | "stop";
+
+type GatewayRunCommand = {
+  action: "run";
+  command: "gateway";
+  configPath?: string;
+  dbPath: string;
+  socketPath: string;
+};
+
+type GatewayManagedCommand = {
+  action: Exclude<GatewayAction, "run">;
+  command: "gateway";
+  configPath?: string;
+  dbPath: string;
+  logPath?: string;
+  pidPath?: string;
+  socketPath: string;
+  timeoutMs: number;
+};
+
 export type CliCommand =
-  | {
-      command: "daemon";
-      configPath?: string;
-      dbPath: string;
-      socketPath: string;
-    }
+  | GatewayRunCommand
+  | GatewayManagedCommand
   | {
       actorId?: string;
       command: "send";
@@ -74,6 +97,34 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
     return { command: "help" };
   }
 
+  if (command === "gateway") {
+    const [action = "status", ...gatewayRest] = rest;
+    if (!isGatewayAction(action)) {
+      throw new Error(`Unknown gateway action: ${action}`);
+    }
+
+    const parsed = parseOptions(gatewayRest);
+    const configPath = parsed.config ?? environment.SHEPHERD_CONFIG;
+    const base = {
+      command: "gateway" as const,
+      dbPath: parsed.db ?? environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
+    };
+
+    if (action === "run") {
+      return configPath ? { ...base, action, configPath } : { ...base, action };
+    }
+
+    return {
+      ...base,
+      action,
+      ...(configPath ? { configPath } : {}),
+      ...(parsed.log ? { logPath: parsed.log } : {}),
+      ...(parsed.pid ? { pidPath: parsed.pid } : {}),
+      timeoutMs: parsed["timeout-ms"] ? Number(parsed["timeout-ms"]) : 10_000,
+    };
+  }
+
   if (command === "send") {
     const parsed = parseOptions(rest);
     if (!parsed.session || !parsed.text) {
@@ -83,7 +134,7 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
     return {
       command: "send",
       sessionId: parsed.session,
-      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
       text: parsed.text,
       ...(parsed.actor ? { actorId: parsed.actor } : {}),
       ...(parsed["display-name"] ? { displayName: parsed["display-name"] } : {}),
@@ -108,7 +159,7 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
       command: "open",
       dbPath: parsed.db ?? environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
       sessionId: parsed.session,
-      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
     };
   }
 
@@ -122,7 +173,7 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
       afterEventId: parsed.after ? Number(parsed.after) : 0,
       command: "watch",
       sessionId: parsed.session,
-      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
     };
   }
 
@@ -151,29 +202,21 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
     return {
       command: "rename",
       sessionId: parsed.session,
-      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
       title: parsed.title.length === 0 ? null : parsed.title,
     };
   }
 
-  if (command !== "daemon") {
-    throw new Error(`Unknown command: ${command}`);
-  }
-
-  const parsed = parseOptions(rest);
-  const configPath = parsed.config ?? environment.SHEPHERD_CONFIG;
-  const baseCommand = {
-    command: "daemon" as const,
-    dbPath: parsed.db ?? environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
-    socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
-  };
-
-  return configPath ? { ...baseCommand, configPath } : baseCommand;
+  throw new Error(`Unknown command: ${command}`);
 }
 
 export function helpText(): string {
   return `Usage:
-  shepherd daemon [--socket <path>] [--db <path>] [--config <path>]
+  shepherd gateway start [--socket <path>] [--db <path>] [--config <path>] [--pid <path>] [--log <path>]
+  shepherd gateway stop [--socket <path>] [--db <path>] [--pid <path>] [--timeout-ms <ms>]
+  shepherd gateway restart [--socket <path>] [--db <path>] [--config <path>] [--pid <path>] [--log <path>] [--timeout-ms <ms>]
+  shepherd gateway status [--socket <path>] [--db <path>] [--pid <path>]
+  shepherd gateway run [--socket <path>] [--db <path>] [--config <path>]
   shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>] [--provider <name>] [--model <id>]
   shepherd open --session <id> [--socket <path>] [--db <path>]
   shepherd watch --session <id> [--socket <path>] [--after <event-id>]
@@ -181,7 +224,7 @@ export function helpText(): string {
   shepherd audit --session <id> [--db <path>] [--after <event-id>] [--limit <n>] [--json true]
 
 Commands:
-  daemon    Start the local Shepherd daemon
+  gateway   Manage the local Shepherd Gateway
   send      Send a user message into a Shepherd session
   open      Open the matching Pi session in the Pi TUI
   watch     Print session events as JSON Lines
@@ -204,6 +247,51 @@ async function main(): Promise<void> {
 
   if (command.command === "help") {
     console.log(helpText());
+    return;
+  }
+
+  if (command.command === "gateway" && command.action !== "run") {
+    const paths = resolveGatewayControlPaths({
+      dbPath: command.dbPath,
+      ...(command.logPath !== undefined ? { logPath: command.logPath } : {}),
+      ...(command.pidPath !== undefined ? { pidPath: command.pidPath } : {}),
+    });
+
+    if (command.action === "status") {
+      const status = await getGatewayStatus({ ...paths, socketPath: command.socketPath });
+      console.log(JSON.stringify(status));
+      return;
+    }
+
+    if (command.action === "stop") {
+      const result = await stopGatewayProcess({
+        pidPath: paths.pidPath,
+        socketPath: command.socketPath,
+        timeoutMs: command.timeoutMs,
+      });
+      console.log(JSON.stringify(result));
+      return;
+    }
+
+    if (command.action === "restart") {
+      await stopGatewayProcess({
+        pidPath: paths.pidPath,
+        socketPath: command.socketPath,
+        timeoutMs: command.timeoutMs,
+      });
+    }
+
+    const result = await startGatewayProcess({
+      cliPath: fileURLToPath(import.meta.url),
+      ...(command.configPath !== undefined ? { configPath: command.configPath } : {}),
+      dbPath: command.dbPath,
+      env,
+      logPath: paths.logPath,
+      nodePath: process.execPath,
+      pidPath: paths.pidPath,
+      socketPath: command.socketPath,
+    });
+    console.log(JSON.stringify({ ...result, logPath: paths.logPath, pidPath: paths.pidPath }));
     return;
   }
 
@@ -241,7 +329,7 @@ async function main(): Promise<void> {
       });
       const pi = piSessions.ensureForSession(command.sessionId);
       const code = await runPiSession({
-        daemonId: readOrCreateDaemonId(stateDir),
+        gatewayId: readOrCreateGatewayId(stateDir),
         piSessionFile: pi.sessionFile,
         sessionId: command.sessionId,
         socketPath: command.socketPath,
@@ -309,9 +397,9 @@ async function main(): Promise<void> {
   const events = new EventStore(sqlite);
   const sessionBindings = new SessionBindingStore(sqlite);
   const summaries = new SessionSummaryStore(sqlite);
-  recoverDaemonState({ events, sqlite });
+  recoverGatewayState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
-  let server: ShepherdDaemonServer;
+  let server: ShepherdGatewayServer;
   const gatewayRuntime = config
     ? createGatewayRuntime({
         config,
@@ -337,8 +425,8 @@ async function main(): Promise<void> {
       })
     : undefined;
 
-  server = new ShepherdDaemonServer({
-    daemonId: readOrCreateDaemonId(stateDir),
+  server = new ShepherdGatewayServer({
+    gatewayId: readOrCreateGatewayId(stateDir),
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(platformRuntime?.streamDelivery ? { streamDelivery: platformRuntime.streamDelivery } : {}),
     ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
@@ -368,7 +456,7 @@ async function main(): Promise<void> {
     });
   }
   await platformRuntime?.start();
-  console.log(`Shepherd daemon listening on ${command.socketPath}`);
+  console.log(`Shepherd gateway listening on ${command.socketPath}`);
 
   const stop = async () => {
     await platformRuntime?.close();
@@ -388,28 +476,28 @@ export function piOpenArgs(piSessionFile: string): string[] {
 }
 
 export function piOpenEnvironment(input: {
-  daemonId?: string;
+  gatewayId?: string;
   environment?: NodeJS.ProcessEnv;
   sessionId: string;
   socketPath: string;
 }): NodeJS.ProcessEnv {
   return {
     ...(input.environment ?? process.env),
-    SHEPHERD_DAEMON_ID: input.daemonId ?? "default",
+    SHEPHERD_GATEWAY_ID: input.gatewayId ?? "default",
     SHEPHERD_SESSION_ID: input.sessionId,
-    SHEPHERD_SOCKET_PATH: input.socketPath,
+    SHEPHERD_GATEWAY_SOCKET_PATH: input.socketPath,
   };
 }
 
 async function runPiSession(input: {
-  daemonId: string;
+  gatewayId: string;
   piSessionFile: string;
   sessionId: string;
   socketPath: string;
 }): Promise<number> {
   const child = spawn("pi", piOpenArgs(input.piSessionFile), {
     env: piOpenEnvironment({
-      daemonId: input.daemonId,
+      gatewayId: input.gatewayId,
       sessionId: input.sessionId,
       socketPath: input.socketPath,
     }),
@@ -437,6 +525,10 @@ function loadConfigOrThrow(configPath: string) {
   }
 
   return config.value;
+}
+
+function isGatewayAction(value: string): value is GatewayAction {
+  return ["restart", "run", "start", "status", "stop"].includes(value);
 }
 
 function parseOptions(args: string[]): Record<string, string | undefined> {

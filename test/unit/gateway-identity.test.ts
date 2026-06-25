@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { readOrCreateDaemonId } from "@/daemon/identity.js";
+import { readOrCreateGatewayId } from "@/gateway/identity.js";
 
 const tempDirs: string[] = [];
 
@@ -12,13 +12,13 @@ afterEach(() => {
   }
 });
 
-describe("readOrCreateDaemonId", () => {
-  test("creates and reuses a stable daemon id", () => {
-    const dir = mkdtempSync(join(tmpdir(), "shepherd-daemon-id-"));
+describe("readOrCreateGatewayId", () => {
+  test("creates and reuses a stable gateway id", () => {
+    const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-id-"));
     tempDirs.push(dir);
 
-    const first = readOrCreateDaemonId(dir);
-    const second = readOrCreateDaemonId(dir);
+    const first = readOrCreateGatewayId(dir);
+    const second = readOrCreateGatewayId(dir);
 
     expect(first).toMatch(/^[0-9a-f-]{36}$/);
     expect(second).toBe(first);

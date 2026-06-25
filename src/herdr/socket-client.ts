@@ -1,5 +1,5 @@
 import { createConnection, type Socket } from "node:net";
-import { encodeJsonLine, JsonLineDecoder } from "@/daemon/json-lines.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 
 export type HerdrRequestId = string;
 
