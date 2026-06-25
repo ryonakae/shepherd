@@ -9,6 +9,7 @@ import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { WorkingContextStore } from "@/db/working-contexts.js";
 import { readOrCreateGatewayId } from "@/gateway/identity.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
@@ -23,6 +24,7 @@ import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-ove
 import { recoverGatewayState } from "@/gateway/recovery.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
+import { WorkingContextResolver } from "@/gateway/working-contexts.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
@@ -399,6 +401,15 @@ async function main(): Promise<void> {
   const summaries = new SessionSummaryStore(sqlite);
   recoverGatewayState({ events, sqlite });
   const config = command.configPath ? loadConfigOrThrow(command.configPath) : undefined;
+  const workingContexts = new WorkingContextResolver({
+    allowedRoots: config?.context?.allowed_roots ?? [],
+    allowUnconfiguredLocalPaths: true,
+    store: new WorkingContextStore(sqlite),
+  });
+  const piSessions = new PiSessionMetadataStore({
+    events,
+    sessionDir: resolve(stateDir, "pi-sessions"),
+  });
   let server: ShepherdGatewayServer;
   const gatewayRuntime = config
     ? createGatewayRuntime({
@@ -432,6 +443,7 @@ async function main(): Promise<void> {
     ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
     ...(gatewayRuntime && !gatewayRuntime.runner ? { gatewayRuns: gatewayRuntime.runs } : {}),
     ...(headlessPi ? { headlessPi } : {}),
+    localWorkingContexts: workingContexts,
     ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),
     ...(config
       ? {
@@ -441,6 +453,7 @@ async function main(): Promise<void> {
           }),
         }
       : {}),
+    piSessions,
     socketPath: command.socketPath,
     store: events,
     summaries,

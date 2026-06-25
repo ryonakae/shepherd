@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
@@ -6,8 +6,11 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { WorkingContextStore } from "@/db/working-contexts.js";
+import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
+import { WorkingContextResolver } from "@/gateway/working-contexts.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
 const tempDirs: string[] = [];
@@ -46,6 +49,50 @@ describe("ShepherdSessionClient", () => {
     });
     expect(store.getSession(result.session.id)).toMatchObject({
       metadata: { slackAutoBind: { channelId: "C123", status: "pending" } },
+    });
+  });
+
+  test("creates sessions with a working context path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shepherd-tui-context-"));
+    tempDirs.push(dir);
+    const project = join(dir, "project");
+    mkdirSync(project);
+    const { server, socketPath, store } = await openServer({
+      allowedRoots: [dir],
+      enableLocalWorkingContexts: true,
+    });
+    servers.push(server);
+
+    const client = await ShepherdSessionClient.connect(socketPath);
+    clients.push(client);
+
+    const result = await client.createSession({ title: null, workingContextPath: project });
+
+    expect(result.session).toMatchObject({
+      title: null,
+      workingContextId: expect.any(String),
+    });
+    expect(store.getSession(result.session.id).workingContextId).toBe(
+      result.session.workingContextId,
+    );
+  });
+
+  test("ensures Pi session metadata through the gateway socket", async () => {
+    const { server, socketPath, store } = await openServer({ enablePiSessionStore: true });
+    servers.push(server);
+    const session = store.createSession({ id: "session-1" });
+
+    const client = await ShepherdSessionClient.connect(socketPath);
+    clients.push(client);
+
+    await expect(client.ensurePiSession({ sessionId: session.id })).resolves.toMatchObject({
+      pi: {
+        sessionFile: expect.stringContaining("session-1.jsonl"),
+        sessionId: expect.any(String),
+      },
+    });
+    expect(store.getSession(session.id).metadata.pi).toMatchObject({
+      sessionFile: expect.stringContaining("session-1.jsonl"),
     });
   });
 
@@ -151,7 +198,12 @@ describe("ShepherdSessionClient", () => {
 });
 
 async function openServer(
-  options: { configureLogicalTools?: (store: EventStore) => LogicalToolRunner } = {},
+  options: {
+    allowedRoots?: string[];
+    configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
+    enableLocalWorkingContexts?: boolean;
+    enablePiSessionStore?: boolean;
+  } = {},
 ): Promise<{
   server: ShepherdGatewayServer;
   socketPath: string;
@@ -165,8 +217,25 @@ async function openServer(
   const store = new EventStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdGatewayServer({
+    ...(options.enableLocalWorkingContexts
+      ? {
+          localWorkingContexts: new WorkingContextResolver({
+            allowedRoots: options.allowedRoots ?? [],
+            allowUnconfiguredLocalPaths: options.allowedRoots === undefined,
+            store: new WorkingContextStore(sqlite),
+          }),
+        }
+      : {}),
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
+      : {}),
+    ...(options.enablePiSessionStore
+      ? {
+          piSessions: new PiSessionMetadataStore({
+            events: store,
+            sessionDir: join(dir, "pi-sessions"),
+          }),
+        }
       : {}),
     socketPath,
     store,

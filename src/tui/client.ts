@@ -6,6 +6,8 @@ export type WireEventRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
 };
 
+export type PiSessionWireRecord = NonNullable<SessionMetadata["pi"]>;
+
 export type WireSessionRecord = {
   createdAt: string;
   id: string;
@@ -28,6 +30,7 @@ export type CreateSessionInput = {
   };
   title?: string | null;
   workingContextId?: string;
+  workingContextPath?: string;
 };
 
 export type SendUserMessageInput = {
@@ -125,6 +128,10 @@ export class ShepherdSessionClient {
 
   async createSession(input: CreateSessionInput = {}): Promise<{ session: WireSessionRecord }> {
     return (await this.#request("session.create", input)) as { session: WireSessionRecord };
+  }
+
+  async ensurePiSession(input: { sessionId: string }): Promise<{ pi: PiSessionWireRecord }> {
+    return (await this.#request("pi.ensure_session", input)) as { pi: PiSessionWireRecord };
   }
 
   async sendUserMessage(input: SendUserMessageInput): Promise<{ event: WireEventRecord }> {

@@ -12,10 +12,11 @@
 
 **Progress:**
 - Done — Task 1 changed working context identity to path-first storage and passed `pnpm test -- test/integration/working-contexts.test.ts`.
-- Pending — Tasks 2 through 6 still need implementation and validation.
+- Done — Task 2 added `session.create` `workingContextPath`, `pi.ensure_session`, TUI client support, and passed `pnpm check`.
+- Pending — Tasks 3 through 6 still need implementation and validation.
 
 **Next steps:**
-- Start Task 2 by extending Gateway RPC support for `workingContextPath` and `pi.ensure_session`.
+- Start Task 3 by implementing no-argument CLI startup and Gateway-first `open --session`.
 - Commit after each task as listed in the task sections.
 
 ## Global Constraints

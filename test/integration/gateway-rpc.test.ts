@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { WorkingContextStore } from "@/db/working-contexts.js";
 import { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
 import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
@@ -15,6 +16,7 @@ import { GatewayRunner } from "@/gateway/runner.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 import { GatewayRunStore } from "@/gateway/turn-queue.js";
+import { WorkingContextResolver } from "@/gateway/working-contexts.js";
 
 const tempDirs: string[] = [];
 const servers: ShepherdGatewayServer[] = [];
@@ -68,6 +70,122 @@ describe("ShepherdGatewayServer JSON Lines RPC", () => {
       metadata: { slackAutoBind: { channelId: "C123", status: "pending" } },
       title: "TUI session",
     });
+  });
+
+  test("creates sessions with a local working context path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
+    tempDirs.push(dir);
+    const project = join(dir, "project");
+    mkdirSync(project);
+    const { server, socketPath, store } = await openServer({
+      allowedRoots: [dir],
+      enableLocalWorkingContexts: true,
+    });
+    servers.push(server);
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "create-local-1",
+        method: "session.create",
+        params: { title: null, workingContextPath: project },
+      }),
+    );
+
+    const [response] = await readMessages(client, 1);
+    expect(response).toMatchObject({
+      id: "create-local-1",
+      result: {
+        session: {
+          title: null,
+          workingContextId: expect.any(String),
+        },
+      },
+    });
+    const sessionId = (response as { result: { session: { id: string } } }).result.session.id;
+    expect(store.getSession(sessionId).workingContextId).toBeTruthy();
+  });
+
+  test("creates local working contexts when allowed roots are unconfigured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
+    tempDirs.push(dir);
+    const project = join(dir, "unconfigured-project");
+    mkdirSync(project);
+    const { server, socketPath, store } = await openServer({ enableLocalWorkingContexts: true });
+    servers.push(server);
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "create-local-unconfigured-1",
+        method: "session.create",
+        params: { workingContextPath: project },
+      }),
+    );
+
+    const [response] = await readMessages(client, 1);
+    const session = (
+      response as { result: { session: { id: string; workingContextId: string | null } } }
+    ).result.session;
+    expect(session.workingContextId).toEqual(expect.any(String));
+    expect(store.getSession(session.id).workingContextId).toBe(session.workingContextId);
+  });
+
+  test("rejects local working context paths outside configured allowed roots", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
+    tempDirs.push(dir);
+    const outside = join(dir, "outside");
+    mkdirSync(outside);
+    const { server, socketPath } = await openServer({
+      allowedRoots: [join(dir, "allowed")],
+      enableLocalWorkingContexts: true,
+    });
+    servers.push(server);
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "create-local-denied-1",
+        method: "session.create",
+        params: { workingContextPath: outside },
+      }),
+    );
+
+    await expect(readMessages(client, 1)).resolves.toMatchObject([
+      {
+        error: { message: expect.stringContaining("outside allowed roots") },
+        id: "create-local-denied-1",
+      },
+    ]);
+  });
+
+  test("ensures Pi metadata for an existing session", async () => {
+    const { server, socketPath, store } = await openServer({ enablePiSessionStore: true });
+    servers.push(server);
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+
+    client.write(
+      encodeJsonLine({
+        id: "pi-ensure-1",
+        method: "pi.ensure_session",
+        params: { sessionId: session.id },
+      }),
+    );
+
+    const [response] = await readMessages(client, 1);
+    expect(response).toMatchObject({
+      id: "pi-ensure-1",
+      result: {
+        pi: {
+          sessionFile: expect.stringContaining("session-1.jsonl"),
+          sessionId: expect.any(String),
+        },
+      },
+    });
+    expect(store.getSession(session.id).metadata.pi).toMatchObject(
+      (response as { result: { pi: object } }).result.pi,
+    );
   });
 
   test("replays subscribed session events after a cursor", async () => {
@@ -1430,6 +1548,7 @@ agents:
 
 async function openServer(
   options: {
+    allowedRoots?: string[];
     configPath?: string;
     configureDeliveryFanout?: () => {
       deliverEvent(event: ReturnType<EventStore["appendEvent"]>): Promise<unknown>;
@@ -1446,6 +1565,8 @@ async function openServer(
     };
     gatewayId?: string;
     enableGatewayRuns?: boolean;
+    enableLocalWorkingContexts?: boolean;
+    enablePiSessionStore?: boolean;
     ownerHeartbeatTimeoutMs?: number;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
@@ -1484,11 +1605,28 @@ async function openServer(
         }
       : {}),
     ...(options.configureHeadlessPi ? { headlessPi: options.configureHeadlessPi() } : {}),
+    ...(options.enableLocalWorkingContexts
+      ? {
+          localWorkingContexts: new WorkingContextResolver({
+            allowedRoots: options.allowedRoots ?? [],
+            allowUnconfiguredLocalPaths: options.allowedRoots === undefined,
+            store: new WorkingContextStore(sqlite),
+          }),
+        }
+      : {}),
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
       : {}),
     ...(options.ownerHeartbeatTimeoutMs !== undefined
       ? { ownerHeartbeatTimeoutMs: options.ownerHeartbeatTimeoutMs }
+      : {}),
+    ...(options.enablePiSessionStore
+      ? {
+          piSessions: new PiSessionMetadataStore({
+            events: store,
+            sessionDir: join(dir, "pi-sessions"),
+          }),
+        }
       : {}),
     ...(options.providerOverrides ? { providerOverrides: options.providerOverrides } : {}),
     ...(options.configureStreamDelivery

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
-import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { EventRecord, EventStore, SessionMetadata } from "@/db/event-store.js";
 import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
 import type { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
@@ -22,8 +22,10 @@ type ShepherdGatewayServerOptions = {
   gatewayRunner?: GatewayTurnRunner;
   gatewayRuns?: ExternalGatewayRunQueue;
   headlessPi?: HeadlessPiSupervisorService;
+  localWorkingContexts?: LocalWorkingContextResolver;
   logicalTools?: LogicalToolService;
   ownerHeartbeatTimeoutMs?: number;
+  piSessions?: PiSessionMetadataService;
   providerOverrides?: ProviderOverrideResolver;
   streamDelivery?: GatewayStreamDeliveryService;
   socketPath: string;
@@ -41,7 +43,15 @@ type HeadlessPiSupervisorService = {
   ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
 };
 
+type LocalWorkingContextResolver = {
+  resolve(input: { label?: string; path?: string; slug?: string }): { id: string };
+};
+
 type LogicalToolService = Pick<LogicalToolRunner, "list" | "run">;
+
+type PiSessionMetadataService = {
+  ensureForSession(sessionId: string): NonNullable<SessionMetadata["pi"]>;
+};
 
 type GatewayStreamDeliveryService = {
   delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
@@ -129,9 +139,11 @@ export class ShepherdGatewayServer {
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #gatewayRuns: ExternalGatewayRunQueue | undefined;
   readonly #headlessPi: HeadlessPiSupervisorService | undefined;
+  readonly #localWorkingContexts: LocalWorkingContextResolver | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
   readonly #piHandshakeWaiters: Array<(handshake: PiHandshakeRecord) => void> = [];
   readonly #piOwners = new Map<string, PiOwnerRecord>();
+  readonly #piSessions: PiSessionMetadataService | undefined;
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
   readonly #streamDelivery: GatewayStreamDeliveryService | undefined;
@@ -148,9 +160,11 @@ export class ShepherdGatewayServer {
     this.#gatewayRunner = options.gatewayRunner;
     this.#gatewayRuns = options.gatewayRuns;
     this.#headlessPi = options.headlessPi;
+    this.#localWorkingContexts = options.localWorkingContexts;
     this.#logicalTools = options.logicalTools;
     this.#ownerHeartbeatTimeoutMs =
       options.ownerHeartbeatTimeoutMs ?? this.#ownerHeartbeatTimeoutMs;
+    this.#piSessions = options.piSessions;
     this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
@@ -448,6 +462,11 @@ export class ShepherdGatewayServer {
       return;
     }
 
+    if (request.method === "pi.ensure_session") {
+      this.#ensurePiSession(socket, request);
+      return;
+    }
+
     if (request.method === "pi.heartbeat") {
       this.#recordPiHeartbeat(socket, request);
       return;
@@ -541,6 +560,7 @@ export class ShepherdGatewayServer {
       slackAutoBind?: { channelId?: unknown };
       title?: unknown;
       workingContextId?: unknown;
+      workingContextPath?: unknown;
     };
     const channelId = params?.slackAutoBind?.channelId;
 
@@ -552,11 +572,55 @@ export class ShepherdGatewayServer {
       return;
     }
 
+    if (params?.workingContextPath !== undefined && typeof params.workingContextPath !== "string") {
+      this.#write(socket, {
+        error: { message: "workingContextPath must be a string" },
+        id: request.id,
+      });
+      return;
+    }
+
+    let workingContextId =
+      typeof params?.workingContextId === "string" ? params.workingContextId : undefined;
+    if (typeof params?.workingContextPath === "string") {
+      if (params.workingContextPath.length === 0) {
+        this.#write(socket, {
+          error: { message: "workingContextPath must be a string" },
+          id: request.id,
+        });
+        return;
+      }
+      if (workingContextId !== undefined) {
+        this.#write(socket, {
+          error: { message: "workingContextId and workingContextPath are mutually exclusive" },
+          id: request.id,
+        });
+        return;
+      }
+      if (!this.#localWorkingContexts) {
+        this.#write(socket, {
+          error: { message: "Local working context resolver is not configured" },
+          id: request.id,
+        });
+        return;
+      }
+
+      try {
+        workingContextId = this.#localWorkingContexts.resolve({
+          path: params.workingContextPath,
+        }).id;
+      } catch (error) {
+        this.#write(socket, {
+          error: { message: error instanceof Error ? error.message : String(error) },
+          id: request.id,
+        });
+        return;
+      }
+    }
+
     const session = this.#store.createSession({
       ...(typeof params?.title === "string" ? { title: params.title } : {}),
-      ...(typeof params?.workingContextId === "string"
-        ? { workingContextId: params.workingContextId }
-        : {}),
+      ...(workingContextId !== undefined ? { workingContextId } : {}),
       ...(typeof channelId === "string"
         ? { metadata: { slackAutoBind: { channelId, status: "pending" } } }
         : {}),
@@ -888,6 +952,31 @@ export class ShepherdGatewayServer {
         socketPath: this.#socketPath,
       },
     });
+  }
+
+  #ensurePiSession(socket: Socket, request: RpcRequest): void {
+    const params = request.params as { sessionId?: unknown };
+    if (typeof params?.sessionId !== "string") {
+      this.#write(socket, { error: { message: "sessionId is required" }, id: request.id });
+      return;
+    }
+    if (!this.#piSessions) {
+      this.#write(socket, {
+        error: { message: "Pi session metadata store is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const pi = this.#piSessions.ensureForSession(params.sessionId);
+      this.#write(socket, { id: request.id, result: { pi } });
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
   }
 
   #recordPiHeartbeat(socket: Socket, request: RpcRequest): void {

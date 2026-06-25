@@ -4,6 +4,7 @@ import type { WorkingContextRecord, WorkingContextStore } from "@/db/working-con
 
 export type WorkingContextResolverOptions = {
   allowedRoots?: readonly string[];
+  allowUnconfiguredLocalPaths?: boolean;
   store: WorkingContextStore;
 };
 
@@ -14,10 +15,12 @@ export type WorkingContextCandidate = {
 
 export class WorkingContextResolver {
   readonly #allowedRoots: string[];
+  readonly #allowUnconfiguredLocalPaths: boolean;
   readonly #store: WorkingContextStore;
 
   constructor(options: WorkingContextResolverOptions) {
     this.#allowedRoots = (options.allowedRoots ?? []).map((root) => resolve(root));
+    this.#allowUnconfiguredLocalPaths = options.allowUnconfiguredLocalPaths ?? false;
     this.#store = options.store;
   }
 
@@ -56,6 +59,9 @@ export class WorkingContextResolver {
 
   #assertAllowed(path: string): void {
     if (this.#allowedRoots.length === 0) {
+      if (this.#allowUnconfiguredLocalPaths) {
+        return;
+      }
       throw new Error("No working context allowed roots are configured");
     }
 
