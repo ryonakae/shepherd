@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. Core event stream, messaging sync, and recovery MVP were implemented.
+
+## Progress
+
+- **Done** — Session/event tables, live subscriptions, Slack inbound/outbound, delivery receipts, gateway queueing, and recovery were implemented.
+- **Partially superseded** — Conversation source-of-truth semantics change under the active Pi runtime plan, while platform/orchestration logging remains relevant.
+
+## Next steps
+
+- Reuse event, delivery, idempotency, and recovery decisions for Pi runtime work.
+
 ## Goal
 
 Define the source-of-truth event model and how TUI and messaging platforms stay synchronized.

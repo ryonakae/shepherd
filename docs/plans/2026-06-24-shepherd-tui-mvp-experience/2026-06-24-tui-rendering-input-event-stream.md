@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd TUI MVP Experience Plan](../2026-06-24-shepherd-tui-mvp-experience.md)
 
+## Status
+
+Superseded. Use [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md) for active implementation.
+
+## Progress
+
+- **Done** — Historical event rendering, input, and stream UX requirements were captured.
+- **Superseded** — Custom Shepherd TUI rendering components should not be implemented from this plan.
+
+## Next steps
+
+- Reuse relevant event formatting and Slack/TUI sync requirements as reference for Pi extension and Slack streaming work.
+
 ## Goal
 
 Specify the first full-screen TUI surface for Shepherd using Pi's TUI package as the implementation reference.

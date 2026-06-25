@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. Foundation and quality gates are complete.
+
+## Progress
+
+- **Done** — TypeScript, Vitest, Biome, Drizzle, SQLite, TypeBox/Ajv, Husky, and mise setup were implemented.
+- **Done** — `pnpm check` and `pnpm build` expectations were established.
+
+## Next steps
+
+- Continue using the established gates for all implementation work.
+
 ## Goal
 
 Define the implementation foundation, test strategy, linting, formatting, and pre-commit gates before MVP code starts.

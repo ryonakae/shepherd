@@ -1,0 +1,157 @@
+# Setup, Config, and Pi Readiness
+
+Date: 2026-06-25
+
+Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
+
+## Status
+
+Active child plan. Not started.
+
+## Progress
+
+- **Done** — Setup command shape decided: `brew install shepherd` and `pi install npm:shepherd-pi`.
+- **Done** — Dedicated `shepherd setup` and `shepherd doctor` are deferred for MVP.
+- **Done** — Daemon startup should fail fast when Pi readiness fails.
+- **Not started** — Config schema changes.
+- **Not started** — Pi readiness probe implementation.
+
+## Next steps
+
+1. Update `src/config/schema.ts` for Pi runtime config.
+2. Update config tests and example fixtures.
+3. Add daemon startup readiness checks.
+4. Remove or quarantine old provider runtime construction from the default daemon path.
+
+## Distribution
+
+Expected user setup:
+
+```bash
+brew install shepherd
+pi install npm:shepherd-pi
+```
+
+The `shepherd-pi` Pi package must be installed in the user's Pi environment. Missing extension means setup is incomplete.
+
+## Config changes
+
+### Remove Shepherd-owned LLM provider config
+
+Remove or deprecate these config concepts from the active Pi runtime config shape:
+
+```yaml
+gateway:
+  default_provider: codex
+  model: gpt-5.3-codex
+  provider_overrides: ...
+
+providers:
+  codex: ...
+  openai: ...
+  anthropic: ...
+  openrouter: ...
+```
+
+Pi owns provider authentication, model selection, OAuth/API key storage, and model switching through normal Pi settings.
+
+### Add Pi supervisor config
+
+Use `gateway.pi` rather than `gateway.runtime: pi`; Pi is the only planned runtime.
+
+```yaml
+gateway:
+  pi:
+    idle_timeout_ms: 600000
+    readiness_timeout_ms: 10000
+```
+
+Initial defaults:
+
+- `idle_timeout_ms`: 10 minutes.
+- `readiness_timeout_ms`: 10 seconds.
+
+### Keep Herdr agent config
+
+Keep Shepherd-owned Herdr worker profile config:
+
+```yaml
+default_agent: implementer
+agents:
+  implementer:
+    command: codex
+    args: []
+    when: "Use for implementation, test fixes, and CLI-heavy coding work."
+```
+
+The daemon/tool backend owns these profiles. The Pi extension reads tool/profile metadata from the daemon and injects concise guidance into Pi's prompt context.
+
+### Add Slack streaming config
+
+Add under `platforms.slack`:
+
+```yaml
+platforms:
+  slack:
+    streaming:
+      enabled: true
+      edit_interval_ms: 750
+      buffer_threshold_chars: 40
+      cursor: " ▉"
+      tool_progress: off # off | compact | verbose
+```
+
+Tool progress defaults to `off` for Slack, following Hermes' Slack default.
+
+## Daemon readiness check
+
+`shepherd daemon` must verify Pi readiness before starting Slack Socket Mode.
+
+Startup checks:
+
+1. Resolve Shepherd config, DB path, socket path, and daemon identity.
+2. Verify `pi` exists on `PATH`.
+3. Launch a short-lived readiness process:
+   ```bash
+   pi --mode rpc --no-session
+   ```
+4. Wait for a `shepherd-pi` extension handshake.
+5. Call Pi RPC `get_available_models` and require at least one available model.
+6. Stop the readiness process.
+7. Start Slack and normal daemon services only after success.
+
+Failure examples:
+
+```text
+Shepherd Pi extension is not installed.
+
+Install it with:
+  pi install npm:shepherd-pi
+
+Then restart:
+  shepherd daemon
+```
+
+```text
+Pi has no available authenticated model.
+
+Run:
+  pi
+  /login
+```
+
+## CLI behavior
+
+The daemon requires Pi readiness. CLI-only commands can remain Pi-independent:
+
+- `shepherd audit`
+- config parsing helpers
+- future read-only inspection commands
+
+## Tests
+
+- Config accepts `gateway.pi` and rejects/ignores old provider shape according to migration policy.
+- Missing `pi` command fails daemon startup with actionable message.
+- Missing extension handshake fails daemon startup.
+- Empty `get_available_models` fails daemon startup.
+- Successful readiness probe allows daemon startup.

@@ -48,8 +48,12 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 
 ## Plan / docs 運用
 
-- Active plan は `docs/plans/` 配下に置く。親 plan に紐づく子 plan は `docs/plans/<parent-slug>/` に置く。
-- plan を更新するときは、関連する親子リンクと README / AGENTS からの参照も確認する。
+- Active plan は `docs/plans/` 配下に置く。完了済み plan は `docs/plans/archived/` 配下に置く。
+- 大きな plan は親 plan と子 plan に分ける。親 plan は目的、全体方針、進捗サマリ、子 plan へのリンクに絞り、実装詳細はスライス・機能・タスク単位の子 plan に置く。
+- 子 plan 用ディレクトリ名は親 plan ファイル名から `.md` を除いたものと完全に一致させる。例: `docs/plans/2026-06-25-pi-runtime-gateway.md` の子 plan は `docs/plans/2026-06-25-pi-runtime-gateway/` に置く。
+- plan には進捗を追える欄を置く。最低限 `Status`、`Progress`、`Next steps` を書き、`Progress` は `Not started` / `In progress` / `Blocked` / `Done` などの状態と短い根拠を箇条書きで更新する。
+- 子 plan には親 plan への `Parent:` リンクを置く。親 plan には子 plan 一覧と各子 plan の現在状態を置く。
+- plan を更新するときは、関連する親子リンク、ディレクトリ名、README / AGENTS からの参照も確認する。
 - 完了済み plan を `docs/plans/archived/` に移す場合は、実装変更とは分けた docs-only commit にする。
 - 並行セッションで plan 更新が入っている、または追加判断が残っている場合は archive しない。
 

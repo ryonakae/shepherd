@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. Original MVP roadmap is complete.
+
+## Progress
+
+- **Done** — Core MVP phases were implemented and verified.
+- **Deferred** — Limits listed in this roadmap are historical; active follow-up work should be tracked in new active plans.
+
+## Next steps
+
+- Use only as a completion audit for the original MVP.
+
 ## Goal
 
 Break the Shepherd MVP into implementation phases while preserving the design decisions from the parent and child plans.

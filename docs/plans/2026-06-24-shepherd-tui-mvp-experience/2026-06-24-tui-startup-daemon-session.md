@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd TUI MVP Experience Plan](../2026-06-24-shepherd-tui-mvp-experience.md)
 
+## Status
+
+Superseded. Use [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md) for active implementation.
+
+## Progress
+
+- **Done** — Historical startup, daemon autostart, and local session lifecycle requirements were captured.
+- **Superseded** — Custom Shepherd TUI startup should be replaced by Pi runtime and `shepherd open` behavior.
+
+## Next steps
+
+- Reuse relevant daemon path, session, and working-context requirements as reference for Pi runtime gateway implementation.
+
 ## Goal
 
 Specify how the `shepherd` command opens a TUI, starts or connects to the daemon, creates or resumes sessions, and binds the current working directory as a working context.

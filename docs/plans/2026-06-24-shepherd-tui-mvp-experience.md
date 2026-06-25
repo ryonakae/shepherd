@@ -2,6 +2,21 @@
 
 Date: 2026-06-24
 
+## Status
+
+Superseded by [Shepherd Pi Runtime Gateway Plan](2026-06-25-pi-runtime-gateway.md). Shepherd should use Pi as the user-facing TUI/runtime instead of implementing a custom full-screen TUI. Keep this plan as historical context for event-stream UX and local session requirements.
+
+## Progress
+
+- **Done** — Historical TUI requirements and event-stream UX were captured.
+- **Superseded** — Custom Shepherd full-screen TUI implementation should not proceed under this plan.
+- **Superseded** — Child plans in `2026-06-24-shepherd-tui-mvp-experience/` remain reference material only.
+
+## Next steps
+
+- Do not implement this custom TUI plan directly.
+- Reuse relevant event-stream UX requirements from this plan when implementing the Pi runtime gateway.
+
 ## Goal
 
 Add the missing full-screen local TUI experience to Shepherd's MVP while preserving the existing daemon-centered architecture.
@@ -38,8 +53,8 @@ These decisions were made in an earlier Pi session but were only partially captu
 Archived plans that remain authoritative:
 
 - `docs/plans/archived/2026-06-24-shepherd-herdr-orchestration.md`
-- `docs/plans/archived/shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md`
-- `docs/plans/archived/shepherd-herdr-orchestration/2026-06-24-herdr-control-plane.md`
+- `docs/plans/archived/2026-06-24-shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md`
+- `docs/plans/archived/2026-06-24-shepherd-herdr-orchestration/2026-06-24-herdr-control-plane.md`
 
 This plan adds the missing TUI-specific user journey and implementation steps. It should not reopen the completed core MVP unless the TUI requires small RPC/store additions.
 
@@ -301,5 +316,5 @@ These are not blockers for writing the initial plan, but should be resolved befo
 
 ## Child plans
 
-- [TUI startup, daemon autostart, and session lifecycle](shepherd-tui-mvp-experience/2026-06-24-tui-startup-daemon-session.md)
-- [TUI rendering, input, and event stream UX](shepherd-tui-mvp-experience/2026-06-24-tui-rendering-input-event-stream.md)
+- [TUI startup, daemon autostart, and session lifecycle](2026-06-24-shepherd-tui-mvp-experience/2026-06-24-tui-startup-daemon-session.md)
+- [TUI rendering, input, and event stream UX](2026-06-24-shepherd-tui-mvp-experience/2026-06-24-tui-rendering-input-event-stream.md)

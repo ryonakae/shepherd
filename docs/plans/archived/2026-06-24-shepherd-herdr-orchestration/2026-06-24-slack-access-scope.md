@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. Slack access scope MVP is implemented and tested.
+
+## Progress
+
+- **Done** — Team/channel/user allowlists and denial logging were implemented.
+- **Done** — Slack config validation requires explicit allowed users.
+
+## Next steps
+
+- Keep this access policy as the baseline for Pi runtime Slack gateway work.
+
 ## Goal
 
 Slack から Shepherd を操作できる範囲を、チーム、チャンネル、ユーザー ID で明示的に制御できるようにする。

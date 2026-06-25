@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. Reference decisions were applied to the MVP implementation.
+
+## Progress
+
+- **Done** — Architecture references and non-goals were captured.
+- **Done** — MVP applied the selected reference patterns where useful.
+
+## Next steps
+
+- Use as historical reference when comparing Shepherd against Hermes, Pi, OpenCode, NanoClaw, and NemoClaw.
+
 ## Goal
 
 Record which existing systems Shepherd should learn from, and what not to copy.

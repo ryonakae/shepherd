@@ -2,6 +2,19 @@
 
 Date: 2026-06-24
 
+## Status
+
+Archived. Core MVP implementation was completed and verified on 2026-06-24. Keep this plan as historical context; do not treat it as active implementation work.
+
+## Progress
+
+- **Done** — Foundation, daemon, Slack sync, gateway providers, Herdr orchestration, event stream, recovery, and approval event surface were implemented.
+- **Deferred** — Provider-specific approval callbacks, richer progress narration, and later runtime changes are tracked outside this archived plan.
+
+## Next steps
+
+- Use this plan only as reference. Active runtime work now lives in [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md).
+
 ## Goal
 
 Shepherd is a lightweight orchestration gateway for Herdr-managed agents.
@@ -48,7 +61,7 @@ The first code change should establish:
 - TypeBox/Ajv runtime schema validation foundation
 - at least one real tested utility, not a placeholder test
 
-Detailed decisions are in [Implementation foundation and quality gates](shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md).
+Detailed decisions are in [Implementation foundation and quality gates](2026-06-24-shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md).
 
 ## Product direction
 
@@ -65,13 +78,13 @@ Hermes, Pi, OpenCode, NanoClaw, and NemoClaw are implementation references. Shep
 
 This file is the parent plan. Detailed decisions live in child plans:
 
-- [Herdr control-plane mapping](shepherd-herdr-orchestration/2026-06-24-herdr-control-plane.md)
-- [Gateway providers, Herdr agents, and context](shepherd-herdr-orchestration/2026-06-24-gateway-providers-agents-context.md)
-- [Session event stream and messaging sync](shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md)
-- [Slack access scope](shepherd-herdr-orchestration/2026-06-24-slack-access-scope.md)
-- [Architecture references](shepherd-herdr-orchestration/2026-06-24-architecture-references.md)
-- [Implementation foundation and quality gates](shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md)
-- [MVP implementation roadmap](shepherd-herdr-orchestration/2026-06-24-implementation-roadmap.md)
+- [Herdr control-plane mapping](2026-06-24-shepherd-herdr-orchestration/2026-06-24-herdr-control-plane.md)
+- [Gateway providers, Herdr agents, and context](2026-06-24-shepherd-herdr-orchestration/2026-06-24-gateway-providers-agents-context.md)
+- [Session event stream and messaging sync](2026-06-24-shepherd-herdr-orchestration/2026-06-24-session-event-stream-and-messaging.md)
+- [Slack access scope](2026-06-24-shepherd-herdr-orchestration/2026-06-24-slack-access-scope.md)
+- [Architecture references](2026-06-24-shepherd-herdr-orchestration/2026-06-24-architecture-references.md)
+- [Implementation foundation and quality gates](2026-06-24-shepherd-herdr-orchestration/2026-06-24-implementation-foundation-quality-gates.md)
+- [MVP implementation roadmap](2026-06-24-shepherd-herdr-orchestration/2026-06-24-implementation-roadmap.md)
 
 ## Core decisions
 

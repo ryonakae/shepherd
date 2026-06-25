@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. MVP Herdr control-plane mapping and implementation were completed.
+
+## Progress
+
+- **Done** — Herdr session/workspace/tab/pane/agent orchestration was specified and implemented.
+- **Done** — Shepherd logical tools were mapped to Herdr operations.
+
+## Next steps
+
+- Keep using this mapping as the Herdr backend contract for Pi-exposed Shepherd tools.
+
 ## Goal
 
 Define how Shepherd maps its sessions and working contexts onto Herdr sessions, workspaces, tabs, panes, and agents.

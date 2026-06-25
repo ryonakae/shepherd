@@ -4,6 +4,19 @@ Date: 2026-06-24
 
 Parent: [Shepherd Herdr Orchestration Plan](../2026-06-24-shepherd-herdr-orchestration.md)
 
+## Status
+
+Archived. The provider-based gateway MVP was implemented, but new active work supersedes it with Pi runtime integration.
+
+## Progress
+
+- **Done** — Provider registry, context builder, logical tools, summaries, and Herdr agent profile guidance were implemented for the original MVP.
+- **Superseded** — Shepherd-owned LLM provider auth/model selection is replaced by Pi runtime assumptions in the active plan.
+
+## Next steps
+
+- Reuse Herdr agent profile and logical tool decisions. Do not extend Shepherd-owned LLM providers unless the Pi runtime direction changes.
+
 ## Goal
 
 Define how Shepherd configures the gateway LLM, Herdr worker agents, and conversation context.
