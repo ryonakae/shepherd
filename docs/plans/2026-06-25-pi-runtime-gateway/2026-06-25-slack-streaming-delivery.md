@@ -6,7 +6,7 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. In progress.
+Done.
 
 ## Progress
 
@@ -14,13 +14,12 @@ Active child plan. In progress.
 - **Done** — Token deltas are transient and not persisted.
 - **Done** — Final assistant text is persisted as `gateway.message`.
 - **Done** — Slack tool progress defaults to `off`.
-- **In progress** — Slack `chat.update` support and in-memory stream state exist for final-answer streaming.
-- **In progress** — `gateway.stream_delta` and `gateway.stream_finish` RPC exist; `shepherd-pi` forwards assistant updates and final stream finish.
+- **Done** — Slack `chat.update` support and in-memory stream state exist for final-answer streaming.
+- **Done** — `gateway.stream_delta`, `gateway.stream_finish`, `gateway.stream_segment_break`, and default-off `gateway.stream_tool_progress` RPC exist; `shepherd-pi` forwards assistant updates and final stream finish.
 
 ## Next steps
 
-1. Add broader integration coverage for final delivery receipts after stream finish.
-2. Manual Slack smoke once credentials/workspace are available.
+Complete. Unit tests cover Slack post/update/final cursor behavior; daemon integration tests cover transient stream RPC and final persisted message behavior. Manual Slack smoke requires real workspace credentials and is not run in this repository check.
 
 ## Hermes reference
 

@@ -6,7 +6,7 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. In progress.
+Done.
 
 ## Progress
 
@@ -14,12 +14,12 @@ Active child plan. In progress.
 - **Done** — One Shepherd session maps to one Pi session file.
 - **Done** — Existing `gateway_runs` remains the durable queue/recovery table.
 - **Done** — `gateway.run.queued` is a persistent event.
-- **In progress** — Pi session metadata assignment, lazy headless Pi subprocess startup, `pi.attach`, `pi.heartbeat`, and TUI-over-headless claim priority are implemented.
-- **In progress** — external worker claim/start/complete/fail RPC exists for the final-only fake Pi extension path; stale owner recovery marks running runs `recovery_required`.
+- **Done** — Pi session metadata assignment, lazy headless Pi subprocess startup, `pi.attach`, `pi.heartbeat`, and TUI-over-headless claim priority are implemented.
+- **Done** — external worker claim/start/complete/fail RPC exists for the final-only Pi extension path; stale owner recovery marks running runs `recovery_required`.
 
 ## Next steps
 
-1. Expand supervisor integration tests around process exit and requeue/recovery behavior.
+Complete. Supervisor, claim lifecycle, owner priority, heartbeat, and recovery behavior are covered by unit/integration tests.
 
 ## Pi supervisor
 

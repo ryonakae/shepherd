@@ -6,21 +6,20 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. In progress.
+Done.
 
 ## Progress
 
 - **Done** — TUI Pi should take owner priority over headless Pi.
 - **Done** — Pi `/resume` should auto-attach for Shepherd-created Pi sessions.
 - **Done** — Running TUI owner disconnect marks the run `recovery_required`.
-- **In progress** — `shepherd open --session` parses CLI options, ensures Shepherd Pi session metadata, and launches `pi --session <pi-session-file>` with Shepherd attach environment.
-- **In progress** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; stable daemon id persistence and mismatch prevention are implemented.
-- **Not started** — heartbeat and owner priority implementation.
+- **Done** — `shepherd open --session` parses CLI options, ensures Shepherd Pi session metadata, and launches `pi --session <pi-session-file>` with Shepherd attach environment.
+- **Done** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; stable daemon id persistence and mismatch prevention are implemented.
+- **Done** — heartbeat, owner priority, stale-owner fallback, and running-run recovery are implemented.
 
 ## Next steps
 
-1. Add broader disconnect/recovery tests.
-2. Add manual smoke coverage for Pi `/resume` auto-attach.
+Complete. CLI open behavior, daemon id mismatch prevention, owner priority, heartbeat, and stale-owner recovery are covered by tests. Manual Pi `/resume` smoke requires an interactive Pi TUI and is not run in repository check.
 
 ## UX
 

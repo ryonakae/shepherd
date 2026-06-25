@@ -6,22 +6,18 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. In progress.
+Done.
 
 ## Progress
 
 - **Done** — Implementation should start with a vertical final-only path.
 - **Done** — Streaming and TUI takeover are in MVP but come after the final-only path.
-- **In progress** — Slice 1 implementation: `gateway.pi` config parsing, daemon readiness handshake, Pi session metadata assignment, lazy headless Pi startup, and external daemon run queue RPC are in place.
-- **In progress** — Test harnesses: fake Pi extension lifecycle is covered through daemon RPC, and `shepherd-pi` package syntax/pack manifest are checked; fake Slack delivery is still pending.
+- **Done** — Slice 1 implementation: `gateway.pi` config parsing, daemon readiness handshake, Pi session metadata assignment, lazy headless Pi startup, and external daemon run queue RPC are in place.
+- **Done** — Test harnesses cover fake Pi extension lifecycle through daemon RPC, `shepherd-pi` package syntax/pack manifest, Slack streaming delivery, CLI open, daemon identity, owner priority, and stale-owner recovery.
 
 ## Next steps
 
-1. Build slice 1 until Slack final reply works through headless Pi.
-2. Add dynamic tools.
-3. Add Slack streaming.
-4. Add TUI takeover.
-5. Add optional tool progress.
+Complete. Automated verification is `pnpm check`; manual real Slack/Pi smoke requires external credentials and an interactive Pi install, so repository verification uses fake Slack/Pi harnesses.
 
 ## Slice 1: final-only vertical path
 

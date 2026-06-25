@@ -13,16 +13,12 @@ Active. This plan supersedes the custom Shepherd TUI direction and makes Pi the 
 - **Done** — Runtime decision: `shepherd daemon` requires Pi readiness and fails fast when Pi, the extension, or an authenticated Pi model is unavailable.
 - **Done** — Session decision: one Shepherd session maps to one Pi session file; Pi session files are the canonical agent conversation state.
 - **Done** — Streaming decision: Slack final-answer streaming follows Hermes' edit-in-place model; tool progress is off by default.
-- **In progress** — Implementation slice 1: config schema accepts `gateway.pi`, daemon startup checks Pi readiness, sessions receive Pi metadata, queued runs lazy-start headless Pi, and daemon RPC has the external run queue lifecycle for fake Pi extension claim/complete/fail.
-- **In progress** — Implementation slice 2+: dynamic tools and Slack final-answer streaming have initial implementations; TUI takeover and polish remain pending.
+- **Done** — Implementation slice 1: config schema accepts `gateway.pi`, daemon startup checks Pi readiness, sessions receive Pi metadata, queued runs lazy-start headless Pi, and daemon RPC has the external run queue lifecycle for Pi extension claim/complete/fail.
+- **Done** — Implementation slice 2+: dynamic Shepherd tools in `shepherd-pi`, Slack final-answer streaming, TUI takeover entrypoint, auto attach, owner priority, heartbeat, stale-owner recovery, and optional progress no-op handling are implemented.
 
 ## Next steps
 
-1. Implement the final-only vertical slice first.
-2. Add dynamic Shepherd tools in the Pi extension.
-3. Add Slack final-answer streaming.
-4. Add TUI takeover and Pi `/resume` auto-attach.
-5. Add optional tool progress after the main path is stable.
+All implementation slices are complete. Verification is covered by `pnpm check`, including daemon RPC integration tests, Slack stream delivery unit tests, CLI tests, daemon identity tests, and `shepherd-pi` package syntax/pack checks.
 
 ## Goal
 
@@ -135,12 +131,12 @@ Slack final-answer streaming follows the Hermes pattern:
 
 ## Child plans
 
-- [Setup, config, and Pi readiness](2026-06-25-pi-runtime-gateway/2026-06-25-setup-config-readiness.md) — **Not started**
-- [Daemon Pi supervisor and run queue](2026-06-25-pi-runtime-gateway/2026-06-25-daemon-pi-supervisor-run-queue.md) — **Not started**
-- [`shepherd-pi` extension](2026-06-25-pi-runtime-gateway/2026-06-25-shepherd-pi-extension.md) — **Not started**
-- [Slack streaming delivery](2026-06-25-pi-runtime-gateway/2026-06-25-slack-streaming-delivery.md) — **Not started**
-- [TUI takeover and auto attach](2026-06-25-pi-runtime-gateway/2026-06-25-tui-takeover-auto-attach.md) — **Not started**
-- [Implementation slices and verification](2026-06-25-pi-runtime-gateway/2026-06-25-implementation-slices-verification.md) — **Not started**
+- [Setup, config, and Pi readiness](2026-06-25-pi-runtime-gateway/2026-06-25-setup-config-readiness.md) — **Done**
+- [Daemon Pi supervisor and run queue](2026-06-25-pi-runtime-gateway/2026-06-25-daemon-pi-supervisor-run-queue.md) — **Done**
+- [`shepherd-pi` extension](2026-06-25-pi-runtime-gateway/2026-06-25-shepherd-pi-extension.md) — **Done**
+- [Slack streaming delivery](2026-06-25-pi-runtime-gateway/2026-06-25-slack-streaming-delivery.md) — **Done**
+- [TUI takeover and auto attach](2026-06-25-pi-runtime-gateway/2026-06-25-tui-takeover-auto-attach.md) — **Done**
+- [Implementation slices and verification](2026-06-25-pi-runtime-gateway/2026-06-25-implementation-slices-verification.md) — **Done**
 
 ## Deferred
 

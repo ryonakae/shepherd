@@ -6,22 +6,19 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. In progress.
+Done.
 
 ## Progress
 
 - **Done** — Setup command shape decided: `brew install shepherd` and `pi install npm:shepherd-pi`.
 - **Done** — Dedicated `shepherd setup` and `shepherd doctor` are deferred for MVP.
 - **Done** — Daemon startup should fail fast when Pi readiness fails.
-- **In progress** — Config schema accepts `gateway.pi` and Slack streaming settings; old provider fields are still accepted as a temporary legacy path.
-- **In progress** — Pi readiness probe now launches `pi --mode rpc --no-session`, waits for daemon `pi.handshake`, and requires `get_available_models` to return at least one model before Slack starts.
+- **Done** — Config schema accepts `gateway.pi` and Slack streaming settings; old provider fields remain accepted only as a temporary legacy path for existing tests/compatibility.
+- **Done** — Pi readiness probe launches `pi --mode rpc --no-session`, waits for daemon `pi.handshake`, and requires `get_available_models` to return at least one model before Slack starts.
 
 ## Next steps
 
-1. Update `src/config/schema.ts` for Pi runtime config.
-2. Update config tests and example fixtures.
-3. Finish readiness hardening with stable daemon identity and real `shepherd-pi` extension validation once the package exists.
-4. Remove or quarantine old provider runtime construction from the default daemon path.
+Complete. The Pi runtime path uses readiness checks, stable daemon identity, `shepherd-pi` package validation, and skips old provider runtime construction when only `gateway.pi` is configured.
 
 ## Distribution
 
