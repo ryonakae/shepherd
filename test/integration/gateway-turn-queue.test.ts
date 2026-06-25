@@ -66,6 +66,39 @@ describe("GatewayTurnQueue", () => {
     await expect(other).resolves.toEqual({ text: "other done" });
   });
 
+  test("claims one queued external run per session", () => {
+    const { events, runStore } = openHarness();
+    const firstEvent = events.appendEvent({
+      payload: { text: "first" },
+      sessionId: "session-1",
+      type: "user.message",
+    });
+    const secondEvent = events.appendEvent({
+      payload: { text: "second" },
+      sessionId: "session-1",
+      type: "user.message",
+    });
+    const first = runStore.createQueuedRun({
+      sessionId: "session-1",
+      triggeringEventId: firstEvent.id,
+    });
+    const second = runStore.createQueuedRun({
+      sessionId: "session-1",
+      triggeringEventId: secondEvent.id,
+    });
+
+    expect(runStore.claimNextQueuedRun("session-1")).toMatchObject({
+      id: first.id,
+      status: "running",
+    });
+    expect(runStore.claimNextQueuedRun("session-1")).toBeUndefined();
+    runStore.markCompleted(first.id);
+    expect(runStore.claimNextQueuedRun("session-1")).toMatchObject({
+      id: second.id,
+      status: "running",
+    });
+  });
+
   test("marks failed runs and continues queued work", async () => {
     const { queue, runStore, runner } = openHarness();
     const first = queue.runTurn({
@@ -92,6 +125,7 @@ describe("GatewayTurnQueue", () => {
 });
 
 function openHarness(): {
+  events: EventStore;
   queue: GatewayTurnQueue;
   runStore: GatewayRunStore;
   runner: ControllableRunner;
@@ -108,6 +142,7 @@ function openHarness(): {
   const runner = new ControllableRunner();
 
   return {
+    events,
     queue: new GatewayTurnQueue({ runStore, runner }),
     runStore,
     runner,

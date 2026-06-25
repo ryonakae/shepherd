@@ -42,6 +42,19 @@ const providerOverrideSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const slackStreamingSchema = Type.Object(
+  {
+    buffer_threshold_chars: Type.Optional(Type.Integer({ minimum: 1 })),
+    cursor: Type.Optional(Type.String()),
+    edit_interval_ms: Type.Optional(Type.Integer({ minimum: 1 })),
+    enabled: Type.Optional(Type.Boolean()),
+    tool_progress: Type.Optional(
+      Type.Union([Type.Literal("off"), Type.Literal("compact"), Type.Literal("verbose")]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const slackPlatformSchema = Type.Object(
   {
     allow_customize: Type.Optional(Type.Boolean()),
@@ -50,6 +63,7 @@ const slackPlatformSchema = Type.Object(
     allowed_users: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     app_token_env: Type.String({ minLength: 1 }),
     bot_token_env: Type.String({ minLength: 1 }),
+    streaming: Type.Optional(slackStreamingSchema),
     tui_default_channel: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
@@ -84,8 +98,17 @@ export const shepherdConfigSchema = Type.Object(
     default_agent: Type.String({ minLength: 1 }),
     gateway: Type.Object(
       {
-        default_provider: Type.String({ minLength: 1 }),
-        model: Type.String({ minLength: 1 }),
+        default_provider: Type.Optional(Type.String({ minLength: 1 })),
+        model: Type.Optional(Type.String({ minLength: 1 })),
+        pi: Type.Optional(
+          Type.Object(
+            {
+              idle_timeout_ms: Type.Optional(Type.Integer({ minimum: 1 })),
+              readiness_timeout_ms: Type.Optional(Type.Integer({ minimum: 1 })),
+            },
+            { additionalProperties: false },
+          ),
+        ),
         provider_overrides: Type.Optional(
           Type.Object(
             {
@@ -103,9 +126,11 @@ export const shepherdConfigSchema = Type.Object(
       { additionalProperties: false },
     ),
     platforms: Type.Optional(platformsSchema),
-    providers: Type.Record(Type.String({ minLength: 1 }), gatewayProviderSchema, {
-      minProperties: 1,
-    }),
+    providers: Type.Optional(
+      Type.Record(Type.String({ minLength: 1 }), gatewayProviderSchema, {
+        minProperties: 1,
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -136,19 +161,21 @@ export function parseShepherdConfig(value: unknown): ValidationResult<ShepherdCo
       };
     }
 
-    if (!(config.gateway.default_provider in config.providers)) {
-      return {
-        errors: [
-          {
-            instancePath: "/gateway/default_provider",
-            keyword: "requiredProvider",
-            message: "must reference a configured provider",
-            params: { provider: config.gateway.default_provider },
-            schemaPath: "#/requiredProvider",
-          },
-        ],
-        ok: false,
-      };
+    if (config.gateway.default_provider !== undefined) {
+      if (!config.providers || !(config.gateway.default_provider in config.providers)) {
+        return {
+          errors: [
+            {
+              instancePath: "/gateway/default_provider",
+              keyword: "requiredProvider",
+              message: "must reference a configured provider",
+              params: { provider: config.gateway.default_provider },
+              schemaPath: "#/requiredProvider",
+            },
+          ],
+          ok: false,
+        };
+      }
     }
 
     for (const invalidOverride of invalidProviderOverridePaths(config)) {
@@ -199,7 +226,7 @@ function invalidProviderOverridePaths(
 
   for (const [groupName, overrides] of groups) {
     for (const [key, override] of Object.entries(overrides ?? {})) {
-      if (override.provider && !(override.provider in config.providers)) {
+      if (override.provider && !(override.provider in (config.providers ?? {}))) {
         invalid.push({
           path: `/gateway/provider_overrides/${groupName}/${key}/provider`,
           provider: override.provider,

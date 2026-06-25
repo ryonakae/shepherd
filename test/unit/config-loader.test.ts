@@ -14,20 +14,12 @@ afterEach(() => {
 });
 
 describe("Shepherd config loader", () => {
-  test("loads a valid MVP YAML config", () => {
+  test("loads a valid Pi runtime YAML config", () => {
     const path = writeTempConfig(`
 gateway:
-  default_provider: codex
-  model: gpt-5.3-codex
-
-providers:
-  codex:
-    type: codex_cli
-    mode: app_server
-    auth_source: codex_cli
-  openai:
-    type: openai
-    api_key_env: OPENAI_API_KEY
+  pi:
+    idle_timeout_ms: 600000
+    readiness_timeout_ms: 10000
 
 default_agent: implementer
 agents:
@@ -55,16 +47,14 @@ platforms:
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.gateway.default_provider).toBe("codex");
-      expect(result.value.providers.openai?.type).toBe("openai");
-      if (result.value.providers.openai?.type === "openai") {
-        expect(result.value.providers.openai.api_key_env).toBe("OPENAI_API_KEY");
-      }
+      expect(result.value.gateway.pi?.idle_timeout_ms).toBe(600_000);
+      expect(result.value.gateway.pi?.readiness_timeout_ms).toBe(10_000);
+      expect(result.value.providers).toBeUndefined();
       expect(result.value.platforms?.slack?.bot_token_env).toBe("SLACK_BOT_TOKEN");
     }
   });
 
-  test("rejects API key literals in provider config", () => {
+  test("rejects API key literals in legacy provider config", () => {
     const result = parseShepherdConfig({
       agents: {
         implementer: {

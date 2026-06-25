@@ -11,6 +11,7 @@ import {
   HerdrProgressSubscriptionManager,
 } from "@/herdr/progress-subscriptions.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
+import { ExternalGatewayRunQueue } from "./external-run-queue.js";
 import {
   createGatewayProviderRouterFromConfig,
   type GatewayProviderFactoryDependencies,
@@ -36,7 +37,8 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
 
 export type GatewayRuntime = {
   close(): Promise<void>;
-  runner: GatewayTurnQueue;
+  runner?: GatewayTurnQueue;
+  runs: ExternalGatewayRunQueue;
   tools: LogicalToolRunner;
 };
 
@@ -77,38 +79,44 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     registry,
     toolCalls: new LogicalToolCallStore(options.sqlite),
   });
-  const provider = createGatewayProviderRouterFromConfig(options.config, {
-    ...(options.createCodexProvider !== undefined
-      ? { createCodexProvider: options.createCodexProvider }
-      : {}),
-    ...(options.generateText !== undefined ? { generateText: options.generateText } : {}),
-    system: buildGatewaySystemPrompt({
-      agents: options.config.agents,
-      defaultAgent: options.config.default_agent,
-    }),
-  });
-
-  const runner = new GatewayRunner({
-    events: options.events,
-    provider,
-    summaryUpdater: new GatewaySummaryUpdater({
-      events: options.events,
-      provider,
-      summaries: new SessionSummaryStore(options.sqlite),
-    }),
-    tools,
-  });
+  const runStore = new GatewayRunStore(options.sqlite);
+  const provider = hasLegacyProviderConfig(options.config)
+    ? createGatewayProviderRouterFromConfig(options.config, {
+        ...(options.createCodexProvider !== undefined
+          ? { createCodexProvider: options.createCodexProvider }
+          : {}),
+        ...(options.generateText !== undefined ? { generateText: options.generateText } : {}),
+        system: buildGatewaySystemPrompt({
+          agents: options.config.agents,
+          defaultAgent: options.config.default_agent,
+        }),
+      })
+    : undefined;
+  const runner = provider
+    ? new GatewayRunner({
+        events: options.events,
+        provider,
+        summaryUpdater: new GatewaySummaryUpdater({
+          events: options.events,
+          provider,
+          summaries: new SessionSummaryStore(options.sqlite),
+        }),
+        tools,
+      })
+    : undefined;
 
   return {
     async close() {
       herdrProgressSubscriptions?.close();
-      await provider.close();
+      await provider?.close();
       herdrClients.closeAll();
     },
-    runner: new GatewayTurnQueue({
-      runStore: new GatewayRunStore(options.sqlite),
-      runner,
-    }),
+    ...(runner ? { runner: new GatewayTurnQueue({ runStore, runner }) } : {}),
+    runs: new ExternalGatewayRunQueue({ events: options.events, runStore }),
     tools,
   };
+}
+
+function hasLegacyProviderConfig(config: ShepherdConfig): boolean {
+  return Boolean(config.gateway.default_provider && config.gateway.model && config.providers);
 }

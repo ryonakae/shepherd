@@ -49,6 +49,26 @@ export class GatewayRunStore {
     return this.getRun(id);
   }
 
+  claimNextQueuedRun(sessionId: string): GatewayRunRecord | undefined {
+    const row = this.#sqlite
+      .prepare(
+        "select * from gateway_runs where session_id = ? and status = 'queued' and not exists (select 1 from gateway_runs where session_id = ? and status = 'running') order by created_at asc, id asc limit 1",
+      )
+      .get(sessionId, sessionId) as GatewayRunRow | undefined;
+    if (!row) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const result = this.#sqlite
+      .prepare(
+        "update gateway_runs set status = 'running', started_at = ?, updated_at = ? where id = ? and status = 'queued'",
+      )
+      .run(now, now, row.id);
+
+    return result.changes === 1 ? this.getRun(row.id) : undefined;
+  }
+
   markRunning(id: string): GatewayRunRecord {
     const now = Date.now();
     this.#sqlite

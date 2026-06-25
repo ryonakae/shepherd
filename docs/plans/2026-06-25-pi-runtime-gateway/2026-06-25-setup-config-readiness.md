@@ -6,14 +6,14 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
 - **Done** — Setup command shape decided: `brew install shepherd` and `pi install npm:shepherd-pi`.
 - **Done** — Dedicated `shepherd setup` and `shepherd doctor` are deferred for MVP.
 - **Done** — Daemon startup should fail fast when Pi readiness fails.
-- **Not started** — Config schema changes.
+- **In progress** — Config schema accepts `gateway.pi` and Slack streaming settings; old provider fields are still accepted as a temporary legacy path.
 - **Not started** — Pi readiness probe implementation.
 
 ## Next steps

@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 export type SessionMetadata = {
+  pi?: {
+    createdAt: string;
+    sessionFile: string;
+    sessionId: string;
+    updatedAt: string;
+  };
   slackAutoBind?: {
     attemptedAt?: string;
     bindingId?: string;

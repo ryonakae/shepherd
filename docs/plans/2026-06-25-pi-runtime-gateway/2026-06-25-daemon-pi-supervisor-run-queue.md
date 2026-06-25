@@ -6,7 +6,7 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
@@ -15,7 +15,7 @@ Active child plan. Not started.
 - **Done** — Existing `gateway_runs` remains the durable queue/recovery table.
 - **Done** — `gateway.run.queued` is a persistent event.
 - **Not started** — Pi supervisor implementation.
-- **Not started** — external worker claim/complete/fail RPC.
+- **In progress** — external worker claim/start/complete/fail RPC exists for the final-only fake Pi extension path; owner priority and supervisor process management remain pending.
 
 ## Next steps
 

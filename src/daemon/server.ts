@@ -4,6 +4,7 @@ import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
 import type { SessionSummaryStore } from "@/db/session-summary.js";
 import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
+import type { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
 import {
   type ProviderOverrideResolver,
   parseGatewayProviderOverride,
@@ -17,6 +18,7 @@ type ShepherdDaemonServerOptions = {
   configPath?: string;
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
+  gatewayRuns?: ExternalGatewayRunQueue;
   logicalTools?: LogicalToolService;
   providerOverrides?: ProviderOverrideResolver;
   socketPath: string;
@@ -88,6 +90,7 @@ export class ShepherdDaemonServer {
   readonly #sockets = new Set<Socket>();
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
+  readonly #gatewayRuns: ExternalGatewayRunQueue | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
@@ -99,6 +102,7 @@ export class ShepherdDaemonServer {
     this.#configPath = options.configPath;
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
+    this.#gatewayRuns = options.gatewayRuns;
     this.#logicalTools = options.logicalTools;
     this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
@@ -257,6 +261,15 @@ export class ShepherdDaemonServer {
     input: ReceiveUserMessageInput,
     event: EventRecord,
   ): Promise<EventRecord[]> {
+    if (this.#gatewayRuns) {
+      const result = this.#gatewayRuns.queueRun({
+        sessionId: input.sessionId,
+        triggeringEventId: event.id,
+      });
+      await this.#publishEvent(result.event);
+      return [result.event];
+    }
+
     if (!this.#gatewayRunner) {
       return [];
     }
@@ -348,6 +361,26 @@ export class ShepherdDaemonServer {
 
     if (request.method === "gateway.run_turn") {
       void this.#runGatewayTurn(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.claim_next_run") {
+      void this.#claimNextGatewayRun(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.start_run") {
+      void this.#startGatewayRun(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.complete_run") {
+      void this.#completeGatewayRun(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.fail_run") {
+      void this.#failGatewayRun(socket, request);
       return;
     }
 
@@ -654,6 +687,168 @@ export class ShepherdDaemonServer {
       this.#write(socket, {
         id: request.id,
         result: result.output,
+      });
+      for (const event of result.events) {
+        await this.#publishEvent(event);
+      }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #claimNextGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#gatewayRuns) {
+      this.#write(socket, {
+        error: { message: "Gateway run queue is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as { ownerId?: string; sessionId?: string };
+    if (!params?.ownerId || !params.sessionId) {
+      this.#write(socket, {
+        error: { message: "ownerId and sessionId are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const result = this.#gatewayRuns.claimNextRun({
+      ownerId: params.ownerId,
+      sessionId: params.sessionId,
+    });
+    if (!result) {
+      this.#write(socket, { id: request.id, result: { run: null } });
+      return;
+    }
+
+    this.#write(socket, {
+      id: request.id,
+      result: { run: result.run },
+    });
+    await this.#publishEvent(result.event);
+  }
+
+  async #startGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#gatewayRuns) {
+      this.#write(socket, {
+        error: { message: "Gateway run queue is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as { gatewayRunId?: string; ownerId?: string };
+    if (!params?.ownerId || !params.gatewayRunId) {
+      this.#write(socket, {
+        error: { message: "ownerId and gatewayRunId are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const result = this.#gatewayRuns.startRun({
+        gatewayRunId: params.gatewayRunId,
+        ownerId: params.ownerId,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: { run: result.run },
+      });
+      for (const event of result.events) {
+        await this.#publishEvent(event);
+      }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #completeGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#gatewayRuns) {
+      this.#write(socket, {
+        error: { message: "Gateway run queue is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as {
+      gatewayRunId?: string;
+      ownerId?: string;
+      piSessionFile?: string;
+      piSessionId?: string;
+      text?: string;
+    };
+    if (!params?.ownerId || !params.gatewayRunId || typeof params.text !== "string") {
+      this.#write(socket, {
+        error: { message: "ownerId, gatewayRunId, and text are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const result = this.#gatewayRuns.completeRun({
+        gatewayRunId: params.gatewayRunId,
+        ownerId: params.ownerId,
+        ...(params.piSessionFile !== undefined ? { piSessionFile: params.piSessionFile } : {}),
+        ...(params.piSessionId !== undefined ? { piSessionId: params.piSessionId } : {}),
+        text: params.text,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: { run: result.run },
+      });
+      for (const event of result.events) {
+        await this.#publishEvent(event);
+      }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #failGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#gatewayRuns) {
+      this.#write(socket, {
+        error: { message: "Gateway run queue is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const params = request.params as {
+      gatewayRunId?: string;
+      message?: string;
+      ownerId?: string;
+    };
+    if (!params?.ownerId || !params.gatewayRunId || !params.message) {
+      this.#write(socket, {
+        error: { message: "ownerId, gatewayRunId, and message are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const result = this.#gatewayRuns.failRun({
+        gatewayRunId: params.gatewayRunId,
+        message: params.message,
+        ownerId: params.ownerId,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: { run: result.run },
       });
       for (const event of result.events) {
         await this.#publishEvent(event);

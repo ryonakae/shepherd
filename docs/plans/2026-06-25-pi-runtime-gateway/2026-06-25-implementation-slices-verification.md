@@ -6,14 +6,14 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
 - **Done** — Implementation should start with a vertical final-only path.
 - **Done** — Streaming and TUI takeover are in MVP but come after the final-only path.
-- **Not started** — Slice 1 implementation.
-- **Not started** — Test harnesses for fake Pi and fake Slack.
+- **In progress** — Slice 1 implementation: `gateway.pi` config parsing and external daemon run queue RPC are in place.
+- **In progress** — Test harnesses: fake Pi extension lifecycle is covered through daemon RPC; fake Slack delivery is still pending.
 
 ## Next steps
 

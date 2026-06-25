@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { parseShepherdConfig } from "@/config/schema.js";
 
 describe("Shepherd config schema", () => {
-  test("accepts a default agent that exists in the configured agent map", () => {
+  test("accepts Pi gateway config with a default agent that exists", () => {
     const result = parseShepherdConfig(minimalConfig());
 
     expect(result.ok).toBe(true);
@@ -29,7 +29,7 @@ describe("Shepherd config schema", () => {
     expect(result.ok).toBe(false);
   });
 
-  test("accepts Slack platform config with env-backed tokens", () => {
+  test("accepts Slack platform config with env-backed tokens and streaming settings", () => {
     const result = parseShepherdConfig(
       minimalConfig({
         platforms: {
@@ -40,6 +40,13 @@ describe("Shepherd config schema", () => {
             allowed_users: ["U123"],
             app_token_env: "SLACK_APP_TOKEN",
             bot_token_env: "SLACK_BOT_TOKEN",
+            streaming: {
+              buffer_threshold_chars: 40,
+              cursor: " ▉",
+              edit_interval_ms: 750,
+              enabled: true,
+              tool_progress: "off",
+            },
             tui_default_channel: "C123",
           },
         },
@@ -161,14 +168,9 @@ function minimalConfig(overrides: Record<string, unknown> = {}): Record<string, 
     },
     default_agent: "implementer",
     gateway: {
-      default_provider: "codex",
-      model: "gpt-5.3-codex",
-    },
-    providers: {
-      codex: {
-        auth_source: "codex_cli",
-        mode: "app_server",
-        type: "codex_cli",
+      pi: {
+        idle_timeout_ms: 600_000,
+        readiness_timeout_ms: 10_000,
       },
     },
     ...overrides,

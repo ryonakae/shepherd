@@ -25,7 +25,11 @@ export function createGatewayProviderFromConfig(
 ): ClosableGatewayProvider {
   const providerName = selection.provider ?? config.gateway.default_provider;
   const modelId = selection.model ?? config.gateway.model;
-  const providerConfig = config.providers[providerName];
+  if (!providerName || !modelId) {
+    throw new Error("Gateway provider and model are not configured");
+  }
+
+  const providerConfig = config.providers?.[providerName];
   if (!providerConfig) {
     throw new Error(`Gateway provider is not configured: ${providerName}`);
   }
@@ -83,7 +87,11 @@ export function createGatewayProviderRouterFromConfig(
 
   function getProvider(selection: GatewayProviderOverride | undefined): ClosableGatewayProvider {
     const normalized = normalizeSelection(config, selection);
-    const key = `${normalized.provider ?? config.gateway.default_provider}:${normalized.model ?? config.gateway.model}`;
+    if (!normalized.provider || !normalized.model) {
+      throw new Error("Gateway provider and model are not configured");
+    }
+
+    const key = `${normalized.provider}:${normalized.model}`;
     const existing = providers.get(key);
     if (existing) {
       return existing;
@@ -100,8 +108,12 @@ function normalizeSelection(
   selection: GatewayProviderOverride | undefined,
 ): GatewayProviderOverride {
   return {
-    provider: selection?.provider ?? config.gateway.default_provider,
-    model: selection?.model ?? config.gateway.model,
+    ...((selection?.provider ?? config.gateway.default_provider)
+      ? { provider: selection?.provider ?? config.gateway.default_provider }
+      : {}),
+    ...((selection?.model ?? config.gateway.model)
+      ? { model: selection?.model ?? config.gateway.model }
+      : {}),
   };
 }
 

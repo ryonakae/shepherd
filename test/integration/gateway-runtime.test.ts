@@ -55,7 +55,7 @@ describe("createGatewayRuntime", () => {
     });
 
     await expect(
-      runtime.runner.runTurn({
+      requireGatewayRunner(runtime).runTurn({
         messages: [{ content: "start implementation", role: "user" }],
         sessionId: session.id,
       }),
@@ -94,7 +94,7 @@ describe("createGatewayRuntime", () => {
     const session = events.createSession({ id: "session-abcdef123456" });
     const generatedModels: unknown[] = [];
     const config = openConfig();
-    config.providers.alt = {
+    configuredProviders(config).alt = {
       auth_source: "codex_cli",
       mode: "app_server",
       type: "codex_cli",
@@ -122,7 +122,7 @@ describe("createGatewayRuntime", () => {
     });
 
     await expect(
-      runtime.runner.runTurn({
+      requireGatewayRunner(runtime).runTurn({
         messages: [{ content: "use another provider", role: "user" }],
         providerOverride: { model: "gpt-5.3-alt", provider: "alt" },
         sessionId: session.id,
@@ -133,6 +133,22 @@ describe("createGatewayRuntime", () => {
     expect(generatedModels).toEqual(["gpt-5.3-alt"]);
   });
 });
+
+function requireGatewayRunner(runtime: ReturnType<typeof createGatewayRuntime>) {
+  if (!runtime.runner) {
+    throw new Error("Expected legacy gateway runner to be configured");
+  }
+
+  return runtime.runner;
+}
+
+function configuredProviders(config: ShepherdConfig): NonNullable<ShepherdConfig["providers"]> {
+  if (!config.providers) {
+    throw new Error("Expected legacy providers to be configured");
+  }
+
+  return config.providers;
+}
 
 function executeAiTool(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
   const candidate = tools[name] as { execute?: (input: unknown) => Promise<unknown> } | undefined;

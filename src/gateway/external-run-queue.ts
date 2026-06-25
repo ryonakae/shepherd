@@ -1,0 +1,181 @@
+import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { GatewayRunRecord, GatewayRunStore } from "./turn-queue.js";
+
+export type GatewayQueuedRun = {
+  event: EventRecord;
+  run: GatewayRunRecord;
+};
+
+export type GatewayClaimedRun = {
+  actorId: string | null;
+  id: string;
+  presentation: unknown;
+  triggeringEventId: number | null;
+  userText: string;
+};
+
+export type GatewayClaimResult = {
+  event: EventRecord;
+  run: GatewayClaimedRun;
+};
+
+export type GatewayRunCompletionResult = {
+  events: EventRecord[];
+  run: GatewayRunRecord;
+};
+
+export class ExternalGatewayRunQueue {
+  readonly #events: EventStore;
+  readonly #runStore: GatewayRunStore;
+
+  constructor(options: { events: EventStore; runStore: GatewayRunStore }) {
+    this.#events = options.events;
+    this.#runStore = options.runStore;
+  }
+
+  queueRun(input: { sessionId: string; triggeringEventId: number }): GatewayQueuedRun {
+    const run = this.#runStore.createQueuedRun({
+      sessionId: input.sessionId,
+      triggeringEventId: input.triggeringEventId,
+    });
+    const event = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: run.id,
+        triggeringEventId: input.triggeringEventId,
+      },
+      sessionId: input.sessionId,
+      type: "gateway.run.queued",
+    });
+
+    return { event, run };
+  }
+
+  claimNextRun(input: { ownerId: string; sessionId: string }): GatewayClaimResult | undefined {
+    const run = this.#runStore.claimNextQueuedRun(input.sessionId);
+    if (!run) {
+      return undefined;
+    }
+
+    const event = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: run.id,
+        ownerId: input.ownerId,
+        triggeringEventId: run.triggeringEventId,
+      },
+      sessionId: run.sessionId,
+      type: "gateway.run.started",
+    });
+
+    return {
+      event,
+      run: this.#toClaimedRun(run),
+    };
+  }
+
+  startRun(input: { gatewayRunId: string; ownerId: string }): GatewayRunCompletionResult {
+    const existing = this.#runStore.getRun(input.gatewayRunId);
+    if (existing.status === "running") {
+      return { events: [], run: existing };
+    }
+
+    const run = this.#runStore.markRunning(existing.id);
+    const started = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: run.id,
+        ownerId: input.ownerId,
+        triggeringEventId: run.triggeringEventId,
+      },
+      sessionId: run.sessionId,
+      type: "gateway.run.started",
+    });
+
+    return { events: [started], run };
+  }
+
+  completeRun(input: {
+    gatewayRunId: string;
+    ownerId: string;
+    piSessionFile?: string;
+    piSessionId?: string;
+    text: string;
+  }): GatewayRunCompletionResult {
+    const existing = this.#runStore.getRun(input.gatewayRunId);
+    const message = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: existing.id,
+        ownerId: input.ownerId,
+        ...(input.piSessionFile !== undefined ? { piSessionFile: input.piSessionFile } : {}),
+        ...(input.piSessionId !== undefined ? { piSessionId: input.piSessionId } : {}),
+        text: input.text,
+      },
+      sessionId: existing.sessionId,
+      type: "gateway.message",
+    });
+    const run = this.#runStore.markCompleted(existing.id);
+    const completed = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: run.id,
+        ownerId: input.ownerId,
+      },
+      sessionId: run.sessionId,
+      type: "gateway.run.completed",
+    });
+
+    return { events: [message, completed], run };
+  }
+
+  failRun(input: {
+    gatewayRunId: string;
+    message: string;
+    ownerId: string;
+  }): GatewayRunCompletionResult {
+    const existing = this.#runStore.getRun(input.gatewayRunId);
+    const run = this.#runStore.markFailed(existing.id, new Error(input.message));
+    const failed = this.#events.appendEvent({
+      payload: {
+        gatewayRunId: run.id,
+        message: input.message,
+        ownerId: input.ownerId,
+      },
+      sessionId: run.sessionId,
+      type: "gateway.run.failed",
+    });
+
+    return { events: [failed], run };
+  }
+
+  #toClaimedRun(run: GatewayRunRecord): GatewayClaimedRun {
+    if (run.triggeringEventId === null) {
+      return {
+        actorId: null,
+        id: run.id,
+        presentation: {},
+        triggeringEventId: null,
+        userText: "",
+      };
+    }
+
+    const event = this.#events.getEvent(run.triggeringEventId);
+    const payload = parseUserMessagePayload(event.payload);
+
+    return {
+      actorId: event.actorId,
+      id: run.id,
+      presentation: payload.presentation,
+      triggeringEventId: event.id,
+      userText: payload.text,
+    };
+  }
+}
+
+function parseUserMessagePayload(payload: unknown): { presentation: unknown; text: string } {
+  if (typeof payload !== "object" || payload === null) {
+    return { presentation: {}, text: "" };
+  }
+
+  const record = payload as Record<string, unknown>;
+  return {
+    presentation: record.presentation ?? {},
+    text: typeof record.text === "string" ? record.text : "",
+  };
+}

@@ -10,8 +10,10 @@ import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
 import { GatewayRunner } from "@/gateway/runner.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
+import { GatewayRunStore } from "@/gateway/turn-queue.js";
 
 const tempDirs: string[] = [];
 const servers: ShepherdDaemonServer[] = [];
@@ -550,6 +552,117 @@ agents:
     expect(providerOverrides).toEqual([{ model: "gpt-5.3-codex-high", provider: "codex" }]);
   });
 
+  test("queues, claims, and completes a final-only Pi gateway run", async () => {
+    const delivered: string[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureDeliveryFanout() {
+        return {
+          async deliverEvent(event) {
+            delivered.push(event.type);
+          },
+        };
+      },
+      enableGatewayRuns: true,
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "subscribe-1",
+        method: "session.subscribe",
+        params: { afterEventId: 0, sessionId: session.id },
+      }),
+    );
+    await readMessages(client, 1);
+
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: {
+          actorId: "slack:T123:U123",
+          presentation: { displayName: "U123", sourcePlatform: "slack", sourceUserId: "U123" },
+          sessionId: session.id,
+          text: "from Slack",
+        },
+      }),
+    );
+
+    const queuedMessages = await readMessages(client, 3);
+    expect(queuedMessages[0]).toMatchObject({ id: "message-1" });
+    expect(queuedMessages.slice(1).map((message) => eventType(message))).toEqual([
+      "user.message",
+      "gateway.run.queued",
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "claim-1",
+        method: "gateway.claim_next_run",
+        params: { ownerId: "owner-1", sessionId: session.id },
+      }),
+    );
+    const claimMessages = await readMessages(client, 2);
+    expect(claimMessages[0]).toMatchObject({
+      id: "claim-1",
+      result: {
+        run: {
+          actorId: "slack:T123:U123",
+          userText: "from Slack",
+        },
+      },
+    });
+    expect(eventType(claimMessages[1])).toBe("gateway.run.started");
+
+    const gatewayRunId = (claimMessages[0] as { result: { run: { id: string } } }).result.run.id;
+    client.write(
+      encodeJsonLine({
+        id: "start-1",
+        method: "gateway.start_run",
+        params: { gatewayRunId, ownerId: "owner-1" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      expect.objectContaining({
+        id: "start-1",
+        result: { run: expect.objectContaining({ status: "running" }) },
+      }),
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "complete-1",
+        method: "gateway.complete_run",
+        params: {
+          gatewayRunId,
+          ownerId: "owner-1",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          piSessionId: "pi-session-1",
+          text: "final answer",
+        },
+      }),
+    );
+
+    const completeMessages = await readMessages(client, 3);
+    expect(completeMessages[0]).toMatchObject({
+      id: "complete-1",
+      result: { run: { status: "completed" } },
+    });
+    expect(completeMessages.slice(1).map((message) => eventType(message))).toEqual([
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+    expect(delivered).toEqual([
+      "user.message",
+      "gateway.run.queued",
+      "gateway.run.started",
+      "gateway.message",
+      "gateway.run.completed",
+    ]);
+  });
+
   test("lists and runs logical tools through RPC", async () => {
     const { server, socketPath, store } = await openServer({
       configureLogicalTools(events) {
@@ -914,6 +1027,7 @@ async function openServer(
     };
     configureGatewayRunner?: (store: EventStore) => GatewayRunner;
     configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
+    enableGatewayRuns?: boolean;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
 ): Promise<{
@@ -936,6 +1050,14 @@ async function openServer(
       : {}),
     ...(options.configureGatewayRunner
       ? { gatewayRunner: options.configureGatewayRunner(store) }
+      : {}),
+    ...(options.enableGatewayRuns
+      ? {
+          gatewayRuns: new ExternalGatewayRunQueue({
+            events: store,
+            runStore: new GatewayRunStore(sqlite),
+          }),
+        }
       : {}),
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }

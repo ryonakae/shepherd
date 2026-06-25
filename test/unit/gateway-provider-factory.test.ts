@@ -44,7 +44,7 @@ describe("createGatewayProviderFromConfig", () => {
 
   test("creates API key backed AI SDK providers", async () => {
     const config = openConfig();
-    config.providers.gateway = {
+    configuredProviders(config).gateway = {
       api_key_env: "OPENAI_API_KEY",
       type: "openai",
     };
@@ -75,7 +75,7 @@ describe("createGatewayProviderFromConfig", () => {
 
   test("requires configured API key environment variables", () => {
     const config = openConfig();
-    config.providers.gateway = {
+    configuredProviders(config).gateway = {
       api_key_env: "OPENAI_API_KEY",
       type: "openai",
     };
@@ -106,7 +106,7 @@ describe("createGatewayProviderFromConfig", () => {
       },
     };
     const config = openConfig();
-    config.providers.alt = {
+    configuredProviders(config).alt = {
       auth_source: "codex_cli",
       mode: "app_server",
       type: "codex_cli",
@@ -131,6 +131,14 @@ describe("createGatewayProviderFromConfig", () => {
     ]);
   });
 });
+
+function configuredProviders(config: ShepherdConfig): NonNullable<ShepherdConfig["providers"]> {
+  if (!config.providers) {
+    throw new Error("Expected legacy providers to be configured");
+  }
+
+  return config.providers;
+}
 
 function openConfig(): ShepherdConfig {
   return {
