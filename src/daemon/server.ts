@@ -136,6 +136,7 @@ export class ShepherdDaemonServer {
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
   #lastPiHandshake: PiHandshakeRecord | undefined;
+  #ownerHeartbeatTimeoutMs = 45_000;
 
   constructor(options: ShepherdDaemonServerOptions) {
     this.#configPath = options.configPath;
@@ -968,6 +969,11 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    if (!this.#canOwnerClaim(params.ownerId, params.sessionId)) {
+      this.#write(socket, { id: request.id, result: { run: null } });
+      return;
+    }
+
     const result = this.#gatewayRuns.claimNextRun({
       ownerId: params.ownerId,
       sessionId: params.sessionId,
@@ -1182,6 +1188,31 @@ export class ShepherdDaemonServer {
         error: { message: error instanceof Error ? error.message : String(error) },
         id: request.id,
       });
+    }
+  }
+
+  #canOwnerClaim(ownerId: string, sessionId: string): boolean {
+    this.#pruneStaleOwners();
+    const requester = this.#piOwners.get(ownerId);
+    if (requester?.ownerKind === "tui_pi") {
+      return requester.sessionId === sessionId;
+    }
+
+    for (const owner of this.#piOwners.values()) {
+      if (owner.sessionId === sessionId && owner.ownerKind === "tui_pi") {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  #pruneStaleOwners(): void {
+    const now = Date.now();
+    for (const [ownerId, owner] of this.#piOwners) {
+      if (now - owner.lastHeartbeatAt.getTime() > this.#ownerHeartbeatTimeoutMs) {
+        this.#piOwners.delete(ownerId);
+      }
     }
   }
 

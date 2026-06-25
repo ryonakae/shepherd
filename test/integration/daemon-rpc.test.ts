@@ -825,6 +825,65 @@ agents:
     ]);
   });
 
+  test("gives TUI Pi owners priority over headless claim attempts", async () => {
+    const { server, socketPath, store } = await openServer({ enableGatewayRuns: true });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-attach-priority-1",
+        method: "pi.attach",
+        params: {
+          mode: "tui",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          piSessionId: "pi-session-1",
+          sessionId: session.id,
+        },
+      }),
+    );
+    const [attachResponse] = await readMessages(client, 1);
+    const tuiOwnerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
+
+    client.write(
+      encodeJsonLine({
+        id: "message-priority-1",
+        method: "session.user_message",
+        params: { sessionId: session.id, text: "hello" },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() =>
+      store.listEvents(session.id).some((event) => event.type === "gateway.run.queued"),
+    );
+
+    client.write(
+      encodeJsonLine({
+        id: "claim-headless-priority-1",
+        method: "gateway.claim_next_run",
+        params: { ownerId: "headless-owner", sessionId: session.id },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "claim-headless-priority-1", result: { run: null } },
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "claim-tui-priority-1",
+        method: "gateway.claim_next_run",
+        params: { ownerId: tuiOwnerId, sessionId: session.id },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      expect.objectContaining({
+        id: "claim-tui-priority-1",
+        result: { run: expect.objectContaining({ userText: "hello" }) },
+      }),
+    ]);
+  });
+
   test("streams transient gateway deltas before completing a run", async () => {
     const streamed: unknown[] = [];
     const { server, socketPath, store } = await openServer({
