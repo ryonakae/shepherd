@@ -4,7 +4,7 @@ Date: 2026-06-25
 
 ## Status
 
-Active. This plan supersedes the custom Shepherd TUI direction and makes Pi the required agent runtime and user-facing TUI.
+Archived. Implementation is complete; Shepherd uses Pi as the required agent runtime and user-facing TUI.
 
 ## Progress
 
@@ -38,7 +38,7 @@ After setup, a Slack message should wake a Shepherd session, start or reuse the 
 
 ## Relationship to existing plans
 
-This plan supersedes the archived custom TUI direction in [`2026-06-24-shepherd-tui-mvp-experience.md`](archived/2026-06-24-shepherd-tui-mvp-experience.md). The old plan remains historical context for event-stream UX and local session requirements, but Shepherd should no longer implement a full-screen TUI itself.
+This plan supersedes the archived custom TUI direction in [`2026-06-24-shepherd-tui-mvp-experience.md`](2026-06-24-shepherd-tui-mvp-experience.md). The old plan remains historical context for event-stream UX and local session requirements, but Shepherd should no longer implement a full-screen TUI itself.
 
 Archived Herdr orchestration plans still apply where they describe:
 
@@ -149,12 +149,12 @@ Slack final-answer streaming follows the Hermes pattern:
 - Rich local dashboard/TUI separate from Pi.
 - Full migration tooling for old provider-based configs.
 
-## Open implementation details
+## Resolved implementation details
 
-These are implementation details, not product blockers:
+These details were resolved during implementation:
 
-1. Exact Pi RPC event used for extension handshake in readiness mode.
-2. Whether `gateway.start_run` is separate or folded into `claim_next_run`.
-3. How `shepherd open` writes the initial Pi custom binding if the Pi session file has not been opened before.
-4. Whether Gateway identity lives in a small file or DB metadata.
-5. Exact TypeBox/JSON Schema compatibility layer for dynamic Pi tools.
+1. Readiness uses the `shepherd-pi` extension handshake plus `get_available_models`.
+2. `gateway.start_run` remains a separate RPC lifecycle step.
+3. `shepherd open` launches Pi with Shepherd attach environment; the extension records binding entries.
+4. Gateway identity lives in the `gateway-id` state file.
+5. Dynamic Pi tools use the Gateway `tool.list` schemas.

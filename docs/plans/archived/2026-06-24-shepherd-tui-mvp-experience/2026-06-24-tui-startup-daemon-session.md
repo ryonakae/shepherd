@@ -6,7 +6,7 @@ Parent: [Shepherd TUI MVP Experience Plan](../2026-06-24-shepherd-tui-mvp-experi
 
 ## Status
 
-Archived. Superseded. Use [Shepherd Pi Runtime Gateway Plan](../../2026-06-25-pi-runtime-gateway.md) for active implementation.
+Archived. Superseded. See [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md) for the later Pi runtime direction.
 
 ## Progress
 

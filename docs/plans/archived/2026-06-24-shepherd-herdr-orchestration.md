@@ -13,7 +13,7 @@ Archived. Core MVP implementation was completed and verified on 2026-06-24. Keep
 
 ## Next steps
 
-- Use this plan only as reference. Active runtime work now lives in [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md).
+- Use this plan only as reference. The later Pi runtime work is captured in [Shepherd Pi Runtime Gateway Plan](2026-06-25-pi-runtime-gateway.md).
 
 ## Goal
 
