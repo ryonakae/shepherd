@@ -14,10 +14,11 @@
 - Done — Task 1 changed working context identity to path-first storage and passed `pnpm test -- test/integration/working-contexts.test.ts`.
 - Done — Task 2 added `session.create` `workingContextPath`, `pi.ensure_session`, TUI client support, and passed `pnpm check`.
 - Done — Task 3 made no-argument `shepherd` launch local Pi sessions through Gateway RPC and moved `open --session` to `pi.ensure_session`; `pnpm check` passed.
-- Pending — Tasks 4 through 6 still need implementation and validation.
+- Done — Task 4 added explicit Shepherd/Pi rename synchronization in the Pi extension and passed `pnpm pi-package:check`.
+- Pending — Tasks 5 and 6 still need implementation and validation.
 
 **Next steps:**
-- Start Task 4 by adding explicit Shepherd/Pi session rename synchronization in the Pi extension.
+- Start Task 5 by updating README usage for no-argument local startup and Gateway-first `open --session`.
 - Commit after each task as listed in the task sections.
 
 ## Global Constraints

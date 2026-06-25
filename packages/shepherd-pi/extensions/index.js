@@ -58,12 +58,29 @@ export default function shepherdPiExtension(pi) {
 
   pi.registerCommand("shepherd", {
     description:
-      "Attach to or inspect a Shepherd session: /shepherd attach <session-id> | status | detach",
+      "Attach, rename, or inspect a Shepherd session: /shepherd attach <session-id> | rename <title> | status | detach",
     handler: async (args, ctx) => {
-      const [command, value] = args.trim().split(/\s+/, 2);
+      const trimmed = args.trim();
+      const [command, ...rest] = trimmed.split(/\s+/);
+      const value = rest.join(" ");
       if (command === "attach" && value) {
         await ensureClient(state, ctx);
         await attachAndSubscribe(pi, ctx, state, value, { silent: false });
+        return;
+      }
+
+      if (command === "rename" && value) {
+        if (!state.sessionId) {
+          ctx.ui.notify?.(
+            "Not attached to a Shepherd session. Use /shepherd attach <session-id>.",
+            "warning",
+          );
+          return;
+        }
+        await ensureClient(state, ctx);
+        pi.setSessionName(value);
+        await state.client.request("session.rename", { sessionId: state.sessionId, title: value });
+        ctx.ui.notify?.(`Renamed Shepherd session: ${value}`, "info");
         return;
       }
 
@@ -184,6 +201,15 @@ async function attachAndSubscribe(pi, ctx, state, sessionId, options) {
     if (event.sessionId !== sessionId) return;
     if (event.type === "gateway.run.queued") {
       void claimNext(pi, ctx, state);
+    }
+    if (event.type === "session.renamed") {
+      const title = event.payload?.title;
+      if (typeof title === "string" && title.length > 0) {
+        pi.setSessionName(title);
+      }
+      if (title === null) {
+        pi.setSessionName("");
+      }
     }
   });
   await state.client.request("session.subscribe", { afterEventId: 0, sessionId });
