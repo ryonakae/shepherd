@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { argv, env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { loadShepherdConfig } from "@/config/load.js";
@@ -266,6 +266,7 @@ async function main(): Promise<void> {
     ? createGatewayRuntime({
         config,
         events,
+        piSessionDir: resolve(dirname(resolve(command.dbPath)), "pi-sessions"),
         receiveHerdrProgress: async (input) => server.receiveHerdrProgress(input),
         sqlite,
       })

@@ -11,6 +11,7 @@ import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
 import { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
+import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { GatewayRunner } from "@/gateway/runner.js";
 import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 import { GatewayRunStore } from "@/gateway/turn-queue.js";
@@ -635,6 +636,16 @@ agents:
       "user.message",
       "gateway.run.queued",
     ]);
+    expect(queuedMessages[2]).toMatchObject({
+      params: {
+        event: {
+          payload: {
+            piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
+            piSessionId: expect.any(String),
+          },
+        },
+      },
+    });
 
     client.write(
       encodeJsonLine({
@@ -649,6 +660,8 @@ agents:
       result: {
         run: {
           actorId: "slack:T123:U123",
+          piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
+          piSessionId: expect.any(String),
           userText: "from Slack",
         },
       },
@@ -1094,6 +1107,10 @@ async function openServer(
       ? {
           gatewayRuns: new ExternalGatewayRunQueue({
             events: store,
+            piSessions: new PiSessionMetadataStore({
+              events: store,
+              sessionDir: join(dir, "pi-sessions"),
+            }),
             runStore: new GatewayRunStore(sqlite),
           }),
         }

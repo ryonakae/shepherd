@@ -14,13 +14,13 @@ Active child plan. In progress.
 - **Done** — One Shepherd session maps to one Pi session file.
 - **Done** — Existing `gateway_runs` remains the durable queue/recovery table.
 - **Done** — `gateway.run.queued` is a persistent event.
-- **Not started** — Pi supervisor implementation.
+- **In progress** — Pi session metadata assignment is implemented for queued runs; actual Pi subprocess supervision is still pending.
 - **In progress** — external worker claim/start/complete/fail RPC exists for the final-only fake Pi extension path; owner priority and supervisor process management remain pending.
 
 ## Next steps
 
-1. Add Pi session metadata to Shepherd sessions.
-2. Add the Pi runtime supervisor.
+1. Add the Pi runtime supervisor.
+2. Connect the supervisor to the queued run lifecycle.
 3. Add run claim/complete/fail RPC methods.
 4. Update daemon user-message path to create queued runs instead of directly invoking old provider code.
 

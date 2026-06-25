@@ -12,6 +12,7 @@ import {
 } from "@/herdr/progress-subscriptions.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
 import { ExternalGatewayRunQueue } from "./external-run-queue.js";
+import { PiSessionMetadataStore } from "./pi-sessions.js";
 import {
   createGatewayProviderRouterFromConfig,
   type GatewayProviderFactoryDependencies,
@@ -31,6 +32,7 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
   config: ShepherdConfig;
   createHerdrClient?: (herdrSessionName: string) => GatewayRuntimeHerdrClient;
   events: EventStore;
+  piSessionDir?: string;
   receiveHerdrProgress?: (input: HerdrProgressReceiverInput) => Promise<unknown>;
   sqlite: DatabaseSync;
 };
@@ -112,7 +114,18 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
       herdrClients.closeAll();
     },
     ...(runner ? { runner: new GatewayTurnQueue({ runStore, runner }) } : {}),
-    runs: new ExternalGatewayRunQueue({ events: options.events, runStore }),
+    runs: new ExternalGatewayRunQueue({
+      events: options.events,
+      ...(options.piSessionDir !== undefined
+        ? {
+            piSessions: new PiSessionMetadataStore({
+              events: options.events,
+              sessionDir: options.piSessionDir,
+            }),
+          }
+        : {}),
+      runStore,
+    }),
     tools,
   };
 }

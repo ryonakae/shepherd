@@ -1,4 +1,5 @@
 import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { PiSessionMetadataStore } from "./pi-sessions.js";
 import type { GatewayRunRecord, GatewayRunStore } from "./turn-queue.js";
 
 export type GatewayQueuedRun = {
@@ -9,6 +10,8 @@ export type GatewayQueuedRun = {
 export type GatewayClaimedRun = {
   actorId: string | null;
   id: string;
+  piSessionFile?: string;
+  piSessionId?: string;
   presentation: unknown;
   triggeringEventId: number | null;
   userText: string;
@@ -26,10 +29,16 @@ export type GatewayRunCompletionResult = {
 
 export class ExternalGatewayRunQueue {
   readonly #events: EventStore;
+  readonly #piSessions: PiSessionMetadataStore | undefined;
   readonly #runStore: GatewayRunStore;
 
-  constructor(options: { events: EventStore; runStore: GatewayRunStore }) {
+  constructor(options: {
+    events: EventStore;
+    piSessions?: PiSessionMetadataStore;
+    runStore: GatewayRunStore;
+  }) {
     this.#events = options.events;
+    this.#piSessions = options.piSessions;
     this.#runStore = options.runStore;
   }
 
@@ -38,9 +47,16 @@ export class ExternalGatewayRunQueue {
       sessionId: input.sessionId,
       triggeringEventId: input.triggeringEventId,
     });
+    const pi = this.#piSessions?.ensureForSession(input.sessionId);
     const event = this.#events.appendEvent({
       payload: {
         gatewayRunId: run.id,
+        ...(pi !== undefined
+          ? {
+              piSessionFile: pi.sessionFile,
+              piSessionId: pi.sessionId,
+            }
+          : {}),
         triggeringEventId: input.triggeringEventId,
       },
       sessionId: input.sessionId,
@@ -149,6 +165,7 @@ export class ExternalGatewayRunQueue {
       return {
         actorId: null,
         id: run.id,
+        ...this.#claimPiMetadata(run.sessionId),
         presentation: {},
         triggeringEventId: null,
         userText: "",
@@ -161,10 +178,21 @@ export class ExternalGatewayRunQueue {
     return {
       actorId: event.actorId,
       id: run.id,
+      ...this.#claimPiMetadata(run.sessionId),
       presentation: payload.presentation,
       triggeringEventId: event.id,
       userText: payload.text,
     };
+  }
+
+  #claimPiMetadata(sessionId: string): Pick<GatewayClaimedRun, "piSessionFile" | "piSessionId"> {
+    const pi = this.#events.getSession(sessionId).metadata.pi;
+    return pi
+      ? {
+          piSessionFile: pi.sessionFile,
+          piSessionId: pi.sessionId,
+        }
+      : {};
   }
 }
 
