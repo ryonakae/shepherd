@@ -884,6 +884,55 @@ agents:
     ]);
   });
 
+  test("marks running TUI-owned runs as recovery required after heartbeat timeout", async () => {
+    const { server, socketPath, store } = await openServer({
+      enableGatewayRuns: true,
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-attach-recovery-1",
+        method: "pi.attach",
+        params: {
+          mode: "tui",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          piSessionId: "pi-session-1",
+          sessionId: session.id,
+        },
+      }),
+    );
+    const [attachResponse] = await readMessages(client, 1);
+    const tuiOwnerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
+
+    client.write(
+      encodeJsonLine({
+        id: "message-recovery-1",
+        method: "session.user_message",
+        params: { sessionId: session.id, text: "hello" },
+      }),
+    );
+    await readMessages(client, 1);
+    client.write(
+      encodeJsonLine({
+        id: "claim-recovery-1",
+        method: "gateway.claim_next_run",
+        params: { ownerId: tuiOwnerId, sessionId: session.id },
+      }),
+    );
+    const [claimResponse] = await readMessages(client, 1);
+    const gatewayRunId = (claimResponse as { result: { run: { id: string } } }).result.run.id;
+
+    server.reapStalePiOwners(Date.now() + 60_000);
+
+    expect(store.listEvents(session.id).map((event) => event.type)).toContain("recovery.note");
+    expect(
+      store.listEvents(session.id).find((event) => event.type === "recovery.note")?.payload,
+    ).toMatchObject({ gatewayRunId, ownerId: tuiOwnerId, previousStatus: "running" });
+  });
+
   test("streams transient gateway deltas before completing a run", async () => {
     const streamed: unknown[] = [];
     const { server, socketPath, store } = await openServer({
@@ -1349,6 +1398,7 @@ async function openServer(
       hasFinished(gatewayRunId: string): boolean;
     };
     enableGatewayRuns?: boolean;
+    ownerHeartbeatTimeoutMs?: number;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
 ): Promise<{
@@ -1387,6 +1437,9 @@ async function openServer(
     ...(options.configureHeadlessPi ? { headlessPi: options.configureHeadlessPi() } : {}),
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
+      : {}),
+    ...(options.ownerHeartbeatTimeoutMs !== undefined
+      ? { ownerHeartbeatTimeoutMs: options.ownerHeartbeatTimeoutMs }
       : {}),
     ...(options.providerOverrides ? { providerOverrides: options.providerOverrides } : {}),
     ...(options.configureStreamDelivery

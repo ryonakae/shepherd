@@ -22,6 +22,7 @@ type ShepherdDaemonServerOptions = {
   gatewayRuns?: ExternalGatewayRunQueue;
   headlessPi?: HeadlessPiSupervisorService;
   logicalTools?: LogicalToolService;
+  ownerHeartbeatTimeoutMs?: number;
   providerOverrides?: ProviderOverrideResolver;
   streamDelivery?: GatewayStreamDeliveryService;
   socketPath: string;
@@ -145,6 +146,8 @@ export class ShepherdDaemonServer {
     this.#gatewayRuns = options.gatewayRuns;
     this.#headlessPi = options.headlessPi;
     this.#logicalTools = options.logicalTools;
+    this.#ownerHeartbeatTimeoutMs =
+      options.ownerHeartbeatTimeoutMs ?? this.#ownerHeartbeatTimeoutMs;
     this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
@@ -210,6 +213,10 @@ export class ShepherdDaemonServer {
 
       this.#piHandshakeWaiters.push(waiter);
     });
+  }
+
+  reapStalePiOwners(now = Date.now()): void {
+    this.#pruneStaleOwners(now);
   }
 
   async receiveUserMessage(input: ReceiveUserMessageInput): Promise<{
@@ -1207,11 +1214,20 @@ export class ShepherdDaemonServer {
     return true;
   }
 
-  #pruneStaleOwners(): void {
-    const now = Date.now();
+  #pruneStaleOwners(now = Date.now()): void {
     for (const [ownerId, owner] of this.#piOwners) {
-      if (now - owner.lastHeartbeatAt.getTime() > this.#ownerHeartbeatTimeoutMs) {
+      if (now - owner.lastHeartbeatAt.getTime() >= this.#ownerHeartbeatTimeoutMs) {
         this.#piOwners.delete(ownerId);
+        const recovery = this.#gatewayRuns?.markRunningRunRecoveryRequired({
+          message: "Pi owner heartbeat timed out while a gateway run was active.",
+          ownerId,
+          sessionId: owner.sessionId,
+        });
+        if (recovery) {
+          for (const event of recovery.events) {
+            void this.#publishEvent(event);
+          }
+        }
       }
     }
   }

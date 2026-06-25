@@ -146,6 +146,36 @@ export class ExternalGatewayRunQueue {
     return { events: [message, completed], run };
   }
 
+  markRunningRunRecoveryRequired(input: {
+    message: string;
+    ownerId: string;
+    sessionId: string;
+  }): GatewayRunCompletionResult | undefined {
+    const running = this.#runStore.findRunningRun(input.sessionId);
+    if (!running) {
+      return undefined;
+    }
+
+    const recovery = {
+      message: input.message,
+      ownerId: input.ownerId,
+      previousStatus: "running",
+      recoveredAt: new Date().toISOString(),
+    };
+    const run = this.#runStore.markRecoveryRequired(running.id, recovery);
+    const note = this.#events.appendEvent({
+      idempotencyKey: `recovery:gateway_run:${run.id}:owner:${input.ownerId}`,
+      payload: {
+        gatewayRunId: run.id,
+        ...recovery,
+      },
+      sessionId: run.sessionId,
+      type: "recovery.note",
+    });
+
+    return { events: [note], run };
+  }
+
   failRun(input: {
     gatewayRunId: string;
     message: string;

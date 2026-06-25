@@ -112,6 +112,16 @@ export class GatewayRunStore {
     return mapGatewayRun(row);
   }
 
+  findRunningRun(sessionId: string): GatewayRunRecord | undefined {
+    const row = this.#sqlite
+      .prepare(
+        "select * from gateway_runs where session_id = ? and status = 'running' order by started_at asc, id asc limit 1",
+      )
+      .get(sessionId) as GatewayRunRow | undefined;
+
+    return row ? mapGatewayRun(row) : undefined;
+  }
+
   listRuns(sessionId: string): GatewayRunRecord[] {
     const rows = this.#sqlite
       .prepare("select * from gateway_runs where session_id = ? order by created_at asc, id asc")

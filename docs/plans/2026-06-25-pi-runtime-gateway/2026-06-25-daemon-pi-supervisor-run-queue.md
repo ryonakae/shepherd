@@ -15,13 +15,12 @@ Active child plan. In progress.
 - **Done** — Existing `gateway_runs` remains the durable queue/recovery table.
 - **Done** — `gateway.run.queued` is a persistent event.
 - **In progress** — Pi session metadata assignment, lazy headless Pi subprocess startup, `pi.attach`, `pi.heartbeat`, and TUI-over-headless claim priority are implemented.
-- **In progress** — external worker claim/start/complete/fail RPC exists for the final-only fake Pi extension path; owner-loss recovery remains pending.
+- **In progress** — external worker claim/start/complete/fail RPC exists for the final-only fake Pi extension path; stale owner recovery marks running runs `recovery_required`.
 
 ## Next steps
 
-1. Add recovery handling for owner loss while running.
-2. Expand supervisor integration tests around process exit and requeue/recovery behavior.
-3. Harden daemon identity persistence for Pi resume validation.
+1. Expand supervisor integration tests around process exit and requeue/recovery behavior.
+2. Harden daemon identity persistence for Pi resume validation.
 
 ## Pi supervisor
 
