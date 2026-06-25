@@ -1027,6 +1027,28 @@ agents:
 
     client.write(
       encodeJsonLine({
+        id: "segment-break-1",
+        method: "gateway.stream_segment_break",
+        params: { gatewayRunId, ownerId: "owner-1" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "segment-break-1", result: { status: "segment_break" } },
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "tool-progress-1",
+        method: "gateway.stream_tool_progress",
+        params: { gatewayRunId, ownerId: "owner-1", text: "tool" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "tool-progress-1", result: { status: "tool_progress_off" } },
+    ]);
+
+    client.write(
+      encodeJsonLine({
         id: "complete-stream-1",
         method: "gateway.complete_run",
         params: { gatewayRunId, ownerId: "owner-1", text: "final" },

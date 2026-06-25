@@ -19,9 +19,8 @@ Active child plan. In progress.
 
 ## Next steps
 
-1. Harden fallback behavior when Slack update fails repeatedly.
-2. Add segment-break and optional tool progress RPC handling.
-3. Add broader integration coverage for final delivery receipts after stream finish.
+1. Add broader integration coverage for final delivery receipts after stream finish.
+2. Manual Slack smoke once credentials/workspace are available.
 
 ## Hermes reference
 

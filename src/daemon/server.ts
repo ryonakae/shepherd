@@ -479,6 +479,16 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    if (request.method === "gateway.stream_segment_break") {
+      this.#ackTransientStreamMethod(socket, request, "segment_break");
+      return;
+    }
+
+    if (request.method === "gateway.stream_tool_progress") {
+      this.#ackTransientStreamMethod(socket, request, "tool_progress_off");
+      return;
+    }
+
     if (request.method === "gateway.fail_run") {
       void this.#failGatewayRun(socket, request);
       return;
@@ -1162,6 +1172,10 @@ export class ShepherdDaemonServer {
         id: request.id,
       });
     }
+  }
+
+  #ackTransientStreamMethod(socket: Socket, request: RpcRequest, status: string): void {
+    this.#write(socket, { id: request.id, result: { status } });
   }
 
   async #failGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
