@@ -825,6 +825,98 @@ agents:
     ]);
   });
 
+  test("streams transient gateway deltas before completing a run", async () => {
+    const streamed: unknown[] = [];
+    const { server, socketPath, store } = await openServer({
+      configureStreamDelivery() {
+        const finished = new Set<string>();
+        return {
+          async delta(input) {
+            streamed.push({ method: "delta", input });
+          },
+          async finish(input) {
+            streamed.push({ method: "finish", input });
+            finished.add(input.gatewayRunId);
+          },
+          hasFinished(gatewayRunId) {
+            return finished.has(gatewayRunId);
+          },
+        };
+      },
+      enableGatewayRuns: true,
+    });
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "message-1",
+        method: "session.user_message",
+        params: { sessionId: session.id, text: "hello" },
+      }),
+    );
+    await readMessages(client, 1);
+    await waitFor(() =>
+      store.listEvents(session.id).some((event) => event.type === "gateway.run.queued"),
+    );
+    client.write(
+      encodeJsonLine({
+        id: "claim-stream-1",
+        method: "gateway.claim_next_run",
+        params: { ownerId: "owner-1", sessionId: session.id },
+      }),
+    );
+    const [claimResponse] = await readMessages(client, 1);
+    const gatewayRunId = (claimResponse as { result: { run: { id: string } } }).result.run.id;
+
+    client.write(
+      encodeJsonLine({
+        id: "stream-delta-1",
+        method: "gateway.stream_delta",
+        params: { delta: "partial", gatewayRunId, ownerId: "owner-1" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "stream-delta-1", result: { streamed: true } },
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "stream-finish-1",
+        method: "gateway.stream_finish",
+        params: { finalText: "final", gatewayRunId, ownerId: "owner-1" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      { id: "stream-finish-1", result: { streamed: true } },
+    ]);
+
+    client.write(
+      encodeJsonLine({
+        id: "complete-stream-1",
+        method: "gateway.complete_run",
+        params: { gatewayRunId, ownerId: "owner-1", text: "final" },
+      }),
+    );
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      expect.objectContaining({ id: "complete-stream-1" }),
+    ]);
+    expect(streamed).toEqual([
+      {
+        input: { delta: "partial", gatewayRunId, sessionId: session.id },
+        method: "delta",
+      },
+      {
+        input: { finalText: "final", gatewayRunId },
+        method: "finish",
+      },
+    ]);
+    expect(
+      store.listEvents(session.id).find((event) => event.type === "gateway.message")?.payload,
+    ).toMatchObject({ deliveredByStream: true, text: "final" });
+  });
+
   test("lists and runs logical tools through RPC", async () => {
     const { server, socketPath, store } = await openServer({
       configureLogicalTools(events) {
@@ -1192,6 +1284,11 @@ async function openServer(
       ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
     };
     configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
+    configureStreamDelivery?: () => {
+      delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
+      finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
+      hasFinished(gatewayRunId: string): boolean;
+    };
     enableGatewayRuns?: boolean;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
   } = {},
@@ -1233,6 +1330,9 @@ async function openServer(
       ? { logicalTools: options.configureLogicalTools(store) }
       : {}),
     ...(options.providerOverrides ? { providerOverrides: options.providerOverrides } : {}),
+    ...(options.configureStreamDelivery
+      ? { streamDelivery: options.configureStreamDelivery() }
+      : {}),
     socketPath,
     store,
     summaries,

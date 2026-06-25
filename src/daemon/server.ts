@@ -23,6 +23,7 @@ type ShepherdDaemonServerOptions = {
   headlessPi?: HeadlessPiSupervisorService;
   logicalTools?: LogicalToolService;
   providerOverrides?: ProviderOverrideResolver;
+  streamDelivery?: GatewayStreamDeliveryService;
   socketPath: string;
   store: EventStore;
   summaries?: Pick<SessionSummaryStore, "getSummary">;
@@ -39,6 +40,12 @@ type HeadlessPiSupervisorService = {
 };
 
 type LogicalToolService = Pick<LogicalToolRunner, "list" | "run">;
+
+type GatewayStreamDeliveryService = {
+  delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
+  finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
+  hasFinished(gatewayRunId: string): boolean;
+};
 
 type RpcRequest = {
   id?: string | number;
@@ -124,6 +131,7 @@ export class ShepherdDaemonServer {
   readonly #piOwners = new Map<string, PiOwnerRecord>();
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
+  readonly #streamDelivery: GatewayStreamDeliveryService | undefined;
   readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
@@ -139,6 +147,7 @@ export class ShepherdDaemonServer {
     this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
+    this.#streamDelivery = options.streamDelivery;
     this.#summaries = options.summaries;
     this.#server = createServer((socket) => this.#handleConnection(socket));
   }
@@ -446,6 +455,16 @@ export class ShepherdDaemonServer {
 
     if (request.method === "gateway.complete_run") {
       void this.#completeGatewayRun(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.stream_delta") {
+      void this.#streamGatewayDelta(socket, request);
+      return;
+    }
+
+    if (request.method === "gateway.stream_finish") {
+      void this.#finishGatewayStream(socket, request);
       return;
     }
 
@@ -1029,6 +1048,7 @@ export class ShepherdDaemonServer {
 
     try {
       const result = this.#gatewayRuns.completeRun({
+        deliveredByStream: this.#streamDelivery?.hasFinished(params.gatewayRunId) === true,
         gatewayRunId: params.gatewayRunId,
         ownerId: params.ownerId,
         ...(params.piSessionFile !== undefined ? { piSessionFile: params.piSessionFile } : {}),
@@ -1042,6 +1062,78 @@ export class ShepherdDaemonServer {
       for (const event of result.events) {
         await this.#publishEvent(event);
       }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #streamGatewayDelta(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      delta?: unknown;
+      gatewayRunId?: unknown;
+      ownerId?: unknown;
+    };
+    if (
+      typeof params?.ownerId !== "string" ||
+      typeof params.gatewayRunId !== "string" ||
+      typeof params.delta !== "string"
+    ) {
+      this.#write(socket, {
+        error: { message: "ownerId, gatewayRunId, and delta are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    if (!this.#gatewayRuns || !this.#streamDelivery) {
+      this.#write(socket, { id: request.id, result: { streamed: false } });
+      return;
+    }
+
+    try {
+      const run = this.#gatewayRuns.getRun(params.gatewayRunId);
+      await this.#streamDelivery.delta({
+        delta: params.delta,
+        gatewayRunId: params.gatewayRunId,
+        sessionId: run.sessionId,
+      });
+      this.#write(socket, { id: request.id, result: { streamed: true } });
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #finishGatewayStream(socket: Socket, request: RpcRequest): Promise<void> {
+    const params = request.params as {
+      finalText?: unknown;
+      gatewayRunId?: unknown;
+      ownerId?: unknown;
+    };
+    if (typeof params?.ownerId !== "string" || typeof params.gatewayRunId !== "string") {
+      this.#write(socket, {
+        error: { message: "ownerId and gatewayRunId are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    if (!this.#streamDelivery) {
+      this.#write(socket, { id: request.id, result: { streamed: false } });
+      return;
+    }
+
+    try {
+      await this.#streamDelivery.finish({
+        ...(typeof params.finalText === "string" ? { finalText: params.finalText } : {}),
+        gatewayRunId: params.gatewayRunId,
+      });
+      this.#write(socket, { id: request.id, result: { streamed: true } });
     } catch (error) {
       this.#write(socket, {
         error: { message: error instanceof Error ? error.message : String(error) },

@@ -3,6 +3,7 @@ import type { EventRecord } from "@/db/event-store.js";
 import {
   parseSlackTargetId,
   SlackDeliveryAdapter,
+  SlackStreamDelivery,
   slackTargetId,
 } from "@/platforms/slack/delivery.js";
 
@@ -73,6 +74,79 @@ describe("SlackDeliveryAdapter", () => {
       text: "from TUI",
       username: "Ryo",
     });
+  });
+});
+
+describe("SlackStreamDelivery", () => {
+  test("posts a placeholder, updates with cursor, and finishes without cursor", async () => {
+    let now = 0;
+    const calls: unknown[] = [];
+    const stream = new SlackStreamDelivery({
+      client: {
+        chat: {
+          async postMessage(params: unknown) {
+            calls.push({ method: "postMessage", params });
+            return { ts: "1700000001.000002" };
+          },
+          async update(params: unknown) {
+            calls.push({ method: "update", params });
+          },
+        },
+      },
+      config: {
+        bufferThresholdChars: 5,
+        cursor: " ▉",
+        editIntervalMs: 100,
+      },
+      now: () => now,
+    });
+
+    await stream.delta({
+      delta: "hello",
+      gatewayRunId: "run-1",
+      targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
+    });
+    now = 10;
+    await stream.delta({
+      delta: "!",
+      gatewayRunId: "run-1",
+      targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
+    });
+    now = 110;
+    await stream.delta({
+      delta: " done",
+      gatewayRunId: "run-1",
+      targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
+    });
+    await stream.finish({ finalText: "hello! done", gatewayRunId: "run-1" });
+
+    expect(calls).toEqual([
+      {
+        method: "postMessage",
+        params: {
+          channel: "C123",
+          text: "hello ▉",
+          thread_ts: "1700000000.000001",
+        },
+      },
+      {
+        method: "update",
+        params: {
+          channel: "C123",
+          text: "hello! done ▉",
+          ts: "1700000001.000002",
+        },
+      },
+      {
+        method: "update",
+        params: {
+          channel: "C123",
+          text: "hello! done",
+          ts: "1700000001.000002",
+        },
+      },
+    ]);
+    expect(stream.hasFinished("run-1")).toBe(true);
   });
 });
 

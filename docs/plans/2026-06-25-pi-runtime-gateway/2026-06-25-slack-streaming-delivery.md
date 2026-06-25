@@ -6,7 +6,7 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
@@ -14,16 +14,14 @@ Active child plan. Not started.
 - **Done** — Token deltas are transient and not persisted.
 - **Done** — Final assistant text is persisted as `gateway.message`.
 - **Done** — Slack tool progress defaults to `off`.
-- **Not started** — Slack `chat.update` support.
-- **Not started** — Stream delivery state and delta RPC.
+- **In progress** — Slack `chat.update` support and in-memory stream state exist for final-answer streaming.
+- **In progress** — `gateway.stream_delta` and `gateway.stream_finish` RPC exist; `shepherd-pi` forwards assistant updates and final stream finish.
 
 ## Next steps
 
-1. Extend Slack delivery client with `chat.update`.
-2. Add transient stream RPC handlers.
-3. Implement in-memory stream state keyed by `gatewayRunId`.
-4. Wire Pi `message_update` deltas through `shepherd-pi`.
-5. Add tests for throttling, cursor removal, and final delivery.
+1. Harden fallback behavior when Slack update fails repeatedly.
+2. Add segment-break and optional tool progress RPC handling.
+3. Add broader integration coverage for final delivery receipts after stream finish.
 
 ## Hermes reference
 

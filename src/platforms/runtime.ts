@@ -5,7 +5,11 @@ import type { EventRecord, EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionDeliveryFanout } from "@/delivery/fanout.js";
 import { DeliveryReceiptStore, DeliveryRouter } from "@/delivery/router.js";
-import { SlackDeliveryAdapter, type SlackPostMessageClient } from "./slack/delivery.js";
+import {
+  SlackDeliveryAdapter,
+  type SlackPostMessageClient,
+  SlackStreamDelivery,
+} from "./slack/delivery.js";
 import { SlackInboundHandler, type SlackPolicyLogMetadata } from "./slack/inbound.js";
 import {
   createSlackBoltApp,
@@ -13,9 +17,16 @@ import {
   SlackSocketModeAdapter,
 } from "./slack/socket-mode.js";
 
+export type GatewayStreamDelivery = {
+  delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
+  finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
+  hasFinished(gatewayRunId: string): boolean;
+};
+
 export type PlatformRuntime = {
   close(): Promise<void>;
   deliveryFanout?: SessionDeliveryFanout;
+  streamDelivery?: GatewayStreamDelivery;
   start(): Promise<void>;
 };
 
@@ -101,6 +112,37 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
     receipts,
   });
   const deliveryFanout = new SessionDeliveryFanout({ bindings, router });
+  const slackStream = new SlackStreamDelivery({
+    client,
+    config: {
+      bufferThresholdChars: slack.streaming?.buffer_threshold_chars ?? 40,
+      cursor: slack.streaming?.cursor ?? " ▉",
+      editIntervalMs: slack.streaming?.edit_interval_ms ?? 750,
+    },
+  });
+  const streamDelivery: GatewayStreamDelivery | undefined =
+    slack.streaming?.enabled === false
+      ? undefined
+      : {
+          async delta(input) {
+            for (const binding of bindings.listForSession(input.sessionId)) {
+              if (binding.platform !== "slack") {
+                continue;
+              }
+              await slackStream.delta({
+                delta: input.delta,
+                gatewayRunId: input.gatewayRunId,
+                targetId: `${binding.spaceId}:${binding.threadId}`,
+              });
+            }
+          },
+          finish(input) {
+            return slackStream.finish(input);
+          },
+          hasFinished(gatewayRunId) {
+            return slackStream.hasFinished(gatewayRunId);
+          },
+        };
 
   return {
     async close() {
@@ -109,6 +151,7 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
       }
     },
     deliveryFanout,
+    ...(streamDelivery !== undefined ? { streamDelivery } : {}),
     async start() {
       for (const part of parts) {
         await part.start();

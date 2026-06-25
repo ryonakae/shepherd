@@ -14,7 +14,7 @@ Active. This plan supersedes the custom Shepherd TUI direction and makes Pi the 
 - **Done** — Session decision: one Shepherd session maps to one Pi session file; Pi session files are the canonical agent conversation state.
 - **Done** — Streaming decision: Slack final-answer streaming follows Hermes' edit-in-place model; tool progress is off by default.
 - **In progress** — Implementation slice 1: config schema accepts `gateway.pi`, daemon startup checks Pi readiness, sessions receive Pi metadata, queued runs lazy-start headless Pi, and daemon RPC has the external run queue lifecycle for fake Pi extension claim/complete/fail.
-- **Not started** — Implementation slice 2+: dynamic tools, Slack streaming, TUI takeover, and polish.
+- **In progress** — Implementation slice 2+: dynamic tools and Slack final-answer streaming have initial implementations; TUI takeover and polish remain pending.
 
 ## Next steps
 

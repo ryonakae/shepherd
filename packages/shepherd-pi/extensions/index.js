@@ -10,6 +10,7 @@ export default function shepherdPiExtension(pi) {
     binding: undefined,
     currentRun: undefined,
     lastAssistantText: "",
+    streamedAssistantText: "",
     ownerId: undefined,
     ownerKind: undefined,
     sessionId: undefined,
@@ -105,7 +106,7 @@ export default function shepherdPiExtension(pi) {
 
   pi.on("message_update", async (event) => {
     if (event.message?.role === "assistant") {
-      state.lastAssistantText = textFromMessage(event.message);
+      await recordAssistantTextDelta(state, textFromMessage(event.message));
     }
   });
 
@@ -120,19 +121,44 @@ export default function shepherdPiExtension(pi) {
     const run = state.currentRun;
     state.currentRun = undefined;
     try {
+      const finalText = state.lastAssistantText.trim();
+      await state.client
+        .request("gateway.stream_finish", {
+          finalText,
+          gatewayRunId: run.id,
+          ownerId: state.ownerId,
+        })
+        .catch(() => undefined);
       await state.client.request("gateway.complete_run", {
         gatewayRunId: run.id,
         ownerId: state.ownerId,
         piSessionFile: ctx.sessionManager.getSessionFile(),
         piSessionId: ctx.sessionManager.getSessionId(),
-        text: state.lastAssistantText.trim(),
+        text: finalText,
       });
       state.lastAssistantText = "";
+      state.streamedAssistantText = "";
       await claimNext(pi, ctx, state);
     } catch (error) {
       ctx.ui.notify?.(`Failed to complete Shepherd run: ${messageOf(error)}`, "error");
     }
   });
+}
+
+async function recordAssistantTextDelta(state, text) {
+  const delta = text.startsWith(state.streamedAssistantText)
+    ? text.slice(state.streamedAssistantText.length)
+    : text;
+  state.lastAssistantText = text;
+  state.streamedAssistantText = text;
+  if (!delta || !state.client || !state.currentRun || !state.ownerId) return;
+  await state.client
+    .request("gateway.stream_delta", {
+      delta,
+      gatewayRunId: state.currentRun.id,
+      ownerId: state.ownerId,
+    })
+    .catch(() => undefined);
 }
 
 async function attachAndSubscribe(pi, ctx, state, sessionId, options) {
@@ -205,6 +231,8 @@ async function claimNext(pi, ctx, state) {
   if (!result.run) return;
 
   state.currentRun = result.run;
+  state.lastAssistantText = "";
+  state.streamedAssistantText = "";
   await state.client.request("gateway.start_run", {
     gatewayRunId: result.run.id,
     ownerId: state.ownerId,

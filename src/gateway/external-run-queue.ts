@@ -42,6 +42,10 @@ export class ExternalGatewayRunQueue {
     this.#runStore = options.runStore;
   }
 
+  getRun(gatewayRunId: string): GatewayRunRecord {
+    return this.#runStore.getRun(gatewayRunId);
+  }
+
   queueRun(input: { sessionId: string; triggeringEventId: number }): GatewayQueuedRun {
     const run = this.#runStore.createQueuedRun({
       sessionId: input.sessionId,
@@ -109,6 +113,7 @@ export class ExternalGatewayRunQueue {
   }
 
   completeRun(input: {
+    deliveredByStream?: boolean;
     gatewayRunId: string;
     ownerId: string;
     piSessionFile?: string;
@@ -120,6 +125,7 @@ export class ExternalGatewayRunQueue {
       payload: {
         gatewayRunId: existing.id,
         ownerId: input.ownerId,
+        ...(input.deliveredByStream === true ? { deliveredByStream: true } : {}),
         ...(input.piSessionFile !== undefined ? { piSessionFile: input.piSessionFile } : {}),
         ...(input.piSessionId !== undefined ? { piSessionId: input.piSessionId } : {}),
         text: input.text,
