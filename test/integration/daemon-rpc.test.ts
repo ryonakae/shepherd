@@ -380,6 +380,45 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     expect(delivered).toEqual([expect.objectContaining({ type: "herdr.progress" })]);
   });
 
+  test("records Pi extension handshakes", async () => {
+    const { server, socketPath } = await openServer();
+    servers.push(server);
+
+    const handshake = server.waitForPiHandshake({ timeoutMs: 500 });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-handshake-1",
+        method: "pi.handshake",
+        params: {
+          extensionVersion: "0.1.0",
+          mode: "rpc",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          piSessionId: "pi-session-1",
+        },
+      }),
+    );
+
+    const [response, recorded] = await Promise.all([readMessages(client, 1), handshake]);
+
+    expect(response[0]).toMatchObject({
+      id: "pi-handshake-1",
+      result: {
+        attached: false,
+        daemonId: "default",
+        ownerKind: "headless_pi",
+      },
+    });
+    expect(recorded).toMatchObject({
+      attached: false,
+      extensionVersion: "0.1.0",
+      mode: "rpc",
+      ownerKind: "headless_pi",
+      piSessionFile: "/tmp/pi-session.jsonl",
+      piSessionId: "pi-session-1",
+    });
+  });
+
   test("reloads config through RPC", async () => {
     const configPath = writeTempFile(
       "shepherd.yaml",

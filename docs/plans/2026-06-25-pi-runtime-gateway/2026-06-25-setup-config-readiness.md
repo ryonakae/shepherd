@@ -14,13 +14,13 @@ Active child plan. In progress.
 - **Done** — Dedicated `shepherd setup` and `shepherd doctor` are deferred for MVP.
 - **Done** — Daemon startup should fail fast when Pi readiness fails.
 - **In progress** — Config schema accepts `gateway.pi` and Slack streaming settings; old provider fields are still accepted as a temporary legacy path.
-- **Not started** — Pi readiness probe implementation.
+- **In progress** — Pi readiness probe now launches `pi --mode rpc --no-session`, waits for daemon `pi.handshake`, and requires `get_available_models` to return at least one model before Slack starts.
 
 ## Next steps
 
 1. Update `src/config/schema.ts` for Pi runtime config.
 2. Update config tests and example fixtures.
-3. Add daemon startup readiness checks.
+3. Finish readiness hardening with stable daemon identity and real `shepherd-pi` extension validation once the package exists.
 4. Remove or quarantine old provider runtime construction from the default daemon path.
 
 ## Distribution

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
@@ -42,6 +43,18 @@ type RpcRequest = {
 
 type EventWireRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
+};
+
+export type PiHandshakeRecord = {
+  attached: boolean;
+  daemonId: string;
+  extensionVersion: string;
+  mode: "json" | "print" | "rpc" | "tui";
+  ownerId: string;
+  ownerKind: "headless_pi" | "tui_pi";
+  piSessionFile?: string;
+  piSessionId?: string;
+  sessionId?: string;
 };
 
 type ActorPresentationInput = {
@@ -92,11 +105,13 @@ export class ShepherdDaemonServer {
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #gatewayRuns: ExternalGatewayRunQueue | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
+  readonly #piHandshakeWaiters: Array<(handshake: PiHandshakeRecord) => void> = [];
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
   readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
+  #lastPiHandshake: PiHandshakeRecord | undefined;
 
   constructor(options: ShepherdDaemonServerOptions) {
     this.#configPath = options.configPath;
@@ -145,6 +160,28 @@ export class ShepherdDaemonServer {
         }
         resolve();
       });
+    });
+  }
+
+  waitForPiHandshake(options: { timeoutMs: number }): Promise<PiHandshakeRecord> {
+    if (this.#lastPiHandshake) {
+      return Promise.resolve(this.#lastPiHandshake);
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter = (handshake: PiHandshakeRecord) => {
+        clearTimeout(timeout);
+        resolve(handshake);
+      };
+      const timeout = setTimeout(() => {
+        const index = this.#piHandshakeWaiters.indexOf(waiter);
+        if (index >= 0) {
+          this.#piHandshakeWaiters.splice(index, 1);
+        }
+        reject(new Error(`Timed out waiting for pi.handshake after ${options.timeoutMs}ms`));
+      }, options.timeoutMs);
+
+      this.#piHandshakeWaiters.push(waiter);
     });
   }
 
@@ -356,6 +393,11 @@ export class ShepherdDaemonServer {
 
     if (request.method === "config.reload") {
       this.#reloadConfig(socket, request);
+      return;
+    }
+
+    if (request.method === "pi.handshake") {
+      this.#recordPiHandshake(socket, request);
       return;
     }
 
@@ -636,6 +678,54 @@ export class ShepherdDaemonServer {
     this.#write(socket, {
       id: request.id,
       result: { event: toWireEvent(result.event) },
+    });
+  }
+
+  #recordPiHandshake(socket: Socket, request: RpcRequest): void {
+    const params = request.params as {
+      binding?: { sessionId?: unknown };
+      extensionVersion?: unknown;
+      mode?: unknown;
+      piSessionFile?: unknown;
+      piSessionId?: unknown;
+    };
+    if (typeof params?.extensionVersion !== "string" || !isPiMode(params.mode)) {
+      this.#write(socket, {
+        error: { message: "extensionVersion and mode are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const sessionId =
+      typeof params.binding?.sessionId === "string" ? params.binding.sessionId : undefined;
+    const ownerKind = params.mode === "tui" ? "tui_pi" : "headless_pi";
+    const handshake: PiHandshakeRecord = {
+      attached: sessionId !== undefined,
+      daemonId: "default",
+      extensionVersion: params.extensionVersion,
+      mode: params.mode,
+      ownerId: randomUUID(),
+      ownerKind,
+      ...(typeof params.piSessionFile === "string" ? { piSessionFile: params.piSessionFile } : {}),
+      ...(typeof params.piSessionId === "string" ? { piSessionId: params.piSessionId } : {}),
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    };
+    this.#lastPiHandshake = handshake;
+
+    for (const resolve of this.#piHandshakeWaiters.splice(0)) {
+      resolve(handshake);
+    }
+
+    this.#write(socket, {
+      id: request.id,
+      result: {
+        attached: handshake.attached,
+        daemonId: handshake.daemonId,
+        ownerId: handshake.ownerId,
+        ownerKind: handshake.ownerKind,
+        ...(handshake.sessionId !== undefined ? { sessionId: handshake.sessionId } : {}),
+      },
     });
   }
 
@@ -971,6 +1061,10 @@ export class ShepherdDaemonServer {
       subscribers.delete(socket);
     }
   }
+}
+
+function isPiMode(value: unknown): value is PiHandshakeRecord["mode"] {
+  return value === "json" || value === "print" || value === "rpc" || value === "tui";
 }
 
 function isGatewayMessages(value: unknown): value is GatewayMessage[] {

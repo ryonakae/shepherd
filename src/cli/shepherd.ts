@@ -10,6 +10,7 @@ import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
+import { checkPiReadiness } from "@/gateway/pi-readiness.js";
 import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
@@ -298,6 +299,13 @@ async function main(): Promise<void> {
   });
 
   await server.start();
+  if (config && shouldCheckPiReadiness(gatewayRuntime)) {
+    await checkPiReadiness({
+      socketPath: command.socketPath,
+      timeoutMs: config.gateway.pi?.readiness_timeout_ms ?? 10_000,
+      waitForHandshake: (timeoutMs) => server.waitForPiHandshake({ timeoutMs }),
+    });
+  }
   await platformRuntime?.start();
   console.log(`Shepherd daemon listening on ${command.socketPath}`);
 
@@ -311,6 +319,12 @@ async function main(): Promise<void> {
 
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+}
+
+function shouldCheckPiReadiness(
+  gatewayRuntime: ReturnType<typeof createGatewayRuntime> | undefined,
+): boolean {
+  return gatewayRuntime !== undefined && gatewayRuntime.runner === undefined;
 }
 
 function loadConfigOrThrow(configPath: string) {
