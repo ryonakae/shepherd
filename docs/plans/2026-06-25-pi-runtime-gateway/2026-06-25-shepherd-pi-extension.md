@@ -14,16 +14,15 @@ Active child plan. In progress.
 - **Done** — Message injection uses extension `pi.sendUserMessage()`, not daemon Pi RPC `prompt`.
 - **Done** — Shepherd tools are registered by the extension from daemon `tool.list`.
 - **Done** — Visible user text remains natural; Shepherd metadata is injected through hidden context hooks.
-- **Not started** — npm package skeleton.
-- **In progress** — daemon-side `pi.handshake`, `pi.attach`, heartbeat, and run claim/complete/fail RPC exist; extension package/client loop remains pending.
+- **In progress** — npm package skeleton exists under `packages/shepherd-pi` with extension and skill resources, and root `pnpm check` validates its syntax and pack manifest.
+- **In progress** — daemon-side `pi.handshake`, `pi.attach`, heartbeat, and run claim/complete/fail RPC exist; extension daemon client, attach command, tool registration, claim loop, and final completion path have an initial implementation.
 
 ## Next steps
 
-1. Create the `shepherd-pi` package layout.
-2. Implement daemon handshake and attach.
-3. Implement run claim and final response reporting.
-4. Add dynamic tool registration from `tool.list`.
-5. Add context injection and TUI status commands.
+1. Add focused tests or a harness for the extension daemon client and claim loop.
+2. Harden final assistant text extraction and failure handling.
+3. Add streaming delta forwarding.
+4. Add TUI status polish and auto-attach coverage.
 
 ## Package contents
 

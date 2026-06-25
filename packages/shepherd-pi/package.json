@@ -1,0 +1,23 @@
+{
+  "name": "shepherd-pi",
+  "version": "0.1.0",
+  "description": "Pi extension bridge for Shepherd daemon sessions.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "shepherd",
+    "pi-extension"
+  ],
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

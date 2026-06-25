@@ -13,7 +13,7 @@ Active child plan. In progress.
 - **Done** — Implementation should start with a vertical final-only path.
 - **Done** — Streaming and TUI takeover are in MVP but come after the final-only path.
 - **In progress** — Slice 1 implementation: `gateway.pi` config parsing, daemon readiness handshake, Pi session metadata assignment, lazy headless Pi startup, and external daemon run queue RPC are in place.
-- **In progress** — Test harnesses: fake Pi extension lifecycle is covered through daemon RPC; fake Slack delivery is still pending.
+- **In progress** — Test harnesses: fake Pi extension lifecycle is covered through daemon RPC, and `shepherd-pi` package syntax/pack manifest are checked; fake Slack delivery is still pending.
 
 ## Next steps
 

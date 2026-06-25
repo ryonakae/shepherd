@@ -3,13 +3,20 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { PiReadinessProcess, PiReadinessSpawn } from "@/gateway/pi-readiness.js";
 import { HeadlessPiSupervisor } from "@/gateway/pi-supervisor.js";
 
+type SpawnRecord = {
+  args: string[];
+  command: string;
+  sessionId?: string;
+  socketPath?: string;
+};
+
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("HeadlessPiSupervisor", () => {
   test("starts one Pi RPC process per Shepherd session", () => {
-    const spawned: Array<{ args: string[]; command: string; socketPath?: string }> = [];
+    const spawned: SpawnRecord[] = [];
     const supervisor = new HeadlessPiSupervisor({
       idleTimeoutMs: 60_000,
       socketPath: "/tmp/shepherd.sock",
@@ -29,13 +36,14 @@ describe("HeadlessPiSupervisor", () => {
       {
         args: ["--mode", "rpc", "--session", "/tmp/pi-session.jsonl"],
         command: "pi",
+        sessionId: "session-1",
         socketPath: "/tmp/shepherd.sock",
       },
     ]);
   });
 
   test("reuses a running process for the same session", () => {
-    const spawned: Array<{ args: string[]; command: string; socketPath?: string }> = [];
+    const spawned: SpawnRecord[] = [];
     const supervisor = new HeadlessPiSupervisor({
       idleTimeoutMs: 60_000,
       socketPath: "/tmp/shepherd.sock",
@@ -63,13 +71,7 @@ describe("HeadlessPiSupervisor", () => {
       socketPath: "/tmp/shepherd.sock",
       spawnProcess: (command, args, options) => {
         const process = new FakePiProcess();
-        process.spawned = {
-          args,
-          command,
-          ...(options.env.SHEPHERD_SOCKET_PATH !== undefined
-            ? { socketPath: options.env.SHEPHERD_SOCKET_PATH }
-            : {}),
-        };
+        process.spawned = toSpawnRecord(command, args, options.env);
         processes.push(process);
         return process;
       },
@@ -89,18 +91,19 @@ describe("HeadlessPiSupervisor", () => {
   });
 });
 
-function fakeSpawn(
-  spawned: Array<{ args: string[]; command: string; socketPath?: string }>,
-): PiReadinessSpawn {
+function fakeSpawn(spawned: SpawnRecord[]): PiReadinessSpawn {
   return (command, args, options) => {
-    spawned.push({
-      args,
-      command,
-      ...(options.env.SHEPHERD_SOCKET_PATH !== undefined
-        ? { socketPath: options.env.SHEPHERD_SOCKET_PATH }
-        : {}),
-    });
+    spawned.push(toSpawnRecord(command, args, options.env));
     return new FakePiProcess();
+  };
+}
+
+function toSpawnRecord(command: string, args: string[], env: NodeJS.ProcessEnv): SpawnRecord {
+  return {
+    args,
+    command,
+    ...(env.SHEPHERD_SESSION_ID !== undefined ? { sessionId: env.SHEPHERD_SESSION_ID } : {}),
+    ...(env.SHEPHERD_SOCKET_PATH !== undefined ? { socketPath: env.SHEPHERD_SOCKET_PATH } : {}),
   };
 }
 
@@ -109,7 +112,7 @@ class FakePiProcess implements PiReadinessProcess {
   readonly stdout = new EventEmitter();
   ended = false;
   killed = false;
-  spawned: { args: string[]; command: string; socketPath?: string } | undefined;
+  spawned: SpawnRecord | undefined;
 
   readonly #events = new EventEmitter();
 

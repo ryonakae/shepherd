@@ -12,6 +12,8 @@
     "includes": [
       "src/**/*.ts",
       "test/**/*.ts",
+      "packages/**/*.js",
+      "packages/**/*.json",
       "*.config.ts",
       "*.json",
       "*.jsonc",
