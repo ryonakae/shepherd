@@ -6,7 +6,7 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
@@ -15,7 +15,7 @@ Active child plan. Not started.
 - **Done** — Shepherd tools are registered by the extension from daemon `tool.list`.
 - **Done** — Visible user text remains natural; Shepherd metadata is injected through hidden context hooks.
 - **Not started** — npm package skeleton.
-- **Not started** — daemon socket client and attach/claim loop.
+- **In progress** — daemon-side `pi.handshake`, `pi.attach`, heartbeat, and run claim/complete/fail RPC exist; extension package/client loop remains pending.
 
 ## Next steps
 

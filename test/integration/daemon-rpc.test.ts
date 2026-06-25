@@ -420,6 +420,102 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     });
   });
 
+  test("attaches Pi sessions and accepts owner heartbeats", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const session = store.createSession({ id: "session-1" });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-attach-1",
+        method: "pi.attach",
+        params: {
+          mode: "tui",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          piSessionId: "pi-session-1",
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    const [attachResponse] = await readMessages(client, 1);
+    expect(attachResponse).toMatchObject({
+      id: "pi-attach-1",
+      result: {
+        daemonId: "default",
+        ownerKind: "tui_pi",
+        session: {
+          id: session.id,
+          metadata: {
+            pi: {
+              sessionFile: "/tmp/pi-session.jsonl",
+              sessionId: "pi-session-1",
+            },
+          },
+        },
+        socketPath,
+      },
+    });
+
+    const ownerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
+    client.write(
+      encodeJsonLine({
+        id: "pi-heartbeat-1",
+        method: "pi.heartbeat",
+        params: { ownerId, sessionId: session.id },
+      }),
+    );
+
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      {
+        id: "pi-heartbeat-1",
+        result: {
+          ok: true,
+          ownerId,
+          ownerKind: "tui_pi",
+          sessionId: session.id,
+        },
+      },
+    ]);
+  });
+
+  test("rejects conflicting Pi attach without force", async () => {
+    const { server, socketPath, store } = await openServer();
+    servers.push(server);
+
+    const session = store.createSession({
+      id: "session-1",
+      metadata: {
+        pi: {
+          createdAt: "2026-06-25T00:00:00.000Z",
+          sessionFile: "/tmp/existing.jsonl",
+          sessionId: "pi-existing",
+          updatedAt: "2026-06-25T00:00:00.000Z",
+        },
+      },
+    });
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-attach-conflict-1",
+        method: "pi.attach",
+        params: {
+          mode: "rpc",
+          piSessionFile: "/tmp/other.jsonl",
+          piSessionId: "pi-other",
+          sessionId: session.id,
+        },
+      }),
+    );
+
+    const [response] = await readMessages(client, 1);
+    expect(response).toMatchObject({
+      error: { message: "Session is already attached to a different Pi session" },
+      id: "pi-attach-conflict-1",
+    });
+  });
+
   test("reloads config through RPC", async () => {
     const configPath = writeTempFile(
       "shepherd.yaml",

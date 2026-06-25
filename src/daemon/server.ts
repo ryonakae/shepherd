@@ -50,16 +50,25 @@ type EventWireRecord = Omit<EventRecord, "createdAt"> & {
   createdAt: string;
 };
 
+export type PiOwnerKind = "headless_pi" | "tui_pi";
+
 export type PiHandshakeRecord = {
   attached: boolean;
   daemonId: string;
   extensionVersion: string;
   mode: "json" | "print" | "rpc" | "tui";
   ownerId: string;
-  ownerKind: "headless_pi" | "tui_pi";
+  ownerKind: PiOwnerKind;
   piSessionFile?: string;
   piSessionId?: string;
   sessionId?: string;
+};
+
+type PiOwnerRecord = {
+  lastHeartbeatAt: Date;
+  ownerId: string;
+  ownerKind: PiOwnerKind;
+  sessionId: string;
 };
 
 type ActorPresentationInput = {
@@ -112,6 +121,7 @@ export class ShepherdDaemonServer {
   readonly #headlessPi: HeadlessPiSupervisorService | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
   readonly #piHandshakeWaiters: Array<(handshake: PiHandshakeRecord) => void> = [];
+  readonly #piOwners = new Map<string, PiOwnerRecord>();
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
   readonly #store: EventStore;
   readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
@@ -406,6 +416,16 @@ export class ShepherdDaemonServer {
 
     if (request.method === "pi.handshake") {
       this.#recordPiHandshake(socket, request);
+      return;
+    }
+
+    if (request.method === "pi.attach") {
+      this.#attachPiSession(socket, request);
+      return;
+    }
+
+    if (request.method === "pi.heartbeat") {
+      this.#recordPiHeartbeat(socket, request);
       return;
     }
 
@@ -720,7 +740,7 @@ export class ShepherdDaemonServer {
 
     const sessionId =
       typeof params.binding?.sessionId === "string" ? params.binding.sessionId : undefined;
-    const ownerKind = params.mode === "tui" ? "tui_pi" : "headless_pi";
+    const ownerKind = piOwnerKindForMode(params.mode);
     const handshake: PiHandshakeRecord = {
       attached: sessionId !== undefined,
       daemonId: "default",
@@ -733,6 +753,14 @@ export class ShepherdDaemonServer {
       ...(sessionId !== undefined ? { sessionId } : {}),
     };
     this.#lastPiHandshake = handshake;
+    if (sessionId !== undefined) {
+      this.#piOwners.set(handshake.ownerId, {
+        lastHeartbeatAt: new Date(),
+        ownerId: handshake.ownerId,
+        ownerKind,
+        sessionId,
+      });
+    }
 
     for (const resolve of this.#piHandshakeWaiters.splice(0)) {
       resolve(handshake);
@@ -746,6 +774,99 @@ export class ShepherdDaemonServer {
         ownerId: handshake.ownerId,
         ownerKind: handshake.ownerKind,
         ...(handshake.sessionId !== undefined ? { sessionId: handshake.sessionId } : {}),
+      },
+    });
+  }
+
+  #attachPiSession(socket: Socket, request: RpcRequest): void {
+    const params = request.params as {
+      force?: unknown;
+      mode?: unknown;
+      piSessionFile?: unknown;
+      piSessionId?: unknown;
+      sessionId?: unknown;
+    };
+    if (
+      typeof params?.sessionId !== "string" ||
+      typeof params.piSessionFile !== "string" ||
+      typeof params.piSessionId !== "string" ||
+      !isPiMode(params.mode)
+    ) {
+      this.#write(socket, {
+        error: { message: "sessionId, piSessionFile, piSessionId, and mode are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const session = this.#store.getSession(params.sessionId);
+    const existingPi = session.metadata.pi;
+    if (existingPi && existingPi.sessionFile !== params.piSessionFile && params.force !== true) {
+      this.#write(socket, {
+        error: { message: "Session is already attached to a different Pi session" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const now = new Date();
+    const updated = this.#store.updateSessionMetadata(params.sessionId, {
+      ...session.metadata,
+      pi: {
+        createdAt: existingPi?.createdAt ?? now.toISOString(),
+        sessionFile: params.piSessionFile,
+        sessionId: params.piSessionId,
+        updatedAt: now.toISOString(),
+      },
+    });
+    const ownerId = randomUUID();
+    const ownerKind = piOwnerKindForMode(params.mode);
+    this.#piOwners.set(ownerId, {
+      lastHeartbeatAt: now,
+      ownerId,
+      ownerKind,
+      sessionId: params.sessionId,
+    });
+
+    this.#write(socket, {
+      id: request.id,
+      result: {
+        daemonId: "default",
+        ownerId,
+        ownerKind,
+        session: toWireSession(updated),
+        socketPath: this.#socketPath,
+      },
+    });
+  }
+
+  #recordPiHeartbeat(socket: Socket, request: RpcRequest): void {
+    const params = request.params as { ownerId?: unknown; sessionId?: unknown };
+    if (typeof params?.ownerId !== "string" || typeof params.sessionId !== "string") {
+      this.#write(socket, {
+        error: { message: "ownerId and sessionId are required" },
+        id: request.id,
+      });
+      return;
+    }
+
+    const owner = this.#piOwners.get(params.ownerId);
+    if (!owner || owner.sessionId !== params.sessionId) {
+      this.#write(socket, {
+        error: { message: "Pi owner is not attached to this session" },
+        id: request.id,
+      });
+      return;
+    }
+
+    owner.lastHeartbeatAt = new Date();
+    this.#write(socket, {
+      id: request.id,
+      result: {
+        ok: true,
+        ownerId: owner.ownerId,
+        ownerKind: owner.ownerKind,
+        sessionId: owner.sessionId,
       },
     });
   }
@@ -1095,6 +1216,10 @@ function getQueuedRunPiSessionFile(payload: unknown): string | undefined {
 
 function isPiMode(value: unknown): value is PiHandshakeRecord["mode"] {
   return value === "json" || value === "print" || value === "rpc" || value === "tui";
+}
+
+function piOwnerKindForMode(mode: PiHandshakeRecord["mode"]): PiOwnerKind {
+  return mode === "tui" ? "tui_pi" : "headless_pi";
 }
 
 function isGatewayMessages(value: unknown): value is GatewayMessage[] {
