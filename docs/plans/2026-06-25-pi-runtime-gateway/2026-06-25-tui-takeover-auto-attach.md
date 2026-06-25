@@ -14,14 +14,13 @@ Active child plan. In progress.
 - **Done** — Pi `/resume` should auto-attach for Shepherd-created Pi sessions.
 - **Done** — Running TUI owner disconnect marks the run `recovery_required`.
 - **In progress** — `shepherd open --session` parses CLI options, ensures Shepherd Pi session metadata, and launches `pi --session <pi-session-file>` with Shepherd attach environment.
-- **In progress** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; daemon id validation is still minimal.
+- **In progress** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; stable daemon id persistence and mismatch prevention are implemented.
 - **Not started** — heartbeat and owner priority implementation.
 
 ## Next steps
 
-1. Add owner priority enforcement for TUI vs headless Pi.
-2. Add disconnect/recovery tests.
-3. Harden daemon id validation for resumed Pi sessions.
+1. Add broader disconnect/recovery tests.
+2. Add manual smoke coverage for Pi `/resume` auto-attach.
 
 ## UX
 

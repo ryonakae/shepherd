@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { argv, env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { loadShepherdConfig } from "@/config/load.js";
+import { readOrCreateDaemonId } from "@/daemon/identity.js";
 import { recoverDaemonState } from "@/daemon/recovery.js";
 import { ShepherdDaemonServer } from "@/daemon/server.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
@@ -229,16 +230,18 @@ async function main(): Promise<void> {
   }
 
   if (command.command === "open") {
+    const stateDir = dirname(resolve(command.dbPath));
     const { sqlite } = openSqlite(command.dbPath);
     try {
       applyMigrations(sqlite, { migrationsFolder: "drizzle" });
       const events = new EventStore(sqlite);
       const piSessions = new PiSessionMetadataStore({
         events,
-        sessionDir: resolve(dirname(resolve(command.dbPath)), "pi-sessions"),
+        sessionDir: resolve(stateDir, "pi-sessions"),
       });
       const pi = piSessions.ensureForSession(command.sessionId);
       const code = await runPiSession({
+        daemonId: readOrCreateDaemonId(stateDir),
         piSessionFile: pi.sessionFile,
         sessionId: command.sessionId,
         socketPath: command.socketPath,
@@ -300,6 +303,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  const stateDir = dirname(resolve(command.dbPath));
   const { sqlite } = openSqlite(command.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
@@ -312,7 +316,7 @@ async function main(): Promise<void> {
     ? createGatewayRuntime({
         config,
         events,
-        piSessionDir: resolve(dirname(resolve(command.dbPath)), "pi-sessions"),
+        piSessionDir: resolve(stateDir, "pi-sessions"),
         receiveHerdrProgress: async (input) => server.receiveHerdrProgress(input),
         sqlite,
       })
@@ -334,6 +338,7 @@ async function main(): Promise<void> {
     : undefined;
 
   server = new ShepherdDaemonServer({
+    daemonId: readOrCreateDaemonId(stateDir),
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(platformRuntime?.streamDelivery ? { streamDelivery: platformRuntime.streamDelivery } : {}),
     ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
@@ -383,25 +388,31 @@ export function piOpenArgs(piSessionFile: string): string[] {
 }
 
 export function piOpenEnvironment(input: {
+  daemonId?: string;
   environment?: NodeJS.ProcessEnv;
   sessionId: string;
   socketPath: string;
 }): NodeJS.ProcessEnv {
   return {
     ...(input.environment ?? process.env),
-    SHEPHERD_DAEMON_ID: "default",
+    SHEPHERD_DAEMON_ID: input.daemonId ?? "default",
     SHEPHERD_SESSION_ID: input.sessionId,
     SHEPHERD_SOCKET_PATH: input.socketPath,
   };
 }
 
 async function runPiSession(input: {
+  daemonId: string;
   piSessionFile: string;
   sessionId: string;
   socketPath: string;
 }): Promise<number> {
   const child = spawn("pi", piOpenArgs(input.piSessionFile), {
-    env: piOpenEnvironment({ sessionId: input.sessionId, socketPath: input.socketPath }),
+    env: piOpenEnvironment({
+      daemonId: input.daemonId,
+      sessionId: input.sessionId,
+      socketPath: input.socketPath,
+    }),
     stdio: "inherit",
   });
 

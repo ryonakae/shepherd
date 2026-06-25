@@ -103,13 +103,14 @@ describe("Shepherd CLI", () => {
     expect(piOpenArgs("/tmp/pi-session.jsonl")).toEqual(["--session", "/tmp/pi-session.jsonl"]);
     expect(
       piOpenEnvironment({
+        daemonId: "daemon-1",
         environment: { PATH: "/bin" },
         sessionId: "session-1",
         socketPath: "/tmp/shepherd.sock",
       }),
     ).toMatchObject({
       PATH: "/bin",
-      SHEPHERD_DAEMON_ID: "default",
+      SHEPHERD_DAEMON_ID: "daemon-1",
       SHEPHERD_SESSION_ID: "session-1",
       SHEPHERD_SOCKET_PATH: "/tmp/shepherd.sock",
     });

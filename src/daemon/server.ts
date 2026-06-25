@@ -17,6 +17,7 @@ import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
 
 type ShepherdDaemonServerOptions = {
   configPath?: string;
+  daemonId?: string;
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
   gatewayRuns?: ExternalGatewayRunQueue;
@@ -120,6 +121,7 @@ export type ReceiveHerdrProgressInput = {
 
 export class ShepherdDaemonServer {
   readonly #configPath: string | undefined;
+  readonly #daemonId: string;
   readonly #server: Server;
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
@@ -141,6 +143,7 @@ export class ShepherdDaemonServer {
 
   constructor(options: ShepherdDaemonServerOptions) {
     this.#configPath = options.configPath;
+    this.#daemonId = options.daemonId ?? "default";
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
     this.#gatewayRuns = options.gatewayRuns;
@@ -751,7 +754,7 @@ export class ShepherdDaemonServer {
 
   #recordPiHandshake(socket: Socket, request: RpcRequest): void {
     const params = request.params as {
-      binding?: { sessionId?: unknown };
+      binding?: { daemonId?: unknown; sessionId?: unknown };
       extensionVersion?: unknown;
       mode?: unknown;
       piSessionFile?: unknown;
@@ -765,12 +768,18 @@ export class ShepherdDaemonServer {
       return;
     }
 
+    const bindingDaemonId =
+      typeof params.binding?.daemonId === "string" ? params.binding.daemonId : undefined;
+    const bindingMatchesDaemon =
+      bindingDaemonId === undefined || bindingDaemonId === this.#daemonId;
     const sessionId =
-      typeof params.binding?.sessionId === "string" ? params.binding.sessionId : undefined;
+      bindingMatchesDaemon && typeof params.binding?.sessionId === "string"
+        ? params.binding.sessionId
+        : undefined;
     const ownerKind = piOwnerKindForMode(params.mode);
     const handshake: PiHandshakeRecord = {
       attached: sessionId !== undefined,
-      daemonId: "default",
+      daemonId: this.#daemonId,
       extensionVersion: params.extensionVersion,
       mode: params.mode,
       ownerId: randomUUID(),
@@ -858,7 +867,7 @@ export class ShepherdDaemonServer {
     this.#write(socket, {
       id: request.id,
       result: {
-        daemonId: "default",
+        daemonId: this.#daemonId,
         ownerId,
         ownerKind,
         session: toWireSession(updated),

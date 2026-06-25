@@ -420,6 +420,31 @@ describe("ShepherdDaemonServer JSON Lines RPC", () => {
     });
   });
 
+  test("does not auto-attach a Pi handshake for a different daemon id", async () => {
+    const { server, socketPath } = await openServer({ daemonId: "daemon-current" });
+    servers.push(server);
+
+    const client = await connect(socketPath);
+    client.write(
+      encodeJsonLine({
+        id: "pi-handshake-mismatch-1",
+        method: "pi.handshake",
+        params: {
+          binding: { daemonId: "daemon-other", sessionId: "session-1" },
+          extensionVersion: "0.1.0",
+          mode: "rpc",
+        },
+      }),
+    );
+
+    await expect(readMessages(client, 1)).resolves.toEqual([
+      expect.objectContaining({
+        id: "pi-handshake-mismatch-1",
+        result: expect.objectContaining({ attached: false, daemonId: "daemon-current" }),
+      }),
+    ]);
+  });
+
   test("attaches Pi sessions and accepts owner heartbeats", async () => {
     const { server, socketPath, store } = await openServer();
     servers.push(server);
@@ -1397,6 +1422,7 @@ async function openServer(
       finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
       hasFinished(gatewayRunId: string): boolean;
     };
+    daemonId?: string;
     enableGatewayRuns?: boolean;
     ownerHeartbeatTimeoutMs?: number;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
@@ -1416,6 +1442,7 @@ async function openServer(
   const summaries = new SessionSummaryStore(sqlite);
   const socketPath = join(dir, "shepherd.sock");
   const server = new ShepherdDaemonServer({
+    ...(options.daemonId !== undefined ? { daemonId: options.daemonId } : {}),
     ...(options.configureDeliveryFanout
       ? { deliveryFanout: options.configureDeliveryFanout() }
       : {}),

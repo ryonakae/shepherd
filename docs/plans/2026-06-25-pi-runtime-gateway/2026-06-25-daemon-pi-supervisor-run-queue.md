@@ -20,7 +20,6 @@ Active child plan. In progress.
 ## Next steps
 
 1. Expand supervisor integration tests around process exit and requeue/recovery behavior.
-2. Harden daemon identity persistence for Pi resume validation.
 
 ## Pi supervisor
 

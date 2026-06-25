@@ -278,6 +278,7 @@ function bindingFromEnvironment() {
 
 function findBinding(ctx) {
   const entries = ctx.sessionManager.getEntries();
+  const expectedDaemonId = process.env.SHEPHERD_DAEMON_ID;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (
@@ -285,6 +286,9 @@ function findBinding(ctx) {
       entry.customType === BINDING_ENTRY_TYPE &&
       entry.data?.sessionId
     ) {
+      if (expectedDaemonId && entry.data.daemonId && entry.data.daemonId !== expectedDaemonId) {
+        return undefined;
+      }
       return entry.data;
     }
   }
