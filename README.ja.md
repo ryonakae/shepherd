@@ -159,26 +159,15 @@ node dist/src/cli/shepherd.js gateway start \
   --config /tmp/shepherd.local.yaml
 ```
 
-TUI 検証用の local session を作成します:
+現在の directory から新しい local Shepherd session を作成し、Pi を開きます:
 
 ```bash
-export SHEPHERD_SESSION_ID="$(
-  node --input-type=module <<'JS'
-import { ShepherdSessionClient } from "./dist/src/tui/client.js";
-
-const socketPath = process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock";
-const client = await ShepherdSessionClient.connect(socketPath);
-try {
-  const { session } = await client.createSession({ title: "Local verification" });
-  console.log(session.id);
-} finally {
-  await client.close();
-}
-JS
-)"
+node dist/src/cli/shepherd.js
 ```
 
-session に attached Pi TUI を開きます:
+Gateway は事前に起動しておく必要があります。`shepherd` は Gateway を自動起動しません。現在の working directory が、実行したままの path で Shepherd working context になります。
+
+既存の Shepherd session を開きます。例: Slack から作成された session:
 
 ```bash
 node dist/src/cli/shepherd.js open \

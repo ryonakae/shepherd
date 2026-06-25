@@ -159,26 +159,15 @@ node dist/src/cli/shepherd.js gateway start \
   --config /tmp/shepherd.local.yaml
 ```
 
-Create a local session for TUI verification:
+Start a new local Shepherd session from the current directory and open Pi:
 
 ```bash
-export SHEPHERD_SESSION_ID="$(
-  node --input-type=module <<'JS'
-import { ShepherdSessionClient } from "./dist/src/tui/client.js";
-
-const socketPath = process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock";
-const client = await ShepherdSessionClient.connect(socketPath);
-try {
-  const { session } = await client.createSession({ title: "Local verification" });
-  console.log(session.id);
-} finally {
-  await client.close();
-}
-JS
-)"
+node dist/src/cli/shepherd.js
 ```
 
-Open an attached Pi TUI for the session:
+The Gateway must already be running. `shepherd` does not auto-start it. The current working directory becomes the Shepherd working context exactly as invoked.
+
+Open an existing Shepherd session, for example one created from Slack:
 
 ```bash
 node dist/src/cli/shepherd.js open \

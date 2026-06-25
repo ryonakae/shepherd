@@ -15,10 +15,11 @@
 - Done — Task 2 added `session.create` `workingContextPath`, `pi.ensure_session`, TUI client support, and passed `pnpm check`.
 - Done — Task 3 made no-argument `shepherd` launch local Pi sessions through Gateway RPC and moved `open --session` to `pi.ensure_session`; `pnpm check` passed.
 - Done — Task 4 added explicit Shepherd/Pi rename synchronization in the Pi extension and passed `pnpm pi-package:check`.
-- Pending — Tasks 5 and 6 still need implementation and validation.
+- Done — Task 5 updated English/Japanese README usage and passed the README grep check.
+- Pending — Task 6 final validation and cleanup still need completion.
 
 **Next steps:**
-- Start Task 5 by updating README usage for no-argument local startup and Gateway-first `open --session`.
+- Run Task 6 full validation and update the plan status to Done.
 - Commit after each task as listed in the task sections.
 
 ## Global Constraints
