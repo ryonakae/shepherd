@@ -1,13 +1,32 @@
 import { describe, expect, test } from "vitest";
 import {
   formatAuditEvent,
+  GatewayConnectionError,
+  gatewayStartHint,
   helpText,
   parseCliArgs,
   piOpenArgs,
   piOpenEnvironment,
+  runLocalPiStartup,
+  runOpenPiSession,
 } from "@/cli/shepherd.js";
 
 describe("Shepherd CLI", () => {
+  test("parses no args as local Pi startup", () => {
+    expect(
+      parseCliArgs([], {
+        PWD: "/repo/shepherd",
+        SHEPHERD_DB_PATH: "/tmp/shepherd.sqlite",
+        SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/shepherd.sock",
+      }),
+    ).toEqual({
+      command: "start-local",
+      dbPath: "/tmp/shepherd.sqlite",
+      socketPath: "/tmp/shepherd.sock",
+      workingContextPath: process.cwd(),
+    });
+  });
+
   test("parses gateway run options", () => {
     expect(
       parseCliArgs([
@@ -159,6 +178,169 @@ describe("Shepherd CLI", () => {
       SHEPHERD_SESSION_ID: "session-1",
       SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/shepherd.sock",
     });
+  });
+
+  test("local startup creates a session, ensures Pi metadata, and runs Pi", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      async close() {
+        calls.push(["close"]);
+      },
+      async createSession(input: unknown) {
+        calls.push(["createSession", input]);
+        return {
+          session: {
+            createdAt: "2026-06-26T00:00:00.000Z",
+            id: "session-1",
+            metadata: {},
+            status: "active" as const,
+            title: null,
+            updatedAt: "2026-06-26T00:00:00.000Z",
+            workingContextId: "context-1",
+          },
+        };
+      },
+      async ensurePiSession(input: unknown) {
+        calls.push(["ensurePiSession", input]);
+        return {
+          pi: {
+            createdAt: "2026-06-26T00:00:00.000Z",
+            sessionFile: "/tmp/pi-session.jsonl",
+            sessionId: "pi-1",
+            updatedAt: "2026-06-26T00:00:00.000Z",
+          },
+        };
+      },
+    };
+
+    await expect(
+      runLocalPiStartup(
+        {
+          command: "start-local",
+          dbPath: "/tmp/state/shepherd.sqlite",
+          socketPath: "/tmp/shepherd.sock",
+          workingContextPath: "/repo/app",
+        },
+        {
+          async connect(socketPath) {
+            calls.push(["connect", socketPath]);
+            return client;
+          },
+          readGatewayId(stateDir) {
+            calls.push(["readGatewayId", stateDir]);
+            return "gateway-1";
+          },
+          async runPi(input) {
+            calls.push(["runPi", input]);
+            return 0;
+          },
+        },
+      ),
+    ).resolves.toBe(0);
+
+    expect(calls).toEqual([
+      ["connect", "/tmp/shepherd.sock"],
+      ["createSession", { title: null, workingContextPath: "/repo/app" }],
+      ["ensurePiSession", { sessionId: "session-1" }],
+      ["readGatewayId", "/tmp/state"],
+      [
+        "runPi",
+        {
+          gatewayId: "gateway-1",
+          piSessionFile: "/tmp/pi-session.jsonl",
+          sessionId: "session-1",
+          socketPath: "/tmp/shepherd.sock",
+        },
+      ],
+      ["close"],
+    ]);
+  });
+
+  test("open uses Gateway pi.ensure_session instead of DB metadata writes", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      async close() {
+        calls.push(["close"]);
+      },
+      async createSession() {
+        throw new Error("createSession must not be called by open");
+      },
+      async ensurePiSession(input: unknown) {
+        calls.push(["ensurePiSession", input]);
+        return {
+          pi: {
+            createdAt: "2026-06-26T00:00:00.000Z",
+            sessionFile: "/tmp/pi-session.jsonl",
+            sessionId: "pi-1",
+            updatedAt: "2026-06-26T00:00:00.000Z",
+          },
+        };
+      },
+    };
+
+    await expect(
+      runOpenPiSession(
+        {
+          command: "open",
+          dbPath: "/tmp/state/shepherd.sqlite",
+          sessionId: "session-1",
+          socketPath: "/tmp/shepherd.sock",
+        },
+        {
+          async connect(socketPath) {
+            calls.push(["connect", socketPath]);
+            return client;
+          },
+          readGatewayId(stateDir) {
+            calls.push(["readGatewayId", stateDir]);
+            return "gateway-1";
+          },
+          async runPi(input) {
+            calls.push(["runPi", input]);
+            return 0;
+          },
+        },
+      ),
+    ).resolves.toBe(0);
+
+    expect(calls).toMatchObject([
+      ["connect", "/tmp/shepherd.sock"],
+      ["ensurePiSession", { sessionId: "session-1" }],
+      ["readGatewayId", "/tmp/state"],
+      ["runPi", { piSessionFile: "/tmp/pi-session.jsonl", sessionId: "session-1" }],
+      ["close"],
+    ]);
+  });
+
+  test("renders Gateway startup hint", () => {
+    expect(gatewayStartHint({ SHEPHERD_CONFIG: "/tmp/shepherd.yaml" })).toBe(
+      "Shepherd Gateway is not reachable. Start the Gateway first:\n  shepherd gateway start --config /tmp/shepherd.yaml",
+    );
+    expect(gatewayStartHint({})).toContain("shepherd gateway start --config <path>");
+  });
+
+  test("local startup exposes Gateway connection failures as GatewayConnectionError", async () => {
+    await expect(
+      runLocalPiStartup(
+        {
+          command: "start-local",
+          dbPath: "/tmp/state/shepherd.sqlite",
+          socketPath: "/tmp/missing.sock",
+          workingContextPath: "/repo/app",
+        },
+        {
+          async connect() {
+            throw new GatewayConnectionError("connect ENOENT");
+          },
+          readGatewayId() {
+            return "gateway-1";
+          },
+          async runPi() {
+            throw new Error("runPi must not be called");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(GatewayConnectionError);
   });
 
   test("parses watch options", () => {

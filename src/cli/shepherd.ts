@@ -53,6 +53,12 @@ export type CliCommand =
   | GatewayRunCommand
   | GatewayManagedCommand
   | {
+      command: "start-local";
+      dbPath: string;
+      socketPath: string;
+      workingContextPath: string;
+    }
+  | {
       actorId?: string;
       command: "send";
       displayName?: string;
@@ -95,7 +101,16 @@ export type CliCommand =
 export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = env): CliCommand {
   const [command, ...rest] = args;
 
-  if (!command || command === "--help" || command === "-h" || command === "help") {
+  if (!command) {
+    return {
+      command: "start-local",
+      dbPath: environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
+      socketPath: environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
+      workingContextPath: process.cwd(),
+    };
+  }
+
+  if (command === "--help" || command === "-h" || command === "help") {
     return { command: "help" };
   }
 
@@ -218,6 +233,7 @@ export function helpText(): string {
   shepherd gateway stop [--socket <path>] [--db <path>] [--pid <path>] [--timeout-ms <ms>]
   shepherd gateway restart [--socket <path>] [--db <path>] [--config <path>] [--pid <path>] [--log <path>] [--timeout-ms <ms>]
   shepherd gateway status [--socket <path>] [--db <path>] [--pid <path>]
+  shepherd
   shepherd gateway run [--socket <path>] [--db <path>] [--config <path>]
   shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>] [--provider <name>] [--model <id>]
   shepherd open --session <id> [--socket <path>] [--db <path>]
@@ -226,6 +242,7 @@ export function helpText(): string {
   shepherd audit --session <id> [--db <path>] [--after <event-id>] [--limit <n>] [--json true]
 
 Commands:
+  shepherd  Create a local Shepherd session for the current directory and open Pi
   gateway   Manage the local Shepherd Gateway
   send      Send a user message into a Shepherd session
   open      Open the matching Pi session in the Pi TUI
@@ -244,12 +261,111 @@ export function formatAuditEvent(event: ReturnType<EventStore["listEvents"]>[num
   )}`;
 }
 
+export function gatewayStartHint(environment: NodeJS.ProcessEnv = env): string {
+  return `Shepherd Gateway is not reachable. Start the Gateway first:\n  shepherd gateway start --config ${environment.SHEPHERD_CONFIG ?? "<path>"}`;
+}
+
+export class GatewayConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayConnectionError";
+  }
+}
+
+type ShepherdClientLike = Pick<
+  ShepherdSessionClient,
+  "close" | "createSession" | "ensurePiSession"
+>;
+
+type LocalPiStartupDeps = {
+  connect(socketPath: string): Promise<ShepherdClientLike>;
+  readGatewayId(stateDir: string): string;
+  runPi(input: {
+    gatewayId: string;
+    piSessionFile: string;
+    sessionId: string;
+    socketPath: string;
+  }): Promise<number>;
+};
+
+const defaultLocalPiStartupDeps: LocalPiStartupDeps = {
+  async connect(socketPath) {
+    try {
+      return await ShepherdSessionClient.connect(socketPath);
+    } catch (error) {
+      throw new GatewayConnectionError(error instanceof Error ? error.message : String(error));
+    }
+  },
+  readGatewayId: (stateDir) => readOrCreateGatewayId(stateDir),
+  runPi: (input) => runPiSession(input),
+};
+
+export async function runLocalPiStartup(
+  command: Extract<CliCommand, { command: "start-local" }>,
+  deps: LocalPiStartupDeps = defaultLocalPiStartupDeps,
+): Promise<number> {
+  const stateDir = dirname(resolve(command.dbPath));
+  const client = await deps.connect(command.socketPath);
+  try {
+    const { session } = await client.createSession({
+      title: null,
+      workingContextPath: command.workingContextPath,
+    });
+    const { pi } = await client.ensurePiSession({ sessionId: session.id });
+    return await deps.runPi({
+      gatewayId: deps.readGatewayId(stateDir),
+      piSessionFile: pi.sessionFile,
+      sessionId: session.id,
+      socketPath: command.socketPath,
+    });
+  } finally {
+    await client.close();
+  }
+}
+
+export async function runOpenPiSession(
+  command: Extract<CliCommand, { command: "open" }>,
+  deps: LocalPiStartupDeps = defaultLocalPiStartupDeps,
+): Promise<number> {
+  const stateDir = dirname(resolve(command.dbPath));
+  const client = await deps.connect(command.socketPath);
+  try {
+    const { pi } = await client.ensurePiSession({ sessionId: command.sessionId });
+    return await deps.runPi({
+      gatewayId: deps.readGatewayId(stateDir),
+      piSessionFile: pi.sessionFile,
+      sessionId: command.sessionId,
+      socketPath: command.socketPath,
+    });
+  } finally {
+    await client.close();
+  }
+}
+
+function printLocalStartupError(error: unknown): void {
+  if (error instanceof GatewayConnectionError) {
+    console.error(gatewayStartHint());
+    return;
+  }
+
+  console.error(error instanceof Error ? error.message : String(error));
+}
+
 async function main(): Promise<void> {
   const command = parseCliArgs(argv.slice(2));
 
   if (command.command === "help") {
     console.log(helpText());
     return;
+  }
+
+  if (command.command === "start-local") {
+    try {
+      exit(await runLocalPiStartup(command));
+    } catch (error) {
+      printLocalStartupError(error);
+      exit(1);
+    }
   }
 
   if (command.command === "gateway" && command.action !== "run") {
@@ -320,25 +436,11 @@ async function main(): Promise<void> {
   }
 
   if (command.command === "open") {
-    const stateDir = dirname(resolve(command.dbPath));
-    const { sqlite } = openSqlite(command.dbPath);
     try {
-      applyMigrations(sqlite, { migrationsFolder: "drizzle" });
-      const events = new EventStore(sqlite);
-      const piSessions = new PiSessionMetadataStore({
-        events,
-        sessionDir: resolve(stateDir, "pi-sessions"),
-      });
-      const pi = piSessions.ensureForSession(command.sessionId);
-      const code = await runPiSession({
-        gatewayId: readOrCreateGatewayId(stateDir),
-        piSessionFile: pi.sessionFile,
-        sessionId: command.sessionId,
-        socketPath: command.socketPath,
-      });
-      exit(code);
-    } finally {
-      sqlite.close();
+      exit(await runOpenPiSession(command));
+    } catch (error) {
+      printLocalStartupError(error);
+      exit(1);
     }
   }
 
