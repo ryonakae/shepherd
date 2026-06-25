@@ -290,6 +290,7 @@ async function main(): Promise<void> {
 
   server = new ShepherdDaemonServer({
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
+    ...(platformRuntime?.streamDelivery ? { streamDelivery: platformRuntime.streamDelivery } : {}),
     ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
     ...(gatewayRuntime && !gatewayRuntime.runner ? { gatewayRuns: gatewayRuntime.runs } : {}),
     ...(headlessPi ? { headlessPi } : {}),
