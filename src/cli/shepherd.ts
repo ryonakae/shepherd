@@ -11,6 +11,7 @@ import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
+import { HeadlessPiSupervisor } from "@/gateway/pi-supervisor.js";
 import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { createPlatformRuntime } from "@/platforms/runtime.js";
@@ -271,6 +272,13 @@ async function main(): Promise<void> {
         sqlite,
       })
     : undefined;
+  const headlessPi =
+    config && gatewayRuntime && !gatewayRuntime.runner
+      ? new HeadlessPiSupervisor({
+          idleTimeoutMs: config.gateway.pi?.idle_timeout_ms ?? 600_000,
+          socketPath: command.socketPath,
+        })
+      : undefined;
   const platformRuntime = config
     ? createPlatformRuntime({
         config,
@@ -284,6 +292,7 @@ async function main(): Promise<void> {
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
     ...(gatewayRuntime && !gatewayRuntime.runner ? { gatewayRuns: gatewayRuntime.runs } : {}),
+    ...(headlessPi ? { headlessPi } : {}),
     ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),
     ...(config
       ? {
@@ -312,6 +321,7 @@ async function main(): Promise<void> {
 
   const stop = async () => {
     await platformRuntime?.close();
+    headlessPi?.stopAll();
     await server.stop();
     await gatewayRuntime?.close();
     sqlite.close();

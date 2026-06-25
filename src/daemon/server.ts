@@ -20,6 +20,7 @@ type ShepherdDaemonServerOptions = {
   deliveryFanout?: EventDeliveryFanout;
   gatewayRunner?: GatewayTurnRunner;
   gatewayRuns?: ExternalGatewayRunQueue;
+  headlessPi?: HeadlessPiSupervisorService;
   logicalTools?: LogicalToolService;
   providerOverrides?: ProviderOverrideResolver;
   socketPath: string;
@@ -32,6 +33,10 @@ type EventDeliveryFanout = {
 };
 
 type GatewayTurnRunner = Pick<GatewayRunner, "runTurn">;
+
+type HeadlessPiSupervisorService = {
+  ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
+};
 
 type LogicalToolService = Pick<LogicalToolRunner, "list" | "run">;
 
@@ -104,6 +109,7 @@ export class ShepherdDaemonServer {
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
   readonly #gatewayRunner: GatewayTurnRunner | undefined;
   readonly #gatewayRuns: ExternalGatewayRunQueue | undefined;
+  readonly #headlessPi: HeadlessPiSupervisorService | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
   readonly #piHandshakeWaiters: Array<(handshake: PiHandshakeRecord) => void> = [];
   readonly #providerOverrides: ProviderOverrideResolver | undefined;
@@ -118,6 +124,7 @@ export class ShepherdDaemonServer {
     this.#deliveryFanout = options.deliveryFanout;
     this.#gatewayRunner = options.gatewayRunner;
     this.#gatewayRuns = options.gatewayRuns;
+    this.#headlessPi = options.headlessPi;
     this.#logicalTools = options.logicalTools;
     this.#providerOverrides = options.providerOverrides;
     this.#socketPath = options.socketPath;
@@ -304,6 +311,7 @@ export class ShepherdDaemonServer {
         triggeringEventId: event.id,
       });
       await this.#publishEvent(result.event);
+      this.#startHeadlessPiForQueuedRun(input.sessionId, result.event);
       return [result.event];
     }
 
@@ -652,6 +660,19 @@ export class ShepherdDaemonServer {
       id: request.id,
       result: { event: toWireEvent(result.event) },
     });
+  }
+
+  #startHeadlessPiForQueuedRun(sessionId: string, event: EventRecord): void {
+    if (!this.#headlessPi) {
+      return;
+    }
+
+    const piSessionFile = getQueuedRunPiSessionFile(event.payload);
+    if (!piSessionFile) {
+      return;
+    }
+
+    this.#headlessPi.ensureStarted({ piSessionFile, sessionId });
   }
 
   async #recordHerdrProgress(socket: Socket, request: RpcRequest): Promise<void> {
@@ -1061,6 +1082,15 @@ export class ShepherdDaemonServer {
       subscribers.delete(socket);
     }
   }
+}
+
+function getQueuedRunPiSessionFile(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  return typeof record.piSessionFile === "string" ? record.piSessionFile : undefined;
 }
 
 function isPiMode(value: unknown): value is PiHandshakeRecord["mode"] {

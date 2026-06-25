@@ -594,11 +594,19 @@ agents:
 
   test("queues, claims, and completes a final-only Pi gateway run", async () => {
     const delivered: string[] = [];
+    const startedHeadlessPi: unknown[] = [];
     const { server, socketPath, store } = await openServer({
       configureDeliveryFanout() {
         return {
           async deliverEvent(event) {
             delivered.push(event.type);
+          },
+        };
+      },
+      configureHeadlessPi() {
+        return {
+          ensureStarted(input) {
+            startedHeadlessPi.push(input);
           },
         };
       },
@@ -646,6 +654,12 @@ agents:
         },
       },
     });
+    expect(startedHeadlessPi).toEqual([
+      {
+        piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
+        sessionId: session.id,
+      },
+    ]);
 
     client.write(
       encodeJsonLine({
@@ -1078,6 +1092,9 @@ async function openServer(
       deliverEvent(event: ReturnType<EventStore["appendEvent"]>): Promise<unknown>;
     };
     configureGatewayRunner?: (store: EventStore) => GatewayRunner;
+    configureHeadlessPi?: () => {
+      ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
+    };
     configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
     enableGatewayRuns?: boolean;
     providerOverrides?: () => { model?: string; provider?: string } | undefined;
@@ -1115,6 +1132,7 @@ async function openServer(
           }),
         }
       : {}),
+    ...(options.configureHeadlessPi ? { headlessPi: options.configureHeadlessPi() } : {}),
     ...(options.configureLogicalTools
       ? { logicalTools: options.configureLogicalTools(store) }
       : {}),
