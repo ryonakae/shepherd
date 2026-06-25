@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { argv, env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,7 @@ import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
 import { SessionSummaryStore } from "@/db/session-summary.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
+import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { HeadlessPiSupervisor } from "@/gateway/pi-supervisor.js";
 import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
@@ -41,6 +43,12 @@ export type CliCommand =
       sessionId: string;
       socketPath: string;
       title: string | null;
+    }
+  | {
+      command: "open";
+      dbPath: string;
+      sessionId: string;
+      socketPath: string;
     }
   | {
       afterEventId: number;
@@ -86,6 +94,20 @@ export function parseCliArgs(args: string[], environment: NodeJS.ProcessEnv = en
             },
           }
         : {}),
+    };
+  }
+
+  if (command === "open") {
+    const parsed = parseOptions(rest);
+    if (!parsed.session) {
+      throw new Error("open requires --session");
+    }
+
+    return {
+      command: "open",
+      dbPath: parsed.db ?? environment.SHEPHERD_DB_PATH ?? "shepherd.sqlite",
+      sessionId: parsed.session,
+      socketPath: parsed.socket ?? environment.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock",
     };
   }
 
@@ -152,6 +174,7 @@ export function helpText(): string {
   return `Usage:
   shepherd daemon [--socket <path>] [--db <path>] [--config <path>]
   shepherd send --session <id> --text <text> [--socket <path>] [--actor <id>] [--display-name <name>] [--provider <name>] [--model <id>]
+  shepherd open --session <id> [--socket <path>] [--db <path>]
   shepherd watch --session <id> [--socket <path>] [--after <event-id>]
   shepherd rename --session <id> --title <title> [--socket <path>]
   shepherd audit --session <id> [--db <path>] [--after <event-id>] [--limit <n>] [--json true]
@@ -159,6 +182,7 @@ export function helpText(): string {
 Commands:
   daemon    Start the local Shepherd daemon
   send      Send a user message into a Shepherd session
+  open      Open the matching Pi session in the Pi TUI
   watch     Print session events as JSON Lines
   rename    Rename a Shepherd session
   audit     Print stored session events from the SQLite audit log
@@ -202,6 +226,27 @@ async function main(): Promise<void> {
       await client.close();
     }
     return;
+  }
+
+  if (command.command === "open") {
+    const { sqlite } = openSqlite(command.dbPath);
+    try {
+      applyMigrations(sqlite, { migrationsFolder: "drizzle" });
+      const events = new EventStore(sqlite);
+      const piSessions = new PiSessionMetadataStore({
+        events,
+        sessionDir: resolve(dirname(resolve(command.dbPath)), "pi-sessions"),
+      });
+      const pi = piSessions.ensureForSession(command.sessionId);
+      const code = await runPiSession({
+        piSessionFile: pi.sessionFile,
+        sessionId: command.sessionId,
+        socketPath: command.socketPath,
+      });
+      exit(code);
+    } finally {
+      sqlite.close();
+    }
   }
 
   if (command.command === "watch") {
@@ -331,6 +376,39 @@ async function main(): Promise<void> {
 
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+}
+
+export function piOpenArgs(piSessionFile: string): string[] {
+  return ["--session", piSessionFile];
+}
+
+export function piOpenEnvironment(input: {
+  environment?: NodeJS.ProcessEnv;
+  sessionId: string;
+  socketPath: string;
+}): NodeJS.ProcessEnv {
+  return {
+    ...(input.environment ?? process.env),
+    SHEPHERD_DAEMON_ID: "default",
+    SHEPHERD_SESSION_ID: input.sessionId,
+    SHEPHERD_SOCKET_PATH: input.socketPath,
+  };
+}
+
+async function runPiSession(input: {
+  piSessionFile: string;
+  sessionId: string;
+  socketPath: string;
+}): Promise<number> {
+  const child = spawn("pi", piOpenArgs(input.piSessionFile), {
+    env: piOpenEnvironment({ sessionId: input.sessionId, socketPath: input.socketPath }),
+    stdio: "inherit",
+  });
+
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 0));
+  });
 }
 
 function shouldCheckPiReadiness(

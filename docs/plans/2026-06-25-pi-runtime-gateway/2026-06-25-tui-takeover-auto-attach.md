@@ -6,24 +6,22 @@ Parent: [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md)
 
 ## Status
 
-Active child plan. Not started.
+Active child plan. In progress.
 
 ## Progress
 
 - **Done** — TUI Pi should take owner priority over headless Pi.
 - **Done** — Pi `/resume` should auto-attach for Shepherd-created Pi sessions.
 - **Done** — Running TUI owner disconnect marks the run `recovery_required`.
-- **Not started** — `shepherd open --session` command.
-- **Not started** — binding custom entry creation and validation.
+- **In progress** — `shepherd open --session` parses CLI options, ensures Shepherd Pi session metadata, and launches `pi --session <pi-session-file>` with Shepherd attach environment.
+- **In progress** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; daemon id validation is still minimal.
 - **Not started** — heartbeat and owner priority implementation.
 
 ## Next steps
 
-1. Add `shepherd open --session <id>`.
-2. Add binding custom entry write path.
-3. Add extension auto-attach on `session_start`.
-4. Add owner priority and heartbeat logic.
-5. Add disconnect/recovery tests.
+1. Add owner priority enforcement for TUI vs headless Pi.
+2. Add disconnect/recovery tests.
+3. Harden daemon id validation for resumed Pi sessions.
 
 ## UX
 

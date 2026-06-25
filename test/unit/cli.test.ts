@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { formatAuditEvent, helpText, parseCliArgs } from "@/cli/shepherd.js";
+import {
+  formatAuditEvent,
+  helpText,
+  parseCliArgs,
+  piOpenArgs,
+  piOpenEnvironment,
+} from "@/cli/shepherd.js";
 
 describe("Shepherd CLI", () => {
   test("parses daemon options", () => {
@@ -71,6 +77,41 @@ describe("Shepherd CLI", () => {
       sessionId: "session-1",
       socketPath: "/tmp/shepherd.sock",
       text: "hello",
+    });
+  });
+
+  test("parses open options", () => {
+    expect(
+      parseCliArgs([
+        "open",
+        "--socket",
+        "/tmp/shepherd.sock",
+        "--db",
+        "/tmp/shepherd.sqlite",
+        "--session",
+        "session-1",
+      ]),
+    ).toEqual({
+      command: "open",
+      dbPath: "/tmp/shepherd.sqlite",
+      sessionId: "session-1",
+      socketPath: "/tmp/shepherd.sock",
+    });
+  });
+
+  test("builds Pi open invocation details", () => {
+    expect(piOpenArgs("/tmp/pi-session.jsonl")).toEqual(["--session", "/tmp/pi-session.jsonl"]);
+    expect(
+      piOpenEnvironment({
+        environment: { PATH: "/bin" },
+        sessionId: "session-1",
+        socketPath: "/tmp/shepherd.sock",
+      }),
+    ).toMatchObject({
+      PATH: "/bin",
+      SHEPHERD_DAEMON_ID: "default",
+      SHEPHERD_SESSION_ID: "session-1",
+      SHEPHERD_SOCKET_PATH: "/tmp/shepherd.sock",
     });
   });
 
