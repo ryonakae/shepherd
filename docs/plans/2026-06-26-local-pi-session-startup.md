@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript ESM with NodeNext, Node.js `node:net`/`node:child_process`, SQLite through `node:sqlite`, Drizzle schema/migrations, Vitest, Biome, and the JavaScript `packages/shepherd-pi` Pi extension.
 
-**Status:** In progress
+**Status:** Done
 
 **Progress:**
 - Done — Task 1 changed working context identity to path-first storage and passed `pnpm test -- test/integration/working-contexts.test.ts`.
@@ -16,11 +16,10 @@
 - Done — Task 3 made no-argument `shepherd` launch local Pi sessions through Gateway RPC and moved `open --session` to `pi.ensure_session`; `pnpm check` passed.
 - Done — Task 4 added explicit Shepherd/Pi rename synchronization in the Pi extension and passed `pnpm pi-package:check`.
 - Done — Task 5 updated English/Japanese README usage and passed the README grep check.
-- Pending — Task 6 final validation and cleanup still need completion.
+- Done — Task 6 final validation passed: targeted tests, `pnpm db:check`, `pnpm pi-package:check`, `pnpm check`, and `pnpm build`.
 
 **Next steps:**
-- Run Task 6 full validation and update the plan status to Done.
-- Commit after each task as listed in the task sections.
+- None for this plan.
 
 ## Global Constraints
 
