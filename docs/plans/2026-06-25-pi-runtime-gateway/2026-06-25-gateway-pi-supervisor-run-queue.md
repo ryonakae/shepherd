@@ -1,4 +1,4 @@
-# Daemon Pi Supervisor and Run Queue
+# Gateway Pi Supervisor and Run Queue
 
 Date: 2026-06-25
 
@@ -23,7 +23,7 @@ Complete. Supervisor, claim lifecycle, owner priority, heartbeat, and recovery b
 
 ## Pi supervisor
 
-The daemon owns a Pi runtime supervisor.
+The Gateway owns a Pi runtime supervisor.
 
 Responsibilities:
 
@@ -32,7 +32,7 @@ Responsibilities:
 - Stop idle subprocesses after `gateway.pi.idle_timeout_ms`.
 - Track extension handshakes.
 - Track owner priority between headless Pi and interactive TUI Pi.
-- Mark running gateway runs as `recovery_required` on daemon restart or owner loss.
+- Mark running gateway runs as `recovery_required` on Gateway restart or owner loss.
 
 Headless launch shape:
 
@@ -40,13 +40,13 @@ Headless launch shape:
 pi --mode rpc --session <piSessionFile>
 ```
 
-The `shepherd-pi` extension is expected to be installed in the user's Pi environment. The daemon does not pass `-e` in normal operation.
+The `shepherd-pi` extension is expected to be installed in the user's Pi environment. The Gateway does not pass `-e` in normal operation.
 
 ## Owner model
 
 Owner kinds:
 
-- `headless_pi`: daemon-spawned Pi RPC process.
+- `headless_pi`: Gateway-spawned Pi RPC process.
 - `tui_pi`: user-facing Pi TUI process with `shepherd-pi` extension.
 
 Priority:
@@ -130,7 +130,7 @@ Input:
   "binding": {
     "sessionId": "...",
     "socketPath": "...",
-    "daemonId": "..."
+    "gatewayId": "..."
   }
 }
 ```
@@ -139,7 +139,7 @@ Output:
 
 ```json
 {
-  "daemonId": "...",
+  "gatewayId": "...",
   "attached": true,
   "sessionId": "...",
   "ownerId": "...",
@@ -163,7 +163,7 @@ Input:
 }
 ```
 
-Output includes `daemonId`, `socketPath`, `ownerId`, and the Shepherd session record.
+Output includes `gatewayId`, `socketPath`, `ownerId`, and the Shepherd session record.
 
 ### `pi.heartbeat`
 
@@ -268,11 +268,11 @@ type SessionMetadata = {
 
 A dedicated table can be added later if querying by Pi session becomes common.
 
-### Daemon identity
+### Gateway identity
 
-Store a stable daemon identity in Shepherd home/state. Options:
+Store a stable Gateway identity in Shepherd home/state. Options:
 
-- A small file under `SHEPHERD_HOME`, for example `daemon-id`.
+- A small file under `SHEPHERD_HOME`, for example `gateway-id`.
 - A DB metadata table if one is added.
 
 The identity is written into Pi session binding entries and checked during auto-attach.
@@ -287,4 +287,4 @@ Keep `delivery_receipts` event-id based for persisted events. Streaming placehol
 - Claim is atomic and idempotent.
 - TUI owner priority beats headless owner.
 - Owner disconnect while running marks `recovery_required`.
-- Daemon restart marks queued/running runs conservatively.
+- Gateway restart marks queued/running runs conservatively.

@@ -19,7 +19,7 @@ Done.
 
 ## Next steps
 
-Complete. Unit tests cover Slack post/update/final cursor behavior; daemon integration tests cover transient stream RPC and final persisted message behavior. Manual Slack smoke requires real workspace credentials and is not run in this repository check.
+Complete. Unit tests cover Slack post/update/final cursor behavior; Gateway integration tests cover transient stream RPC and final persisted message behavior. Manual Slack smoke requires real workspace credentials and is not run in this repository check.
 
 ## Hermes reference
 
@@ -39,7 +39,7 @@ Relevant Hermes behavior:
 
 ## Stream state
 
-Use daemon memory state keyed by `gatewayRunId`:
+Use Gateway memory state keyed by `gatewayRunId`:
 
 ```ts
 type StreamDeliveryState = {
@@ -59,9 +59,9 @@ type StreamDeliveryState = {
 
 Do not persist stream deltas or stream delivery state.
 
-Daemon crash behavior:
+Gateway crash behavior:
 
-- Existing daemon restart recovery marks running runs `recovery_required`.
+- Existing Gateway restart recovery marks running runs `recovery_required`.
 - Partial Slack stream message may remain in the thread.
 - Future improvement: update partial stream to “interrupted; recovery required” during graceful shutdown or recovery.
 

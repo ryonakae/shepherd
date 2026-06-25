@@ -12,8 +12,8 @@ Done.
 
 - **Done** — Implementation should start with a vertical final-only path.
 - **Done** — Streaming and TUI takeover are in MVP but come after the final-only path.
-- **Done** — Slice 1 implementation: `gateway.pi` config parsing, daemon readiness handshake, Pi session metadata assignment, lazy headless Pi startup, and external daemon run queue RPC are in place.
-- **Done** — Test harnesses cover fake Pi extension lifecycle through daemon RPC, `shepherd-pi` package syntax/pack manifest, Slack streaming delivery, CLI open, daemon identity, owner priority, and stale-owner recovery.
+- **Done** — Slice 1 implementation: `gateway.pi` config parsing, Gateway readiness handshake, Pi session metadata assignment, lazy headless Pi startup, and external Gateway run queue RPC are in place.
+- **Done** — Test harnesses cover fake Pi extension lifecycle through Gateway RPC, `shepherd-pi` package syntax/pack manifest, Slack streaming delivery, CLI open, Gateway identity, owner priority, and stale-owner recovery.
 
 ## Next steps
 
@@ -24,7 +24,7 @@ Complete. Automated verification is `pnpm check`; manual real Slack/Pi smoke req
 Goal:
 
 ```text
-Slack -> Shepherd daemon -> headless Pi + shepherd-pi -> final response -> Slack
+Slack -> Shepherd Gateway -> headless Pi + shepherd-pi -> final response -> Slack
 ```
 
 No streaming, no TUI takeover, no tool progress.
@@ -38,15 +38,15 @@ Steps:
    - Add migration/test fixtures for the new config shape.
 
 2. Pi readiness
-   - Add startup check in `shepherd daemon`.
+   - Add startup check in `shepherd gateway start`.
    - Launch `pi --mode rpc --no-session`.
    - Require extension handshake.
    - Call `get_available_models`.
-   - Fail daemon startup with actionable errors.
+   - Fail Gateway startup with actionable errors.
 
 3. Minimal `shepherd-pi` extension package
    - Handshake.
-   - Daemon attach.
+   - Gateway attach.
    - `gateway.run.queued` subscription and claim.
    - `pi.sendUserMessage()`.
    - Assistant final -> `gateway.complete_run`.
@@ -70,7 +70,7 @@ Steps:
    - User message creates queued run.
    - Extension claims and calls `pi.sendUserMessage()`.
    - Extension returns final assistant text.
-   - Daemon appends `gateway.message` and delivers to Slack.
+   - Gateway appends `gateway.message` and delivers to Slack.
 
 Verification:
 
@@ -86,7 +86,7 @@ Goal: Pi can call Shepherd/Herdr logical tools through the extension.
 
 Steps:
 
-1. Extension calls daemon `tool.list` after attach.
+1. Extension calls Gateway `tool.list` after attach.
 2. Extension registers Pi tools dynamically.
 3. Each tool delegates to `tool.run` with current Shepherd session id.
 4. Add extension metadata overrides for critical Herdr tools:
@@ -96,7 +96,7 @@ Steps:
 
 Verification:
 
-- Unit/integration tests with fake daemon `tool.list` and `tool.run`.
+- Unit/integration tests with fake Gateway `tool.list` and `tool.run`.
 - Manual prompt that causes Pi to call `session_read` or `herdr_read`.
 
 ## Slice 3: Slack final-answer streaming
@@ -108,7 +108,7 @@ Steps:
 1. Add Slack `chat.update` support to delivery adapter or streaming-specific Slack client.
 2. Add transient stream RPC methods.
 3. Extension forwards Pi `message_update` text deltas.
-4. Daemon accumulates and throttles updates.
+4. Gateway accumulates and throttles updates.
 5. Final response clears cursor and stores only final `gateway.message`.
 6. Add fallback behavior for update failures.
 
@@ -127,7 +127,7 @@ Steps:
 
 1. Add `shepherd open --session <id>`.
 2. Ensure Pi session binding custom entry is written.
-3. Extension auto-attaches on Pi `/resume` when binding matches daemon identity.
+3. Extension auto-attaches on Pi `/resume` when binding matches Gateway identity.
 4. Add owner priority and heartbeat.
 5. Stop headless claiming while TUI owner is active.
 6. Mark running TUI-owned run `recovery_required` on disconnect.
@@ -174,11 +174,11 @@ Steps:
   - failures disable progressive updates.
 - Pi binding serialization:
   - custom binding shape.
-  - daemon id mismatch prevents auto attach.
+  - Gateway identity mismatch prevents auto attach.
 
 ### Integration tests
 
-- Daemon startup readiness:
+- Gateway startup readiness:
   - missing Pi command.
   - missing extension handshake.
   - no available models.
@@ -195,9 +195,9 @@ Steps:
    brew install shepherd
    pi install npm:shepherd-pi
    ```
-2. Start daemon:
+2. Start Gateway:
    ```bash
-   shepherd daemon --config ~/.shepherd/config.yaml
+   shepherd gateway start --config ~/.shepherd/config.yaml
    ```
 3. Send Slack message in an allowed channel/thread.
 4. Confirm:
@@ -218,7 +218,7 @@ Steps:
 
 ### Pi extension not loaded in headless mode
 
-Mitigation: daemon readiness handshake is required before Slack starts.
+Mitigation: Gateway readiness handshake is required before Slack starts.
 
 ### Pi session file concurrent writes
 
@@ -236,7 +236,7 @@ Mitigation: follow Hermes lessons:
 
 Mitigation: keep existing logical tool idempotency and conservative recovery. Running run owner loss becomes `recovery_required`.
 
-### Schema mismatch between daemon tools and Pi providers
+### Schema mismatch between Gateway tools and Pi providers
 
 Mitigation: MVP passes JSON Schema through. Add extension-side normalization only for observed incompatibilities.
 

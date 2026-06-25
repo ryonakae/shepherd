@@ -14,12 +14,12 @@ Done.
 - **Done** — Pi `/resume` should auto-attach for Shepherd-created Pi sessions.
 - **Done** — Running TUI owner disconnect marks the run `recovery_required`.
 - **Done** — `shepherd open --session` parses CLI options, ensures Shepherd Pi session metadata, and launches `pi --session <pi-session-file>` with Shepherd attach environment.
-- **Done** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; stable daemon id persistence and mismatch prevention are implemented.
+- **Done** — binding custom entry creation and extension auto-attach exist through `/shepherd attach`, env fallback, and `pi.appendEntry`; stable Gateway identity persistence and mismatch prevention are implemented.
 - **Done** — heartbeat, owner priority, stale-owner fallback, and running-run recovery are implemented.
 
 ## Next steps
 
-Complete. CLI open behavior, daemon id mismatch prevention, owner priority, heartbeat, and stale-owner recovery are covered by tests. Manual Pi `/resume` smoke requires an interactive Pi TUI and is not run in repository check.
+Complete. CLI open behavior, Gateway identity mismatch prevention, owner priority, heartbeat, and stale-owner recovery are covered by tests. Manual Pi `/resume` smoke requires an interactive Pi TUI and is not run in repository check.
 
 ## UX
 
@@ -44,8 +44,8 @@ Pi session side binding shape:
 ```json
 {
   "sessionId": "shepherd-session-id",
-  "socketPath": "/Users/.../.shepherd/daemon.sock",
-  "daemonId": "stable-daemon-id"
+  "socketPath": "/Users/.../.shepherd/Gateway.sock",
+  "gatewayId": "stable-gateway-id"
 }
 ```
 
@@ -57,17 +57,17 @@ pi.appendEntry("shepherd.binding", binding)
 
 On `session_start`, the extension reads matching custom entries from the current Pi session and auto-attaches only when:
 
-- `daemonId` matches the current daemon.
+- `gatewayId` matches the current Gateway.
 - `socketPath` is reachable.
 - The Shepherd session still exists.
 
-If the socket path changed or daemon id differs, the extension should not silently attach. The user can run `/shepherd attach <session-id>` to update binding.
+If the socket path changed or Gateway identity differs, the extension should not silently attach. The user can run `/shepherd attach <session-id>` to update binding.
 
 ## `shepherd open`
 
 Flow:
 
-1. Connect to daemon.
+1. Connect to Gateway.
 2. Resolve Shepherd session.
 3. Ensure the session has a Pi session file; create it if missing.
 4. Ensure Pi session has Shepherd binding custom entry. This may require launching Pi with an initial attach command or relying on extension attach flow.
@@ -89,7 +89,7 @@ Expected behavior:
 
 - User opens Pi session via `shepherd open --session <id>` or Pi `/resume`.
 - Extension auto-attaches from binding.
-- Daemon stops letting headless owner claim new runs for that session.
+- Gateway stops letting headless owner claim new runs for that session.
 - Slack messages arrive in the interactive Pi session via `pi.sendUserMessage()`.
 - If TUI Pi disconnects while idle, headless owner resumes after heartbeat timeout.
 - If TUI Pi disconnects while running, the run becomes `recovery_required`.
@@ -103,13 +103,13 @@ Heartbeat timeout behavior:
 - Idle owner missed timeout: release owner; headless may claim future runs.
 - Running owner missed timeout: mark current run `recovery_required`, emit `recovery.note`, release owner.
 
-Headless owners may also heartbeat for monitoring, but daemon can also observe the child process directly.
+Headless owners may also heartbeat for monitoring, but Gateway can also observe the child process directly.
 
 ## Tests
 
 - `shepherd open --session` resolves session and launches Pi with the right session file.
 - Pi binding entry is read on `session_start` and calls `pi.attach`.
-- Daemon id mismatch prevents auto attach.
+- Gateway identity mismatch prevents auto attach.
 - TUI owner beats headless owner in `gateway.claim_next_run`.
 - Idle TUI disconnect falls back to headless.
 - Running TUI disconnect marks run `recovery_required` and does not auto-replay.

@@ -10,16 +10,16 @@ Done.
 
 ## Progress
 
-- **Done** — Extension is the bridge between Pi and Shepherd daemon.
-- **Done** — Message injection uses extension `pi.sendUserMessage()`, not daemon Pi RPC `prompt`.
-- **Done** — Shepherd tools are registered by the extension from daemon `tool.list`.
+- **Done** — Extension is the bridge between Pi and Shepherd Gateway.
+- **Done** — Message injection uses extension `pi.sendUserMessage()`, not Gateway Pi RPC `prompt`.
+- **Done** — Shepherd tools are registered by the extension from Gateway `tool.list`.
 - **Done** — Visible user text remains natural; Shepherd metadata is injected through hidden context hooks.
 - **Done** — npm package skeleton exists under `packages/shepherd-pi` with extension and skill resources, and root `pnpm check` validates its syntax and pack manifest.
-- **Done** — daemon-side `pi.handshake`, `pi.attach`, heartbeat, and run claim/complete/fail RPC exist; extension daemon client, attach command, tool registration, claim loop, streaming, and final completion path are implemented.
+- **Done** — Gateway-side `pi.handshake`, `pi.attach`, heartbeat, and run claim/complete/fail RPC exist; extension Gateway client, attach command, tool registration, claim loop, streaming, and final completion path are implemented.
 
 ## Next steps
 
-Complete. Package syntax/pack validation is part of `pnpm check`; daemon-side extension lifecycle is covered by integration tests.
+Complete. Package syntax/pack validation is part of `pnpm check`; Gateway-side extension lifecycle is covered by integration tests.
 
 ## Package contents
 
@@ -40,12 +40,12 @@ pi install npm:shepherd-pi
 On `session_start`:
 
 1. Read Shepherd binding custom entry from the Pi session branch/history.
-2. Resolve daemon socket path and daemon identity.
-3. Connect to the daemon socket.
+2. Resolve Gateway socket path and Gateway identity.
+3. Connect to the Gateway socket.
 4. Call `pi.handshake`.
 5. If binding is present and valid, auto-attach.
 6. Subscribe to the Shepherd session event stream.
-7. Register Shepherd tools from daemon `tool.list`.
+7. Register Shepherd tools from Gateway `tool.list`.
 8. Set Pi status/footer/widgets when in TUI mode.
 
 ## Attach commands
@@ -62,15 +62,15 @@ Provide Pi commands:
 
 ## Tool registration
 
-Use daemon `tool.list` as the source of truth.
+Use Gateway `tool.list` as the source of truth.
 
 For each tool:
 
-- Register a Pi custom tool with the daemon-provided `name`, `description`, and `inputSchema`.
-- Execute by calling daemon `tool.run` with the current Shepherd `sessionId`.
-- Preserve daemon policy and idempotency behavior.
+- Register a Pi custom tool with the Gateway-provided `name`, `description`, and `inputSchema`.
+- Execute by calling Gateway `tool.run` with the current Shepherd `sessionId`.
+- Preserve Gateway policy and idempotency behavior.
 
-MVP can pass schemas through as JSON Schema-compatible TypeBox objects. If model/provider schema issues appear, normalize in the extension, not in the daemon.
+MVP can pass schemas through as JSON Schema-compatible TypeBox objects. If model/provider schema issues appear, normalize in the extension, not in the Gateway.
 
 The extension may override or add Pi-specific metadata:
 
@@ -145,7 +145,7 @@ On error/abort:
 In TUI mode, set concise status indicators:
 
 - Attached Shepherd session id/title.
-- Daemon connected/reconnecting state.
+- Gateway connected/reconnecting state.
 - Owner kind (`tui_pi`).
 - Current run status if any.
 
@@ -153,7 +153,7 @@ TUI-specific UI should be guarded with `ctx.mode === "tui"`; headless/RPC mode m
 
 ## Tests
 
-- Extension handshake succeeds against a fake daemon.
+- Extension handshake succeeds against a fake Gateway.
 - Binding custom entry is restored on `session_start`.
 - `tool.list` registers tools and `tool.run` delegates calls.
 - `gateway.run.queued` triggers claim but replay alone does not cause duplicate processing.

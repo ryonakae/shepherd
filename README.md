@@ -80,7 +80,7 @@ platforms:
       tool_progress: off
 ```
 
-Shepherd requires `allowed_users` when you configure Slack. The daemon ignores messages outside `allowed_teams`, `allowed_channels`, or `allowed_users`, then logs the denied axis and Slack IDs at debug level. If you set `tui_default_channel`, include it in `allowed_channels`.
+Shepherd requires `allowed_users` when you configure Slack. The Gateway ignores messages outside `allowed_teams`, `allowed_channels`, or `allowed_users`, then logs the denied axis and Slack IDs at debug level. If you set `tui_default_channel`, include it in `allowed_channels`.
 
 For Pi-backed gateway runs, omit `providers`, `gateway.default_provider`, and `gateway.model`. Those fields select the legacy provider runner instead of the Pi runtime.
 
@@ -105,7 +105,7 @@ Create or update a Slack app for the workspace, then install it to the workspace
 5. Invite the bot to every channel listed in `allowed_channels`.
 6. Put Slack IDs, not display names, in the YAML file. Use team IDs like `T0123456789`, channel IDs like `C0123456789`, and user IDs like `U0123456789`.
 
-Prompt for tokens in the shell that starts the daemon. This keeps token values out of shell history.
+Prompt for tokens in the shell that starts the Gateway. This keeps token values out of shell history.
 
 ```bash
 read -rsp 'SLACK_APP_TOKEN: ' SLACK_APP_TOKEN
@@ -118,14 +118,14 @@ echo
 
 ### Pi package setup
 
-Install the local Shepherd Pi package before starting the daemon with Pi runtime enabled:
+Install the local Shepherd Pi package before starting the Gateway with Pi runtime enabled:
 
 ```bash
 pi install ./packages/shepherd-pi
 pi list
 ```
 
-Open Pi once and run `/login` if Pi has no available model. `shepherd daemon` starts `pi --mode rpc --no-session`, waits for the `shepherd-pi` extension handshake, and checks that Pi has at least one authenticated model.
+Open Pi once and run `/login` if Pi has no available model. `shepherd gateway start` starts `pi --mode rpc --no-session`, waits for the `shepherd-pi` extension handshake, and checks that Pi has at least one authenticated model.
 
 ## Usage
 
@@ -147,15 +147,15 @@ Build TypeScript into `dist`:
 pnpm build
 ```
 
-Start the daemon with the local config:
+Start the Gateway with the local config:
 
 ```bash
 export SHEPHERD_DB_PATH=/tmp/shepherd.sqlite
-export SHEPHERD_SOCKET_PATH=/tmp/shepherd.sock
+export SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/shepherd.sock
 
-node dist/src/cli/shepherd.js daemon \
+node dist/src/cli/shepherd.js gateway start \
   --db "$SHEPHERD_DB_PATH" \
-  --socket "$SHEPHERD_SOCKET_PATH" \
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
   --config /tmp/shepherd.local.yaml
 ```
 
@@ -166,7 +166,7 @@ export SHEPHERD_SESSION_ID="$(
   node --input-type=module <<'JS'
 import { ShepherdSessionClient } from "./dist/src/tui/client.js";
 
-const socketPath = process.env.SHEPHERD_SOCKET_PATH ?? "/tmp/shepherd.sock";
+const socketPath = process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock";
 const client = await ShepherdSessionClient.connect(socketPath);
 try {
   const { session } = await client.createSession({ title: "Local verification" });
@@ -184,15 +184,15 @@ Open an attached Pi TUI for the session:
 node dist/src/cli/shepherd.js open \
   --session "$SHEPHERD_SESSION_ID" \
   --db "$SHEPHERD_DB_PATH" \
-  --socket "$SHEPHERD_SOCKET_PATH"
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH"
 ```
 
-Send a message to a running daemon session:
+Send a message to a running Gateway session:
 
 ```bash
 node dist/src/cli/shepherd.js send \
   --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_SOCKET_PATH" \
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
   --text "continue from here"
 ```
 
@@ -201,7 +201,7 @@ Send a message with a one-turn gateway provider override when legacy providers a
 ```bash
 node dist/src/cli/shepherd.js send \
   --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_SOCKET_PATH" \
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
   --text "try this with OpenAI" \
   --provider openai \
   --model gpt-4.1
@@ -212,7 +212,7 @@ Watch session events as JSON Lines:
 ```bash
 node dist/src/cli/shepherd.js watch \
   --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_SOCKET_PATH" \
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
   --after 0
 ```
 
@@ -227,7 +227,7 @@ Rename a session:
 ```bash
 node dist/src/cli/shepherd.js rename \
   --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_SOCKET_PATH" \
+  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
   --title "Review Slack sync"
 ```
 
@@ -254,13 +254,12 @@ node dist/src/cli/shepherd.js audit \
 
 - `src/config`: TypeBox/Ajv runtime configuration contracts.
 - `src/cli`: command-line entrypoints for `shepherd` and `shepherd-tools`.
-- `src/daemon`: local daemon utilities, including JSON Lines framing and recovery.
+- `src/gateway`: local Gateway server, JSON Lines framing, recovery, provider adapters, logical tools, turn queueing, context, and summary updates.
 - `src/db`: SQLite connection, migration application, and Drizzle schema.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
-- `src/gateway`: provider adapters, logical tools, turn queueing, context, and summary updates.
 - `src/gateway/working-contexts.ts`: allowed-root working context discovery and resolution.
 - `src/platforms/slack`: Slack inbound normalization, Socket Mode wrapper, and outbound delivery.
-- `src/tui`: daemon socket client used by TUI-style local surfaces.
+- `src/tui`: Gateway socket client used by TUI-style local surfaces.
 - `test/unit`: pure logic and contract tests.
 - `test/integration`: SQLite and cross-module integration tests.
 - `docs/plans`: active product and implementation plans; completed plans live under `docs/plans/archived`.

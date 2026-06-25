@@ -12,13 +12,13 @@ Done.
 
 - **Done** — Setup command shape decided: `brew install shepherd` and `pi install npm:shepherd-pi`.
 - **Done** — Dedicated `shepherd setup` and `shepherd doctor` are deferred for MVP.
-- **Done** — Daemon startup should fail fast when Pi readiness fails.
+- **Done** — Gateway startup should fail fast when Pi readiness fails.
 - **Done** — Config schema accepts `gateway.pi` and Slack streaming settings; old provider fields remain accepted only as a temporary legacy path for existing tests/compatibility.
-- **Done** — Pi readiness probe launches `pi --mode rpc --no-session`, waits for daemon `pi.handshake`, and requires `get_available_models` to return at least one model before Slack starts.
+- **Done** — Pi readiness probe launches `pi --mode rpc --no-session`, waits for Gateway `pi.handshake`, and requires `get_available_models` to return at least one model before Slack starts.
 
 ## Next steps
 
-Complete. The Pi runtime path uses readiness checks, stable daemon identity, `shepherd-pi` package validation, and skips old provider runtime construction when only `gateway.pi` is configured.
+Complete. The Pi runtime path uses readiness checks, stable Gateway identity, `shepherd-pi` package validation, and skips old provider runtime construction when only `gateway.pi` is configured.
 
 ## Distribution
 
@@ -81,7 +81,7 @@ agents:
     when: "Use for implementation, test fixes, and CLI-heavy coding work."
 ```
 
-The daemon/tool backend owns these profiles. The Pi extension reads tool/profile metadata from the daemon and injects concise guidance into Pi's prompt context.
+The Gateway/tool backend owns these profiles. The Pi extension reads tool/profile metadata from the Gateway and injects concise guidance into Pi's prompt context.
 
 ### Add Slack streaming config
 
@@ -100,13 +100,13 @@ platforms:
 
 Tool progress defaults to `off` for Slack, following Hermes' Slack default.
 
-## Daemon readiness check
+## Gateway readiness check
 
-`shepherd daemon` must verify Pi readiness before starting Slack Socket Mode.
+`shepherd gateway start` must verify Pi readiness before starting Slack Socket Mode.
 
 Startup checks:
 
-1. Resolve Shepherd config, DB path, socket path, and daemon identity.
+1. Resolve Shepherd config, DB path, socket path, and Gateway identity.
 2. Verify `pi` exists on `PATH`.
 3. Launch a short-lived readiness process:
    ```bash
@@ -115,7 +115,7 @@ Startup checks:
 4. Wait for a `shepherd-pi` extension handshake.
 5. Call Pi RPC `get_available_models` and require at least one available model.
 6. Stop the readiness process.
-7. Start Slack and normal daemon services only after success.
+7. Start Slack and normal Gateway services only after success.
 
 Failure examples:
 
@@ -126,7 +126,7 @@ Install it with:
   pi install npm:shepherd-pi
 
 Then restart:
-  shepherd daemon
+  shepherd gateway start
 ```
 
 ```text
@@ -139,7 +139,7 @@ Run:
 
 ## CLI behavior
 
-The daemon requires Pi readiness. CLI-only commands can remain Pi-independent:
+The Gateway requires Pi readiness. CLI-only commands can remain Pi-independent:
 
 - `shepherd audit`
 - config parsing helpers
@@ -148,7 +148,7 @@ The daemon requires Pi readiness. CLI-only commands can remain Pi-independent:
 ## Tests
 
 - Config accepts `gateway.pi` and rejects/ignores old provider shape according to migration policy.
-- Missing `pi` command fails daemon startup with actionable message.
-- Missing extension handshake fails daemon startup.
-- Empty `get_available_models` fails daemon startup.
-- Successful readiness probe allows daemon startup.
+- Missing `pi` command fails Gateway startup with actionable message.
+- Missing extension handshake fails Gateway startup.
+- Empty `get_available_models` fails Gateway startup.
+- Successful readiness probe allows Gateway startup.
