@@ -42,7 +42,7 @@ After setup, a Slack message should wake a Shepherd session, start or reuse the 
 
 ## Relationship to existing plans
 
-This plan supersedes the active custom TUI direction in [`2026-06-24-shepherd-tui-mvp-experience.md`](2026-06-24-shepherd-tui-mvp-experience.md). The old plan remains historical context for event-stream UX and local session requirements, but Shepherd should no longer implement a full-screen TUI itself.
+This plan supersedes the archived custom TUI direction in [`2026-06-24-shepherd-tui-mvp-experience.md`](archived/2026-06-24-shepherd-tui-mvp-experience.md). The old plan remains historical context for event-stream UX and local session requirements, but Shepherd should no longer implement a full-screen TUI itself.
 
 Archived Herdr orchestration plans still apply where they describe:
 

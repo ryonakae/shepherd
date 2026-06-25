@@ -4,7 +4,7 @@ Date: 2026-06-24
 
 ## Status
 
-Superseded by [Shepherd Pi Runtime Gateway Plan](2026-06-25-pi-runtime-gateway.md). Shepherd should use Pi as the user-facing TUI/runtime instead of implementing a custom full-screen TUI. Keep this plan as historical context for event-stream UX and local session requirements.
+Archived. Superseded by [Shepherd Pi Runtime Gateway Plan](../2026-06-25-pi-runtime-gateway.md). Shepherd should use Pi as the user-facing TUI/runtime instead of implementing a custom full-screen TUI. Keep this plan as historical context for event-stream UX and local session requirements.
 
 ## Progress
 
