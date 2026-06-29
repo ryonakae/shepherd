@@ -129,6 +129,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
     }),
     name: "session_read",
+    promptSnippet:
+      "Use shepherd_session_read to inspect recent Shepherd session events and orchestration history.",
   });
 
   registry.register({
@@ -144,6 +146,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       scanAllowedRoots: Type.Optional(Type.Boolean()),
     }),
     name: "workspace_discovery",
+    promptSnippet:
+      "Use shepherd_workspace_discovery to find known or allowed working contexts before binding Herdr resources.",
   });
 
   registry.register({
@@ -161,6 +165,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       slug: Type.Optional(Type.String({ minLength: 1 })),
     }),
     name: "resolve_working_context",
+    promptGuidelines: [
+      "Use shepherd_resolve_working_context before creating Herdr resources when the working context is ambiguous.",
+    ],
+    promptSnippet:
+      "Use shepherd_resolve_working_context to resolve a project path, label, or slug into a Shepherd working context.",
   });
 
   registry.register({
@@ -237,6 +246,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workspaceId: Type.Optional(Type.String({ minLength: 1 })),
     }),
     name: "herdr_read",
+    promptGuidelines: [
+      "Use shepherd_herdr_read to inspect current Herdr state before creating duplicate workspaces, panes, or agents.",
+    ],
+    promptSnippet:
+      "Use shepherd_herdr_read to inspect Shepherd-bound Herdr workspaces, tabs, panes, and agents.",
   });
 
   registry.register({
@@ -254,18 +268,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingDirectory: Type.String({ minLength: 1 }),
     }),
     name: "ensure_herdr_workspace",
-  });
-
-  registry.register({
-    description: "Alias for ensure_herdr_workspace.",
-    execute: (input: EnsureHerdrWorkspaceInput, context) =>
-      registry.get("ensure_herdr_workspace").execute(input, context),
-    inputSchema: Type.Object({
-      taskSlug: Type.String({ minLength: 1 }),
-      workingContextSlug: Type.String({ minLength: 1 }),
-      workingDirectory: Type.String({ minLength: 1 }),
-    }),
-    name: "ensure_agent_pane",
+    promptGuidelines: [
+      "Use shepherd_ensure_herdr_workspace for Shepherd-managed work; do not attach user-owned Herdr workspaces with it.",
+    ],
+    promptSnippet:
+      "Use shepherd_ensure_herdr_workspace to create or reuse the Shepherd-managed Herdr workspace for a task.",
   });
 
   registry.register({
@@ -287,6 +294,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workspaceId: Type.String({ minLength: 1 }),
     }),
     name: "attach_herdr_workspace",
+    promptGuidelines: [
+      "Use shepherd_attach_herdr_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
+    ],
+    promptSnippet:
+      "Use shepherd_attach_herdr_workspace to bind an explicitly requested existing Herdr workspace to the current Shepherd session.",
   });
 
   registry.register({
@@ -314,20 +326,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingDirectory: Type.String({ minLength: 1 }),
     }),
     name: "herdr_start_agent",
-  });
-
-  registry.register({
-    description: "Start a configured coding agent in Herdr.",
-    execute: (input: HerdrStartAgentInput, context) =>
-      registry.get("herdr_start_agent").execute(input, context),
-    inputSchema: Type.Object({
-      agentName: Type.String({ minLength: 1 }),
-      agentProfile: Type.String({ minLength: 1 }),
-      taskSlug: Type.String({ minLength: 1 }),
-      workingContextSlug: Type.String({ minLength: 1 }),
-      workingDirectory: Type.String({ minLength: 1 }),
-    }),
-    name: "start_agent",
+    promptGuidelines: [
+      "Use shepherd_herdr_start_agent to delegate implementation or review work to configured Herdr worker agents instead of doing long-running work in Pi.",
+    ],
+    promptSnippet:
+      "Use shepherd_herdr_start_agent to start a configured worker agent inside the Shepherd-managed Herdr workspace.",
   });
 
   registry.register({
@@ -357,6 +360,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingDirectory: Type.String({ minLength: 1 }),
     }),
     name: "open_pane",
+    promptSnippet:
+      "Use shepherd_open_pane to open a Shepherd-managed Herdr pane for shells, logs, servers, or tests.",
   });
 
   registry.register({
@@ -373,6 +378,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "run_pane_command",
+    promptGuidelines: [
+      "Use shepherd_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
+    ],
+    promptSnippet:
+      "Use shepherd_run_pane_command to run a command in a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -391,6 +401,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "read_pane",
+    promptSnippet:
+      "Use shepherd_read_pane to read recent output from a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -407,6 +419,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "send_pane_text",
+    promptSnippet:
+      "Use shepherd_send_pane_text to send literal text to a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -423,18 +437,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_send_agent_message",
-  });
-
-  registry.register({
-    description: "Send a user message to a Herdr-managed agent target.",
-    execute: (input: HerdrSendAgentMessageInput, context) =>
-      registry.get("herdr_send_agent_message").execute(input, context),
-    inputSchema: Type.Object({
-      target: Type.String({ minLength: 1 }),
-      text: Type.String({ minLength: 1 }),
-      workingContextSlug: Type.String({ minLength: 1 }),
-    }),
-    name: "send_agent_message",
+    promptGuidelines: [
+      "Use shepherd_herdr_send_agent_message for follow-up instructions to Herdr worker agents after reading their current state.",
+    ],
+    promptSnippet:
+      "Use shepherd_herdr_send_agent_message to send the user's task or follow-up to a Herdr-managed agent.",
   });
 
   registry.register({
@@ -463,26 +470,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "herdr_read_agent",
-  });
-
-  registry.register({
-    description: "Read recent output from a Herdr-managed agent target.",
-    execute: (input: HerdrReadAgentInput, context) =>
-      registry.get("herdr_read_agent").execute(input, context),
-    inputSchema: Type.Object({
-      lines: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
-      source: Type.Optional(
-        Type.Union([
-          Type.Literal("detection"),
-          Type.Literal("recent"),
-          Type.Literal("recent-unwrapped"),
-          Type.Literal("visible"),
-        ]),
-      ),
-      target: Type.String({ minLength: 1 }),
-      workingContextSlug: Type.String({ minLength: 1 }),
-    }),
-    name: "read_agent_output",
+    promptSnippet:
+      "Use shepherd_herdr_read_agent to read recent output from a Herdr-managed agent.",
   });
 
   registry.register({
@@ -507,6 +496,11 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "wait_for_agent",
+    promptGuidelines: [
+      "Use shepherd_wait_for_agent before summarizing delegated Herdr agent work when the agent may still be working.",
+    ],
+    promptSnippet:
+      "Use shepherd_wait_for_agent to wait for a Herdr-managed agent to become idle, done, blocked, working, or unknown.",
   });
 
   registry.register({
@@ -537,6 +531,8 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
     name: "wait_for_herdr_event",
+    promptSnippet:
+      "Use shepherd_wait_for_herdr_event to wait for expected text in a Herdr pane before continuing.",
   });
 
   return registry;

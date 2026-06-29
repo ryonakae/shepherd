@@ -191,22 +191,46 @@ describe("builtin logical tools", () => {
     ).resolves.toEqual({ text: "agent output" });
   });
 
-  test("plan-name aliases and pane tools delegate to Herdr", async () => {
+  test("builtin registry exposes canonical Shepherd/Herdr tools only", () => {
+    const { runner } = openRunner();
+    const tools = runner.list();
+
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      [
+        "attach_herdr_workspace",
+        "ensure_herdr_workspace",
+        "herdr_read",
+        "herdr_read_agent",
+        "herdr_send_agent_message",
+        "herdr_start_agent",
+        "open_pane",
+        "read_pane",
+        "resolve_working_context",
+        "run_pane_command",
+        "send_pane_text",
+        "session_read",
+        "wait_for_agent",
+        "wait_for_herdr_event",
+        "workspace_discovery",
+      ].sort(),
+    );
+    expect(tools.filter((tool) => !tool.promptSnippet)).toEqual([]);
+
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("resolve_working_context")?.promptGuidelines).toContain(
+      "Use shepherd_resolve_working_context before creating Herdr resources when the working context is ambiguous.",
+    );
+    expect(byName.get("attach_herdr_workspace")?.promptGuidelines).toContain(
+      "Use shepherd_attach_herdr_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
+    );
+    expect(byName.get("run_pane_command")?.promptGuidelines).toContain(
+      "Use shepherd_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
+    );
+  });
+
+  test("pane tools delegate to Herdr", async () => {
     const { runner, sessionId } = openRunner();
 
-    await expect(
-      runner.run(
-        "start_agent",
-        {
-          agentName: "claude-impl",
-          agentProfile: "claude",
-          taskSlug: "Implement Slack Sync",
-          workingContextSlug: "shepherd",
-          workingDirectory: "/repo",
-        },
-        { sessionId },
-      ),
-    ).resolves.toMatchObject({ paneId: "w1:p1" });
     await expect(
       runner.run(
         "open_pane",
@@ -240,20 +264,6 @@ describe("builtin logical tools", () => {
         { sessionId },
       ),
     ).resolves.toEqual({ sentText: true });
-    await expect(
-      runner.run(
-        "send_agent_message",
-        { target: "w1:p1", text: "continue", workingContextSlug: "shepherd" },
-        { sessionId },
-      ),
-    ).resolves.toEqual({ sent: true });
-    await expect(
-      runner.run(
-        "read_agent_output",
-        { target: "w1:p1", workingContextSlug: "shepherd" },
-        { sessionId },
-      ),
-    ).resolves.toEqual({ text: "agent output" });
     await expect(
       runner.run(
         "wait_for_agent",
