@@ -9,9 +9,12 @@
     "pi-extension"
   ],
   "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./src/index.ts"
     ],
     "skills": [
       "./skills"

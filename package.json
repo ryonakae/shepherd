@@ -22,7 +22,7 @@
     "format:check": "biome format .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "pi-package:check": "node --check packages/shepherd-pi/extensions/index.js && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
+    "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",
