@@ -41,9 +41,17 @@ pnpm build
 
 ## Configuration
 
-Create a local config file outside the repo, for example `/tmp/shepherd.local.yaml`. The Slack token fields name environment variables; do not paste token values into the YAML file.
+Shepherd reads `$SHEPHERD_HOME/config.yaml`. If `SHEPHERD_HOME` is unset, Shepherd uses `~/.shepherd` on all platforms. Shepherd also reads `$SHEPHERD_HOME/.env`; values in that file override shell values for non-`SHEPHERD_*` variables.
+
+The `runtime:` section is optional. Relative paths are resolved from `$SHEPHERD_HOME`.
 
 ```yaml
+runtime:
+  db_path: state.db
+  socket_path: gateway.sock
+  pid_path: gateway.pid
+  log_path: logs/gateway.log
+
 gateway:
   pi:
     idle_timeout_ms: 600000
@@ -105,15 +113,14 @@ Create or update a Slack app for the workspace, then install it to the workspace
 5. Invite the bot to every channel listed in `allowed_channels`.
 6. Put Slack IDs, not display names, in the YAML file. Use team IDs like `T0123456789`, channel IDs like `C0123456789`, and user IDs like `U0123456789`.
 
-Prompt for tokens in the shell that starts the Gateway. This keeps token values out of shell history.
+Put tokens in `$SHEPHERD_HOME/.env` so token values stay out of the YAML file and shell history.
 
 ```bash
-read -rsp 'SLACK_APP_TOKEN: ' SLACK_APP_TOKEN
-export SLACK_APP_TOKEN
-echo
-read -rsp 'SLACK_BOT_TOKEN: ' SLACK_BOT_TOKEN
-export SLACK_BOT_TOKEN
-echo
+mkdir -p "${SHEPHERD_HOME:-$HOME/.shepherd}"
+cat > "${SHEPHERD_HOME:-$HOME/.shepherd}/.env" <<'EOF'
+SLACK_APP_TOKEN=xapp-...
+SLACK_BOT_TOKEN=xoxb-...
+EOF
 ```
 
 ### Pi package setup
@@ -135,10 +142,10 @@ Run the test suite:
 pnpm test
 ```
 
-Apply committed SQLite migrations to a local database:
+Apply committed SQLite migrations to the configured database:
 
 ```bash
-SHEPHERD_DB_PATH=/tmp/shepherd.sqlite pnpm db:migrate
+pnpm db:migrate
 ```
 
 Build TypeScript into `dist`:
@@ -147,16 +154,10 @@ Build TypeScript into `dist`:
 pnpm build
 ```
 
-Start the Gateway with the local config:
+Start the Gateway:
 
 ```bash
-export SHEPHERD_DB_PATH=/tmp/shepherd.sqlite
-export SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/shepherd.sock
-
-node dist/src/cli/shepherd.js gateway start \
-  --db "$SHEPHERD_DB_PATH" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
-  --config /tmp/shepherd.local.yaml
+node dist/src/cli/shepherd.js gateway start
 ```
 
 Start a new local Shepherd session from the current directory and open Pi:
@@ -170,63 +171,37 @@ The Gateway must already be running. `shepherd` does not auto-start it. The curr
 Open an existing Shepherd session, for example one created from Slack:
 
 ```bash
-node dist/src/cli/shepherd.js open \
-  --session "$SHEPHERD_SESSION_ID" \
-  --db "$SHEPHERD_DB_PATH" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH"
+node dist/src/cli/shepherd.js open "$SHEPHERD_SESSION_ID"
 ```
 
 Send a message to a running Gateway session:
 
 ```bash
-node dist/src/cli/shepherd.js send \
-  --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
-  --text "continue from here"
-```
-
-Send a message with a one-turn gateway provider override when legacy providers are configured:
-
-```bash
-node dist/src/cli/shepherd.js send \
-  --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
-  --text "try this with OpenAI" \
-  --provider openai \
-  --model gpt-4.1
+node dist/src/cli/shepherd.js send "$SHEPHERD_SESSION_ID" "continue from here"
 ```
 
 Watch session events as JSON Lines:
 
 ```bash
-node dist/src/cli/shepherd.js watch \
-  --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
-  --after 0
+node dist/src/cli/shepherd.js watch "$SHEPHERD_SESSION_ID"
 ```
 
 Bridge logical tools over stdio JSON Lines:
 
 ```bash
-node dist/src/cli/shepherd-tools.js --socket /tmp/shepherd.sock
+node dist/src/cli/shepherd-tools.js
 ```
 
 Rename a session:
 
 ```bash
-node dist/src/cli/shepherd.js rename \
-  --session "$SHEPHERD_SESSION_ID" \
-  --socket "$SHEPHERD_GATEWAY_SOCKET_PATH" \
-  --title "Review Slack sync"
+node dist/src/cli/shepherd.js rename "$SHEPHERD_SESSION_ID" "Review Slack sync"
 ```
 
 Print stored session audit events from SQLite:
 
 ```bash
-node dist/src/cli/shepherd.js audit \
-  --session "$SHEPHERD_SESSION_ID" \
-  --db /tmp/shepherd.sqlite \
-  --after 0
+node dist/src/cli/shepherd.js audit "$SHEPHERD_SESSION_ID"
 ```
 
 ## Common Commands

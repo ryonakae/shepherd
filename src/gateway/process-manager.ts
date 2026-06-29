@@ -9,11 +9,17 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createConnection } from "node:net";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 
-export type GatewayControlPaths = {
+export type GatewayRuntimeRecord = {
+  dbPath: string;
+  homeDir: string;
   logPath: string;
+  pid: number;
   pidPath: string;
+  socketPath: string;
+  startedAt: string;
+  version: 1;
 };
 
 export type GatewayStatus =
@@ -44,16 +50,52 @@ export type GatewayProcessDependencies = {
   waitMs?: (ms: number) => Promise<void>;
 };
 
-export function resolveGatewayControlPaths(input: {
-  dbPath: string;
-  logPath?: string;
-  pidPath?: string;
-}): GatewayControlPaths {
-  const stateDir = dirname(resolve(input.dbPath));
-  return {
-    logPath: input.logPath ?? resolve(stateDir, "shepherd.gateway.log"),
-    pidPath: input.pidPath ?? resolve(stateDir, "shepherd.gateway.pid"),
-  };
+export function readGatewayRuntimeRecord(path: string): GatewayRuntimeRecord | undefined {
+  if (!existsSync(path)) {
+    return undefined;
+  }
+
+  try {
+    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<GatewayRuntimeRecord>;
+    if (
+      value.version !== 1 ||
+      typeof value.dbPath !== "string" ||
+      typeof value.homeDir !== "string" ||
+      typeof value.logPath !== "string" ||
+      typeof value.pid !== "number" ||
+      typeof value.pidPath !== "string" ||
+      typeof value.socketPath !== "string" ||
+      typeof value.startedAt !== "string"
+    ) {
+      return undefined;
+    }
+
+    return value as GatewayRuntimeRecord;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeGatewayRuntimeRecord(path: string, record: GatewayRuntimeRecord): void {
+  mkdirSync(dirname(path), { mode: 0o700, recursive: true });
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+}
+
+export async function prepareGatewaySocketPath(input: {
+  deps?: GatewayProcessDependencies;
+  socketPath: string;
+}): Promise<void> {
+  mkdirSync(dirname(input.socketPath), { mode: 0o700, recursive: true });
+  if (!existsSync(input.socketPath)) {
+    return;
+  }
+
+  const connectSocket = input.deps?.connectSocket ?? defaultConnectSocket;
+  if (await connectSocket(input.socketPath)) {
+    throw new Error(`Shepherd Gateway socket is already reachable: ${input.socketPath}`);
+  }
+
+  rmSync(input.socketPath, { force: true });
 }
 
 export async function getGatewayStatus(input: {
@@ -88,14 +130,14 @@ export async function getGatewayStatus(input: {
 }
 
 export async function startGatewayProcess(input: {
-  cliPath: string;
-  configPath?: string;
-  dbPath: string;
   deps?: GatewayProcessDependencies;
+  entrypointPath: string;
   env: NodeJS.ProcessEnv;
   logPath: string;
   nodePath: string;
   pidPath: string;
+  runtimeRecord: Omit<GatewayRuntimeRecord, "pid" | "startedAt" | "version">;
+  runtimeRecordPath: string;
   socketPath: string;
 }): Promise<{ pid: number }> {
   const status = await getGatewayStatus({
@@ -107,30 +149,24 @@ export async function startGatewayProcess(input: {
     throw new Error(`Shepherd Gateway is already running with pid ${status.pid}`);
   }
 
-  mkdirSync(dirname(input.pidPath), { recursive: true });
-  mkdirSync(dirname(input.logPath), { recursive: true });
+  mkdirSync(dirname(input.pidPath), { mode: 0o700, recursive: true });
+  mkdirSync(dirname(input.logPath), { mode: 0o700, recursive: true });
   if (status.state === "stopped" && status.stalePid !== undefined) {
     rmSync(input.pidPath, { force: true });
   }
 
-  const logFd = openSync(input.logPath, "a");
+  const logFd = openSync(input.logPath, "a", 0o600);
   let child: { pid: number | undefined; unref(): void };
   try {
-    const args = [
-      input.cliPath,
-      "gateway",
-      "run",
-      "--db",
-      input.dbPath,
-      "--socket",
-      input.socketPath,
-      ...(input.configPath ? ["--config", input.configPath] : []),
-    ];
-    child = (input.deps?.spawnProcess ?? spawnGatewayProcess)(input.nodePath, args, {
-      detached: true,
-      env: input.env,
-      stdio: ["ignore", logFd, logFd],
-    });
+    child = (input.deps?.spawnProcess ?? spawnGatewayProcess)(
+      input.nodePath,
+      [input.entrypointPath],
+      {
+        detached: true,
+        env: input.env,
+        stdio: ["ignore", logFd, logFd],
+      },
+    );
   } finally {
     closeSync(logFd);
   }
@@ -141,6 +177,12 @@ export async function startGatewayProcess(input: {
 
   child.unref();
   writeFileSync(input.pidPath, `${child.pid}\n`, { mode: 0o600 });
+  writeGatewayRuntimeRecord(input.runtimeRecordPath, {
+    ...input.runtimeRecord,
+    pid: child.pid,
+    startedAt: new Date().toISOString(),
+    version: 1,
+  });
   return { pid: child.pid };
 }
 

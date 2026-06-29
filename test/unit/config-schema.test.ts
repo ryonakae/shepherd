@@ -140,6 +140,34 @@ describe("Shepherd config schema", () => {
     expect(result.ok).toBe(false);
   });
 
+  test("accepts runtime path overrides", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        runtime: {
+          db_path: "data/state.db",
+          log_path: "logs/gateway.log",
+          pid_path: "gateway.pid",
+          socket_path: "gateway.sock",
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects unknown runtime path keys", () => {
+    const result = parseShepherdConfig(
+      minimalConfig({
+        runtime: {
+          db_path: "data/state.db",
+          extra: "nope",
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
   test("rejects literal Slack tokens in platform config", () => {
     const result = parseShepherdConfig(
       minimalConfig({

@@ -16,6 +16,12 @@ afterEach(() => {
 describe("Shepherd config loader", () => {
   test("loads a valid Pi runtime YAML config", () => {
     const path = writeTempConfig(`
+runtime:
+  db_path: data/state.db
+  socket_path: gateway.sock
+  pid_path: gateway.pid
+  log_path: logs/gateway.log
+
 gateway:
   pi:
     idle_timeout_ms: 600000
@@ -50,6 +56,8 @@ platforms:
       expect(result.value.gateway.pi?.idle_timeout_ms).toBe(600_000);
       expect(result.value.gateway.pi?.readiness_timeout_ms).toBe(10_000);
       expect(result.value.providers).toBeUndefined();
+      expect(result.value.runtime?.db_path).toBe("data/state.db");
+      expect(result.value.runtime?.socket_path).toBe("gateway.sock");
       expect(result.value.platforms?.slack?.bot_token_env).toBe("SLACK_BOT_TOKEN");
     }
   });

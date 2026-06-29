@@ -2,7 +2,15 @@ import { createConnection } from "node:net";
 
 const EXTENSION_VERSION = "0.1.0";
 const BINDING_ENTRY_TYPE = "shepherd.binding";
-const DEFAULT_SOCKET_PATH = "/tmp/shepherd.sock";
+const DEFAULT_HOME_NAME = ".shepherd";
+
+function defaultShepherdHome() {
+  return process.env.SHEPHERD_HOME || `${process.env.HOME || ""}/${DEFAULT_HOME_NAME}`;
+}
+
+function defaultSocketPath() {
+  return `${defaultShepherdHome().replace(/\/$/, "")}/gateway.sock`;
+}
 
 export default function shepherdPiExtension(pi) {
   const state = {
@@ -19,7 +27,7 @@ export default function shepherdPiExtension(pi) {
   pi.on("session_start", async (_event, ctx) => {
     state.binding = findBinding(ctx) ?? bindingFromEnvironment();
     const socketPath =
-      state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
+      state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? defaultSocketPath();
     state.client = new ShepherdGatewayClient(socketPath);
 
     try {
@@ -269,7 +277,7 @@ async function claimNext(pi, ctx, state) {
 async function ensureClient(state, ctx) {
   if (state.client) return;
   const socketPath =
-    state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
+    state.binding?.socketPath ?? process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? defaultSocketPath();
   state.client = new ShepherdGatewayClient(socketPath);
   await state.client.connect();
   const handshake = await state.client.request("pi.handshake", {
@@ -298,7 +306,7 @@ function bindingFromEnvironment() {
   return {
     gatewayId: process.env.SHEPHERD_GATEWAY_ID ?? "default",
     sessionId: process.env.SHEPHERD_SESSION_ID,
-    socketPath: process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? DEFAULT_SOCKET_PATH,
+    socketPath: process.env.SHEPHERD_GATEWAY_SOCKET_PATH ?? defaultSocketPath(),
   };
 }
 

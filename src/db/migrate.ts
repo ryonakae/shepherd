@@ -1,9 +1,9 @@
-import { env } from "node:process";
+import { resolveRuntime } from "@/config/runtime.js";
 import { applyMigrations } from "./apply-migrations.js";
 import { openSqlite } from "./client.js";
 
-const databasePath = env.SHEPHERD_DB_PATH ?? "shepherd.sqlite";
-const { sqlite } = openSqlite(databasePath);
+const runtime = resolveRuntime();
+const { sqlite } = openSqlite(runtime.paths.dbPath);
 
 applyMigrations(sqlite, { migrationsFolder: "drizzle" });
 sqlite.close();

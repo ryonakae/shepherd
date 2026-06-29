@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
-import { argv, env, exit, stdin, stdout } from "node:process";
+import { argv, exit, stdin, stdout } from "node:process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { resolveRuntime } from "@/config/runtime.js";
 import { encodeJsonLine } from "@/gateway/json-lines.js";
 import { ShepherdSessionClient } from "@/tui/client.js";
 
-export type ShepherdToolsCommand = { command: "serve"; socketPath: string } | { command: "help" };
+export type ShepherdToolsCommand = { command: "serve" } | { command: "help" };
 
 export type ShepherdToolsJsonRpcRequest = {
   id?: string | number | null;
@@ -16,21 +17,24 @@ export type ShepherdToolsJsonRpcRequest = {
 
 export type ShepherdToolsClient = Pick<ShepherdSessionClient, "close" | "listTools" | "runTool">;
 
-export function parseShepherdToolsArgs(
-  args: string[],
-  environment: NodeJS.ProcessEnv = env,
-): ShepherdToolsCommand {
+export function parseShepherdToolsArgs(args: string[]): ShepherdToolsCommand {
   const [first, ...rest] = args;
   if (first === "--help" || first === "-h" || first === "help") {
+    if (rest.length > 0) {
+      throw new Error(`Unknown argument: ${rest[0]}`);
+    }
     return { command: "help" };
   }
 
-  if (!first || first === "serve" || first.startsWith("--")) {
-    const parsed = parseOptions(first === "serve" ? rest : args);
-    return {
-      command: "serve",
-      socketPath: parsed.socket ?? environment.SHEPHERD_GATEWAY_SOCKET_PATH ?? "/tmp/shepherd.sock",
-    };
+  if (!first || first === "serve") {
+    if (rest.length > 0) {
+      throw new Error(`Unknown argument: ${rest[0]}`);
+    }
+    return { command: "serve" };
+  }
+
+  if (first.startsWith("--")) {
+    throw new Error(`Unknown argument: ${first}`);
   }
 
   throw new Error(`Unknown command: ${first}`);
@@ -38,7 +42,7 @@ export function parseShepherdToolsArgs(
 
 export function shepherdToolsHelpText(): string {
   return `Usage:
-  shepherd-tools [serve] [--socket <path>]
+  shepherd-tools [serve]
 
 Protocol:
   Send newline-delimited JSON-RPC frames on stdin and read responses from stdout.
@@ -106,29 +110,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const client = await ShepherdSessionClient.connect(command.socketPath);
+  const runtime = resolveRuntime();
+  const client = await ShepherdSessionClient.connect(runtime.paths.socketPath);
   try {
     await runShepherdToolsStdio({ client, input: stdin, output: stdout });
   } finally {
     await client.close();
   }
-}
-
-function parseOptions(args: string[]): Record<string, string | undefined> {
-  const options: Record<string, string | undefined> = {};
-
-  for (let index = 0; index < args.length; index += 2) {
-    const key = args[index];
-    const value = args[index + 1];
-
-    if (!key?.startsWith("--") || !value) {
-      throw new Error(`Invalid option: ${key ?? ""}`);
-    }
-
-    options[key.slice(2)] = value;
-  }
-
-  return options;
 }
 
 if (fileURLToPath(import.meta.url) === resolve(argv[1] ?? "")) {

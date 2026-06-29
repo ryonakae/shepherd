@@ -11,23 +11,17 @@ import { JsonLineDecoder } from "@/gateway/json-lines.js";
 
 describe("shepherd-tools", () => {
   test("parses stdio helper arguments", () => {
-    expect(
-      parseShepherdToolsArgs([], { SHEPHERD_GATEWAY_SOCKET_PATH: "/tmp/custom.sock" }),
-    ).toEqual({
-      command: "serve",
-      socketPath: "/tmp/custom.sock",
-    });
-    expect(parseShepherdToolsArgs(["--socket", "/tmp/shepherd.sock"])).toEqual({
-      command: "serve",
-      socketPath: "/tmp/shepherd.sock",
-    });
-    expect(parseShepherdToolsArgs(["serve", "--socket", "/tmp/shepherd.sock"])).toEqual({
-      command: "serve",
-      socketPath: "/tmp/shepherd.sock",
-    });
+    expect(parseShepherdToolsArgs([])).toEqual({ command: "serve" });
+    expect(parseShepherdToolsArgs(["serve"])).toEqual({ command: "serve" });
     expect(parseShepherdToolsArgs(["--help"])).toEqual({ command: "help" });
     expect(parseShepherdToolsArgs(["help"])).toEqual({ command: "help" });
+    expect(parseShepherdToolsArgs(["-h"])).toEqual({ command: "help" });
+    expect(() => parseShepherdToolsArgs(["--socket", "/tmp/shepherd.sock"])).toThrow(
+      "Unknown argument: --socket",
+    );
+    expect(shepherdToolsHelpText()).toContain("shepherd-tools [serve]");
     expect(shepherdToolsHelpText()).toContain("tool.run");
+    expect(shepherdToolsHelpText()).not.toContain("--socket");
   });
 
   test("handles tool list and run requests", async () => {

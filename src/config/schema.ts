@@ -76,6 +76,16 @@ const platformsSchema = Type.Object(
   { additionalProperties: true },
 );
 
+const runtimePathsSchema = Type.Object(
+  {
+    db_path: Type.Optional(Type.String({ minLength: 1 })),
+    log_path: Type.Optional(Type.String({ minLength: 1 })),
+    pid_path: Type.Optional(Type.String({ minLength: 1 })),
+    socket_path: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 export const shepherdConfigSchema = Type.Object(
   {
     agents: Type.Record(Type.String({ minLength: 1 }), agentProfileSchema, { minProperties: 1 }),
@@ -131,6 +141,7 @@ export const shepherdConfigSchema = Type.Object(
         minProperties: 1,
       }),
     ),
+    runtime: Type.Optional(runtimePathsSchema),
   },
   { additionalProperties: false },
 );
