@@ -111,21 +111,43 @@ export default function shepherdPiExtension(pi) {
     },
   });
 
+  pi.on("context", async (event) => ({
+    messages: event.messages.filter((message) => {
+      if (message?.customType === "shepherd.context") return false;
+      if (message?.role !== "user") return true;
+
+      const content = message.content;
+      if (typeof content === "string") {
+        return !content.includes("[SHEPHERD ATTACHED CONTEXT]");
+      }
+      if (Array.isArray(content)) {
+        return !content.some(
+          (part) => part?.type === "text" && part.text?.includes("[SHEPHERD ATTACHED CONTEXT]"),
+        );
+      }
+      return true;
+    }),
+  }));
+
   pi.on("before_agent_start", async (event) => {
     if (!state.sessionId) return;
     return {
       message: {
         customType: "shepherd.context",
         content: [
+          "[SHEPHERD ATTACHED CONTEXT]",
           `Shepherd session id: ${state.sessionId}`,
           state.currentRun ? `Current Shepherd gateway run id: ${state.currentRun.id}` : undefined,
-          "Use Shepherd tools for Herdr/session orchestration when useful. Keep visible replies natural.",
+          "Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation; Herdr owns terminal execution surfaces.",
+          "Prefer shepherd_* tools for Shepherd session inspection and Herdr orchestration when attached.",
+          "Use Shepherd logical tools instead of raw Herdr control unless the user explicitly asks for direct Herdr work.",
+          "Do not expose Shepherd session ids, Gateway run ids, socket paths, or owner ids unless the user asks.",
         ]
           .filter(Boolean)
           .join("\n"),
         display: false,
       },
-      systemPrompt: `${event.systemPrompt}\n\nWhen attached to Shepherd, platform metadata is provided as hidden context. Do not expose internal ids unless the user asks.`,
+      systemPrompt: `${event.systemPrompt}\n\nWhen attached to Shepherd, hidden Shepherd context may include platform and orchestration metadata. Treat that metadata as internal unless the user asks for it.`,
     };
   });
 
@@ -231,14 +253,17 @@ async function registerShepherdTools(pi, state) {
   if (!state.client || !state.sessionId) return;
   const result = await state.client.request("tool.list", {});
   for (const tool of result.tools ?? []) {
+    const registeredName = `shepherd_${tool.name}`;
     pi.registerTool({
-      name: `shepherd_${tool.name}`,
-      label: `Shepherd ${tool.name}`,
+      name: registeredName,
+      label: tool.label ?? `Shepherd ${tool.name}`,
       description: tool.description,
-      promptSnippet: `Delegate ${tool.name} to the attached Shepherd Gateway`,
-      promptGuidelines: [
-        `Use shepherd_${tool.name} when the task needs Shepherd or Herdr orchestration.`,
-      ],
+      promptSnippet:
+        tool.promptSnippet ?? `Use ${registeredName} through the attached Shepherd Gateway.`,
+      promptGuidelines:
+        Array.isArray(tool.promptGuidelines) && tool.promptGuidelines.length > 0
+          ? tool.promptGuidelines
+          : [`Use ${registeredName} when the task needs Shepherd session or Herdr orchestration.`],
       parameters: tool.inputSchema ?? { type: "object", additionalProperties: true },
       async execute(_toolCallId, params) {
         const output = await state.client.request("tool.run", {
