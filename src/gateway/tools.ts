@@ -12,7 +12,10 @@ export type LogicalToolDefinition<Input, Output> = {
   description: string;
   execute: (input: Input, context: LogicalToolContext) => Promise<Output> | Output;
   inputSchema: TSchema;
+  label?: string;
   name: string;
+  promptGuidelines?: string[];
+  promptSnippet?: string;
 };
 
 export type ToolPolicy = {

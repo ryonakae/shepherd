@@ -1198,7 +1198,10 @@ agents:
           description: "Echo a message",
           execute: (input: { text: string }) => ({ echoed: input.text }),
           inputSchema: Type.Object({ text: Type.String() }),
+          label: "Echo message",
           name: "echo",
+          promptGuidelines: ["Use shepherd_echo only when a test needs an echo response."],
+          promptSnippet: "Echo a message through the Shepherd Gateway.",
         });
         return new LogicalToolRunner({
           events,
@@ -1232,7 +1235,11 @@ agents:
         tools: [
           {
             description: "Echo a message",
+            inputSchema: expect.any(Object),
+            label: "Echo message",
             name: "echo",
+            promptGuidelines: ["Use shepherd_echo only when a test needs an echo response."],
+            promptSnippet: "Echo a message through the Shepherd Gateway.",
           },
         ],
       },

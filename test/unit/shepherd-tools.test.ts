@@ -28,7 +28,7 @@ describe("shepherd-tools", () => {
     const client = fakeClient();
 
     await expect(handleShepherdToolsRequest(client, { method: "tool.list" })).resolves.toEqual({
-      tools: [{ description: "Echo a message", inputSchema: {}, name: "echo" }],
+      tools: [echoToolDefinition()],
     });
     await expect(
       handleShepherdToolsRequest(client, {
@@ -66,7 +66,7 @@ describe("shepherd-tools", () => {
       {
         id: "1",
         result: {
-          tools: [{ description: "Echo a message", inputSchema: {}, name: "echo" }],
+          tools: [echoToolDefinition()],
         },
       },
       {
@@ -81,11 +81,22 @@ describe("shepherd-tools", () => {
   });
 });
 
+function echoToolDefinition() {
+  return {
+    description: "Echo a message",
+    inputSchema: {},
+    label: "Echo message",
+    name: "echo",
+    promptGuidelines: ["Use shepherd_echo only when a test needs an echo response."],
+    promptSnippet: "Echo a message through the Shepherd Gateway.",
+  };
+}
+
 function fakeClient(): ShepherdToolsClient {
   return {
     async close() {},
     async listTools() {
-      return { tools: [{ description: "Echo a message", inputSchema: {}, name: "echo" }] };
+      return { tools: [echoToolDefinition()] };
     },
     async runTool(input) {
       return { output: { echoed: (input.input as { text: string }).text } };

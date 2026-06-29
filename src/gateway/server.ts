@@ -1363,7 +1363,12 @@ export class ShepherdGatewayServer {
         tools: this.#logicalTools.list().map((tool) => ({
           description: tool.description,
           inputSchema: tool.inputSchema,
+          ...(tool.label !== undefined ? { label: tool.label } : {}),
           name: tool.name,
+          ...(tool.promptGuidelines !== undefined
+            ? { promptGuidelines: tool.promptGuidelines }
+            : {}),
+          ...(tool.promptSnippet !== undefined ? { promptSnippet: tool.promptSnippet } : {}),
         })),
       },
     });

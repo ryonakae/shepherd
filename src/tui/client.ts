@@ -66,7 +66,10 @@ export type RespondApprovalInput = {
 export type ToolDefinitionWireRecord = {
   description: string;
   inputSchema: unknown;
+  label?: string;
   name: string;
+  promptGuidelines?: string[];
+  promptSnippet?: string;
 };
 
 export type RunToolInput = {
