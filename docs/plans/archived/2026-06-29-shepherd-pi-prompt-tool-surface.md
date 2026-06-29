@@ -8,13 +8,14 @@
 
 **Tech Stack:** TypeScript ESM with NodeNext, TypeBox logical tool schemas, Vitest, Biome, Pi extension JavaScript package, Pi Agent Skills frontmatter.
 
-**Status:** In progress
+**Status:** Done
 
 **Progress:**
-- In progress — implementation has started with Task 1 after `/dig` decisions were captured.
+- Done — Shepherd skill frontmatter, optional skill guidance, Gateway logical tool prompt metadata, canonical Herdr tool names, `shepherd-pi` hidden context cleanup, and dynamic Pi tool metadata registration are implemented.
+- Verified — `pnpm check`, `pnpm build`, `pi install ./packages/shepherd-pi`, Gateway restart/status, `shepherd-tools` `tool.list` metadata inspection, and CLI send/audit/rename/watch dogfooding passed.
 
 **Next steps:**
-- Complete Task 1, then proceed task-by-task with the targeted tests listed below.
+- Archived for historical reference.
 
 ## Global Constraints
 
