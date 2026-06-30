@@ -6,6 +6,7 @@ import {
   SlackStreamDelivery,
   slackTargetId,
 } from "@/platforms/slack/delivery.js";
+import { SlackToolProgressDelivery } from "@/platforms/slack/tool-progress.js";
 
 describe("SlackDeliveryAdapter", () => {
   test("posts event text to a Slack thread", async () => {
@@ -147,6 +148,71 @@ describe("SlackStreamDelivery", () => {
       },
     ]);
     expect(stream.hasFinished("run-1")).toBe(true);
+  });
+});
+
+describe("SlackToolProgressDelivery", () => {
+  test("posts and updates compact sanitized tool progress", async () => {
+    const calls: unknown[] = [];
+    const progress = new SlackToolProgressDelivery({
+      client: {
+        chat: {
+          async postMessage(params: unknown) {
+            calls.push({ method: "postMessage", params });
+            return { ts: "1700000001.000003" };
+          },
+          async update(params: unknown) {
+            calls.push({ method: "update", params });
+          },
+        },
+      },
+      mode: "compact",
+    });
+
+    const targetId = slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" });
+    await progress.recordToolProgress({
+      piTurnId: "turn-1",
+      status: "started",
+      targetId,
+      text: "running token=abc",
+      toolName: "bash",
+    });
+    await progress.recordToolProgress({
+      durationMs: 12,
+      piTurnId: "turn-1",
+      status: "completed",
+      targetId,
+      text: "done",
+      toolName: "bash",
+    });
+    await progress.completeToolProgress({ piTurnId: "turn-1", targetId });
+
+    expect(calls).toEqual([
+      {
+        method: "postMessage",
+        params: {
+          channel: "C123",
+          text: "Tool progress\n… bash: running token=[redacted]",
+          thread_ts: "1700000000.000001",
+        },
+      },
+      {
+        method: "update",
+        params: {
+          channel: "C123",
+          text: "Tool progress\n✓ bash: done (12ms)",
+          ts: "1700000001.000003",
+        },
+      },
+      {
+        method: "update",
+        params: {
+          channel: "C123",
+          text: "Tool progress\n✓ bash: done (12ms)",
+          ts: "1700000001.000003",
+        },
+      },
+    ]);
   });
 });
 

@@ -173,6 +173,73 @@ describe("createPlatformRuntime", () => {
     ]);
   });
 
+  test("delivers runtime tool progress to Slack bindings", async () => {
+    const { events, sqlite } = openHarness();
+    const app = new FakeSlackApp();
+    const posts: unknown[] = [];
+    let sessionId = "";
+    const runtime = createPlatformRuntime({
+      config: minimalConfig({
+        platforms: {
+          slack: {
+            allowed_users: ["U123"],
+            app_token_env: "SLACK_APP_TOKEN",
+            bot_token_env: "SLACK_BOT_TOKEN",
+            streaming: { tool_progress: "compact" },
+          },
+        },
+      }),
+      createSlackApp() {
+        return app;
+      },
+      createSlackWebClient() {
+        return fakeSlackWebClient(posts);
+      },
+      environment: {
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+      },
+      events,
+      async receiveUserMessage(input) {
+        sessionId = input.sessionId;
+        return { event: appendReceivedUserMessage(events, input) };
+      },
+      sqlite,
+    });
+
+    await runtime.start();
+    await app.emitMessage({
+      channel: "C123",
+      team: "T123",
+      text: "start",
+      ts: "1700000001.000001",
+      type: "message",
+      user: "U123",
+    });
+
+    await runtime.runtimeDelivery?.recordToolProgress({
+      piTurnId: "turn-1",
+      sessionId,
+      status: "started",
+      text: "running",
+      toolName: "bash",
+    });
+    await runtime.runtimeDelivery?.completeToolProgress({ piTurnId: "turn-1", sessionId });
+
+    expect(posts).toEqual([
+      {
+        channel: "C123",
+        text: "Tool progress\n… bash: running",
+        thread_ts: "1700000001.000001",
+      },
+      {
+        channel: "C123",
+        text: "Tool progress\n… bash: running",
+        ts: "1700000002.000001",
+      },
+    ]);
+  });
+
   test("applies Slack platform allowlists before receiving messages", async () => {
     const { events, sqlite } = openHarness();
     const app = new FakeSlackApp();
@@ -242,6 +309,9 @@ function fakeSlackWebClient(posts: unknown[] = []) {
       async postMessage(params: unknown): Promise<{ ts: string }> {
         posts.push(params);
         return { ts: "1700000002.000001" };
+      },
+      async update(params: unknown): Promise<void> {
+        posts.push(params);
       },
     },
   };

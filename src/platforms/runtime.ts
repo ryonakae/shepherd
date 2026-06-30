@@ -16,6 +16,7 @@ import {
   type SlackBoltLikeApp,
   SlackSocketModeAdapter,
 } from "./slack/socket-mode.js";
+import { SlackToolProgressDelivery } from "./slack/tool-progress.js";
 
 export type PiRuntimeDelivery = {
   completeToolProgress(input: { piTurnId: string; sessionId: string }): Promise<void>;
@@ -131,6 +132,11 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
       editIntervalMs: slack.streaming?.edit_interval_ms ?? 750,
     },
   });
+  const slackToolProgressMode = slack.streaming?.tool_progress ?? "off";
+  const slackToolProgress =
+    slackToolProgressMode === "off"
+      ? undefined
+      : new SlackToolProgressDelivery({ client, mode: slackToolProgressMode });
   const runtimeDelivery: PiRuntimeDelivery | undefined =
     slack.streaming?.enabled === false
       ? undefined
@@ -153,9 +159,45 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
           hasFinished(streamId) {
             return slackStream.hasFinished(streamId);
           },
-          async recordToolProgress() {},
-          async completeToolProgress() {},
-          async failToolProgress() {},
+          async recordToolProgress(input) {
+            for (const binding of bindings.listForSession(input.sessionId)) {
+              if (binding.platform !== "slack") {
+                continue;
+              }
+              await slackToolProgress?.recordToolProgress({
+                ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+                ...(input.preview !== undefined ? { preview: input.preview } : {}),
+                piTurnId: input.piTurnId,
+                status: input.status,
+                targetId: `${binding.spaceId}:${binding.threadId}`,
+                text: input.text,
+                toolName: input.toolName,
+              });
+            }
+          },
+          async completeToolProgress(input) {
+            for (const binding of bindings.listForSession(input.sessionId)) {
+              if (binding.platform !== "slack") {
+                continue;
+              }
+              await slackToolProgress?.completeToolProgress({
+                piTurnId: input.piTurnId,
+                targetId: `${binding.spaceId}:${binding.threadId}`,
+              });
+            }
+          },
+          async failToolProgress(input) {
+            for (const binding of bindings.listForSession(input.sessionId)) {
+              if (binding.platform !== "slack") {
+                continue;
+              }
+              await slackToolProgress?.failToolProgress({
+                message: input.message,
+                piTurnId: input.piTurnId,
+                targetId: `${binding.spaceId}:${binding.threadId}`,
+              });
+            }
+          },
         };
 
   return {
