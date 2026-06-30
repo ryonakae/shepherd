@@ -2,24 +2,19 @@ import { describe, expect, test } from "vitest";
 import { HerdrProgressSubscriptionManager } from "@/herdr/progress-subscriptions.js";
 
 describe("HerdrProgressSubscriptionManager", () => {
-  test("starts one Herdr event wait loop per binding and forwards progress", async () => {
+  test("starts one Herdr event subscription per binding and forwards progress", async () => {
     const received: unknown[] = [];
-    const waitParams: unknown[] = [];
+    const subscribeParams: unknown[] = [];
     const manager = new HerdrProgressSubscriptionManager({
-      pollTimeoutMs: 1000,
       receiveProgress: async (input) => {
         received.push(input);
       },
       sourceForSession() {
-        let emitted = false;
         return {
-          async waitForEvent(params) {
-            waitParams.push(params);
-            if (emitted) {
-              return new Promise(() => undefined);
-            }
-            emitted = true;
-            return { id: "evt-1", type: "agent.status" };
+          async *subscribeEvents(params) {
+            subscribeParams.push(params);
+            yield { id: "evt-1", type: "agent.status" };
+            await new Promise(() => undefined);
           },
         };
       },
@@ -43,7 +38,7 @@ describe("HerdrProgressSubscriptionManager", () => {
     await waitFor(() => received.length === 1);
     manager.close();
 
-    expect(waitParams[0]).toEqual({ timeout_ms: 1000, workspace_id: "w1" });
+    expect(subscribeParams[0]).toEqual({ workspace_id: "w1" });
     expect(received).toEqual([
       {
         herdrSessionName: "shepherd-api",

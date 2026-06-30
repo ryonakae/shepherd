@@ -448,6 +448,7 @@ function unusedHerdrMethods(): Omit<HerdrControlClient, "createTab" | "createWor
     async waitForAgent() {
       throw new Error("not used");
     },
+    async *subscribeEvents() {},
     async waitForEvent() {
       throw new Error("not used");
     },

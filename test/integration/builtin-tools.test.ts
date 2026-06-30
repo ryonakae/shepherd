@@ -394,6 +394,7 @@ function openRunner(options: { allowedRoots?: string[] } = {}): {
       async waitForAgent() {
         return { status: "idle" };
       },
+      async *subscribeEvents() {},
       async waitForEvent() {
         return { type: "agent.status" };
       },

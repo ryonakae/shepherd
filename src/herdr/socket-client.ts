@@ -15,12 +15,19 @@ type PendingRequest = {
 type HerdrResponse = {
   error?: { message?: string };
   id?: string;
+  method?: string;
+  params?: unknown;
   result?: unknown;
+};
+
+type EventSubscriber = {
+  push(event: unknown): void;
 };
 
 export class HerdrSocketClient {
   readonly #decoder = new JsonLineDecoder();
   readonly #pending = new Map<HerdrRequestId, PendingRequest>();
+  readonly #subscribers = new Set<EventSubscriber>();
   readonly #socket: Socket;
   #nextId = 1;
 
@@ -167,10 +174,43 @@ export class HerdrSocketClient {
     return this.request("events.wait", params);
   }
 
+  async *subscribeEvents(
+    params: Record<string, unknown> = {},
+    options: { signal?: AbortSignal } = {},
+  ): AsyncIterable<unknown> {
+    const queue: unknown[] = [];
+    let wake: (() => void) | undefined;
+    const subscriber: EventSubscriber = {
+      push(event) {
+        queue.push(event);
+        wake?.();
+        wake = undefined;
+      },
+    };
+    this.#subscribers.add(subscriber);
+    try {
+      await this.request("events.subscribe", params);
+      while (!options.signal?.aborted) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+            options.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        }
+        while (queue.length > 0) {
+          yield queue.shift();
+        }
+      }
+    } finally {
+      this.#subscribers.delete(subscriber);
+    }
+  }
+
   #handleData(chunk: Buffer): void {
     for (const message of this.#decoder.push(chunk.toString("utf8"))) {
       const response = message as HerdrResponse;
       if (!response.id) {
+        this.#publishNotification(response);
         continue;
       }
 
@@ -189,10 +229,25 @@ export class HerdrSocketClient {
     }
   }
 
+  #publishNotification(message: HerdrResponse): void {
+    const event = notificationEvent(message);
+    for (const subscriber of this.#subscribers) {
+      subscriber.push(event);
+    }
+  }
+
   #rejectAll(error: Error): void {
     for (const pending of this.#pending.values()) {
       pending.reject(error);
     }
     this.#pending.clear();
   }
+}
+
+function notificationEvent(message: HerdrResponse): unknown {
+  if (typeof message.params === "object" && message.params !== null) {
+    const params = message.params as { event?: unknown };
+    return params.event ?? message.params;
+  }
+  return message.result ?? message;
 }

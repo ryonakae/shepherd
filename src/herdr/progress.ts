@@ -1,7 +1,8 @@
 import type { EventRecord, EventStore } from "@/db/event-store.js";
 
 export type HerdrEventSource = {
-  waitForEvent(params?: Record<string, unknown>): Promise<unknown>;
+  subscribeEvents(params?: Record<string, unknown>, options?: { signal?: AbortSignal }): AsyncIterable<unknown>;
+  waitForEvent?(params?: Record<string, unknown>): Promise<unknown>;
 };
 
 export type HerdrProgressAdapterOptions = {
@@ -44,6 +45,9 @@ export class HerdrProgressAdapter {
   }
 
   async pollOnce(params: Record<string, unknown> = {}): Promise<EventRecord> {
+    if (!this.#source.waitForEvent) {
+      throw new Error("Herdr event source does not support waitForEvent");
+    }
     const rawEvent = await this.#source.waitForEvent({
       ...params,
       ...(this.#waitTimeoutMs !== undefined ? { timeout_ms: this.#waitTimeoutMs } : {}),

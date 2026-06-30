@@ -25,6 +25,7 @@ describe("HerdrProgressAdapter", () => {
       herdrSessionName: "shepherd-api",
       sessionId: session.id,
       source: {
+        async *subscribeEvents() {},
         async waitForEvent(params) {
           calls.push(params ?? {});
           return {
@@ -78,6 +79,7 @@ describe("HerdrProgressAdapter", () => {
       herdrSessionName: "shepherd-api",
       sessionId: session.id,
       source: {
+        async *subscribeEvents() {},
         async waitForEvent() {
           return { id: "evt-1", type: "pane.changed" };
         },

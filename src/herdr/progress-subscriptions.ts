@@ -16,7 +16,6 @@ export type HerdrProgressSubscriptionInput = {
 
 export type HerdrProgressSubscriptionManagerOptions = {
   onError?: (error: unknown, subscription: HerdrProgressSubscriptionInput) => void;
-  pollTimeoutMs?: number;
   receiveProgress(input: HerdrProgressReceiverInput): Promise<unknown>;
   retryDelayMs?: number;
   sourceForSession(herdrSessionName: string): HerdrEventSource;
@@ -31,14 +30,12 @@ export class HerdrProgressSubscriptionManager {
   readonly #onError:
     | ((error: unknown, subscription: HerdrProgressSubscriptionInput) => void)
     | undefined;
-  readonly #pollTimeoutMs: number;
   readonly #receiveProgress: (input: HerdrProgressReceiverInput) => Promise<unknown>;
   readonly #retryDelayMs: number;
   readonly #sourceForSession: (herdrSessionName: string) => HerdrEventSource;
 
   constructor(options: HerdrProgressSubscriptionManagerOptions) {
     this.#onError = options.onError;
-    this.#pollTimeoutMs = options.pollTimeoutMs ?? 30_000;
     this.#receiveProgress = options.receiveProgress;
     this.#retryDelayMs = options.retryDelayMs ?? 1_000;
     this.#sourceForSession = options.sourceForSession;
@@ -80,19 +77,20 @@ export class HerdrProgressSubscriptionManager {
   ): Promise<void> {
     while (!signal.aborted) {
       try {
-        const rawEvent = await source.waitForEvent({
-          timeout_ms: this.#pollTimeoutMs,
-          workspace_id: input.workspaceId,
-        });
-        if (signal.aborted) {
-          break;
+        for await (const rawEvent of source.subscribeEvents(
+          { workspace_id: input.workspaceId },
+          { signal },
+        )) {
+          if (signal.aborted) {
+            break;
+          }
+          await this.#receiveProgress({
+            herdrSessionName: input.herdrSessionName,
+            rawEvent,
+            sessionId: input.sessionId,
+            workspaceId: input.workspaceId,
+          });
         }
-        await this.#receiveProgress({
-          herdrSessionName: input.herdrSessionName,
-          rawEvent,
-          sessionId: input.sessionId,
-          workspaceId: input.workspaceId,
-        });
       } catch (error) {
         if (signal.aborted) {
           break;

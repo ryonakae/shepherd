@@ -109,6 +109,36 @@ describe("HerdrSocketClient", () => {
     ]);
   });
 
+  test("subscribes to Herdr events and yields socket notifications", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(encodeJsonLine({ id: request.id, result: { subscribed: true } }));
+      socket.write(
+        encodeJsonLine({
+          method: "events.event",
+          params: { event: { id: "evt-1", type: "pane.agent_status_changed" } },
+        }),
+      );
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    const controller = new AbortController();
+    const iterator = client.subscribeEvents(
+      { events: ["pane.agent_status_changed"], workspace_id: "w1" },
+      { signal: controller.signal },
+    )[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { id: "evt-1", type: "pane.agent_status_changed" },
+    });
+    controller.abort();
+    client.close();
+
+    expect(requests[0]).toMatchObject({
+      method: "events.subscribe",
+      params: { events: ["pane.agent_status_changed"], workspace_id: "w1" },
+    });
+  });
+
   test("uses list/get/focus socket methods for Herdr inspection", async () => {
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
       socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));

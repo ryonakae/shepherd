@@ -66,6 +66,7 @@ export type HerdrControlClient = Pick<
   | "sendAgentMessage"
   | "splitPane"
   | "startAgent"
+  | "subscribeEvents"
   | "waitForAgent"
   | "waitForEvent"
   | "waitForOutput"
