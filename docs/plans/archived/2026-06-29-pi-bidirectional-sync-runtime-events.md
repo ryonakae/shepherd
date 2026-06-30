@@ -2,7 +2,7 @@
 
 ## Status
 
-Archived. Superseded by [`../2026-06-30-pi-runtime-gateway-rebuild.md`](../2026-06-30-pi-runtime-gateway-rebuild.md).
+Archived. Superseded by [`2026-06-30-pi-runtime-gateway-rebuild.md`](2026-06-30-pi-runtime-gateway-rebuild.md).
 
 This plan captured the first `pi.*` runtime event design, but the target architecture changed during the 2026-06-30 design pass: `gateway_runs` became `pi_turns`, `gateway.message` became `assistant.message`, legacy provider runner compatibility was dropped, and the DB migration history is reset.
 
