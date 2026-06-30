@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
-import { SessionSummaryStore } from "@/db/session-summary.js";
+import { PiTurnStore } from "@/db/pi-turns.js";
 import { WorkingContextStore } from "@/db/working-contexts.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
@@ -11,24 +11,16 @@ import {
   HerdrProgressSubscriptionManager,
 } from "@/herdr/progress-subscriptions.js";
 import { createBuiltinToolRegistry } from "./builtin-tools.js";
-import { ExternalGatewayRunQueue } from "./external-run-queue.js";
 import { PiSessionMetadataStore } from "./pi-sessions.js";
-import {
-  createGatewayProviderRouterFromConfig,
-  type GatewayProviderFactoryDependencies,
-} from "./provider-factory.js";
-import { GatewayRunner } from "./runner.js";
-import { GatewaySummaryUpdater } from "./summary.js";
-import { buildGatewaySystemPrompt } from "./system-prompt.js";
+import { PiTurnQueue } from "./pi-turn-queue.js";
 import { LogicalToolCallStore, LogicalToolRunner } from "./tools.js";
-import { GatewayRunStore, GatewayTurnQueue } from "./turn-queue.js";
 import { WorkingContextResolver } from "./working-contexts.js";
 
 export type GatewayRuntimeHerdrClient = HerdrControlClient & {
   close(): void;
 };
 
-export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
+export type GatewayRuntimeOptions = {
   config: ShepherdConfig;
   createHerdrClient?: (herdrSessionName: string) => GatewayRuntimeHerdrClient;
   events: EventStore;
@@ -39,9 +31,9 @@ export type GatewayRuntimeOptions = GatewayProviderFactoryDependencies & {
 
 export type GatewayRuntime = {
   close(): Promise<void>;
-  runner?: GatewayTurnQueue;
-  runs: ExternalGatewayRunQueue;
+  herdrProgress: HerdrProgressSubscriptionManager;
   tools: LogicalToolRunner;
+  turns: PiTurnQueue;
 };
 
 export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRuntime {
@@ -53,16 +45,14 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
           herdrSessionName,
         })),
   });
-  const herdrProgressSubscriptions = options.receiveHerdrProgress
-    ? new HerdrProgressSubscriptionManager({
-        receiveProgress: options.receiveHerdrProgress,
-        sourceForSession: (herdrSessionName) => herdrClients.get(herdrSessionName),
-      })
-    : undefined;
+  const herdrProgress = new HerdrProgressSubscriptionManager({
+    receiveProgress: options.receiveHerdrProgress ?? (async () => undefined),
+    sourceForSession: (herdrSessionName) => herdrClients.get(herdrSessionName),
+  });
   const herdr = new HerdrOrchestrator({
     clientForSession: (herdrSessionName) => herdrClients.get(herdrSessionName),
     onWorkspaceBound: (binding) => {
-      herdrProgressSubscriptions?.subscribe(binding);
+      herdrProgress.subscribe(binding);
     },
     sqlite: options.sqlite,
   });
@@ -81,40 +71,16 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     registry,
     toolCalls: new LogicalToolCallStore(options.sqlite),
   });
-  const runStore = new GatewayRunStore(options.sqlite);
-  const provider = hasLegacyProviderConfig(options.config)
-    ? createGatewayProviderRouterFromConfig(options.config, {
-        ...(options.createCodexProvider !== undefined
-          ? { createCodexProvider: options.createCodexProvider }
-          : {}),
-        ...(options.generateText !== undefined ? { generateText: options.generateText } : {}),
-        system: buildGatewaySystemPrompt({
-          agents: options.config.agents,
-          defaultAgent: options.config.default_agent,
-        }),
-      })
-    : undefined;
-  const runner = provider
-    ? new GatewayRunner({
-        events: options.events,
-        provider,
-        summaryUpdater: new GatewaySummaryUpdater({
-          events: options.events,
-          provider,
-          summaries: new SessionSummaryStore(options.sqlite),
-        }),
-        tools,
-      })
-    : undefined;
+  const turnStore = new PiTurnStore(options.sqlite);
 
   return {
     async close() {
-      herdrProgressSubscriptions?.close();
-      await provider?.close();
+      herdrProgress.close();
       herdrClients.closeAll();
     },
-    ...(runner ? { runner: new GatewayTurnQueue({ runStore, runner }) } : {}),
-    runs: new ExternalGatewayRunQueue({
+    herdrProgress,
+    tools,
+    turns: new PiTurnQueue({
       events: options.events,
       ...(options.piSessionDir !== undefined
         ? {
@@ -124,12 +90,7 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
             }),
           }
         : {}),
-      runStore,
+      turnStore,
     }),
-    tools,
   };
-}
-
-function hasLegacyProviderConfig(config: ShepherdConfig): boolean {
-  return Boolean(config.gateway.default_provider && config.gateway.model && config.providers);
 }

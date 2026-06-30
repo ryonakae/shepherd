@@ -55,37 +55,13 @@ platforms:
     if (result.ok) {
       expect(result.value.gateway.pi?.idle_timeout_ms).toBe(600_000);
       expect(result.value.gateway.pi?.readiness_timeout_ms).toBe(10_000);
-      expect(result.value.providers).toBeUndefined();
       expect(result.value.runtime?.db_path).toBe("data/state.db");
       expect(result.value.runtime?.socket_path).toBe("gateway.sock");
       expect(result.value.platforms?.slack?.bot_token_env).toBe("SLACK_BOT_TOKEN");
     }
   });
 
-  test("rejects API key literals in legacy provider config", () => {
-    const result = parseShepherdConfig({
-      agents: {
-        implementer: {
-          command: "codex",
-        },
-      },
-      default_agent: "implementer",
-      gateway: {
-        default_provider: "openai",
-        model: "gpt-5.3",
-      },
-      providers: {
-        openai: {
-          api_key: "sk-secret",
-          type: "openai",
-        },
-      },
-    });
-
-    expect(result.ok).toBe(false);
-  });
-
-  test("rejects a default gateway provider that is not configured", () => {
+  test("rejects removed provider config fields", () => {
     const result = parseShepherdConfig({
       agents: {
         implementer: {
@@ -96,6 +72,7 @@ platforms:
       gateway: {
         default_provider: "codex",
         model: "gpt-5.3-codex",
+        pi: {},
       },
       providers: {
         openai: {
@@ -106,6 +83,9 @@ platforms:
     });
 
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((error) => error.keyword === "additionalProperties")).toBe(true);
+    }
   });
 
   test("returns YAML parse errors without throwing", () => {

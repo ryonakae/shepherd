@@ -1,14 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LanguageModel, ToolSet } from "ai";
 import { afterEach, describe, expect, test } from "vitest";
 import type { ShepherdConfig } from "@/config/schema.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
-import type { HerdrControlClient } from "@/herdr/orchestrator.js";
 
 const tempDirs: string[] = [];
 
@@ -19,145 +17,62 @@ afterEach(() => {
 });
 
 describe("createGatewayRuntime", () => {
-  test("wires config, Codex provider, Herdr clients, and builtin tools", async () => {
+  test("returns provider-free Pi runtime surfaces", async () => {
     const { events, sqlite } = openMigratedDatabase();
-    const session = events.createSession({ id: "session-abcdef123456" });
-    const closed: string[] = [];
-    const progressEvents: unknown[] = [];
-    const startedAgents: unknown[] = [];
     const runtime = createGatewayRuntime({
       config: openConfig(),
-      createCodexProvider() {
-        const provider = () => "codex-model" as unknown as LanguageModel;
-        provider.close = async () => {
-          closed.push("codex");
-        };
-        return provider;
-      },
-      createHerdrClient(sessionName) {
-        return openFakeHerdrClient(sessionName, { closed, progressEvents, startedAgents });
-      },
       events,
-      generateText: async (options) => {
-        await executeAiTool(options.tools ?? {}, "herdr_start_agent", {
-          agentName: "claude-impl",
-          agentProfile: "claude",
-          taskSlug: "Implement Runtime",
-          workingContextSlug: "main",
-          workingDirectory: "/repo",
-        });
-        return { text: "Started Claude in Herdr." };
-      },
-      receiveHerdrProgress: async (input) => {
-        progressEvents.push(input);
-      },
+      receiveHerdrProgress: async () => undefined,
       sqlite,
     });
 
-    await expect(
-      requireGatewayRunner(runtime).runTurn({
-        messages: [{ content: "start implementation", role: "user" }],
-        sessionId: session.id,
-      }),
-    ).resolves.toEqual({ text: "Started Claude in Herdr." });
-    await waitFor(() => progressEvents.length === 1);
+    expect(Object.keys(runtime).sort()).toEqual(["close", "herdrProgress", "tools", "turns"]);
+    expect(runtime.tools.list().map((tool) => tool.name)).toContain("herdr_start_agent");
+    expect(runtime.tools.list().map((tool) => tool.name)).not.toContain("gateway_provider");
 
     await runtime.close();
-
-    expect(startedAgents).toEqual([
-      {
-        args: ["--dangerously-skip-permissions"],
-        command: "claude",
-        cwd: "/repo",
-        name: "claude-impl",
-        tab_id: "w1:agents",
-        workspace_id: "w1",
-      },
-    ]);
-    expect(progressEvents).toEqual([
-      {
-        herdrSessionName: "shepherd-main",
-        rawEvent: {
-          data: { agent: "claude-impl", status: "idle" },
-          id: "evt-1",
-          type: "agent.status",
-        },
-        sessionId: session.id,
-        workspaceId: "w1",
-      },
-    ]);
-    expect(closed).toEqual(["codex", "shepherd-main"]);
   });
 
-  test("routes gateway turns to configured provider overrides", async () => {
+  test("queues Pi turns without provider/model config", async () => {
     const { events, sqlite } = openMigratedDatabase();
     const session = events.createSession({ id: "session-abcdef123456" });
-    const generatedModels: unknown[] = [];
-    const config = openConfig();
-    configuredProviders(config).alt = {
-      auth_source: "codex_cli",
-      mode: "app_server",
-      type: "codex_cli",
-    };
+    const userEvent = events.appendEvent({
+      payload: { text: "start implementation" },
+      sessionId: session.id,
+      type: "user.message",
+    });
     const runtime = createGatewayRuntime({
-      config,
-      createCodexProvider() {
-        const provider = (modelId: string) => modelId as unknown as LanguageModel;
-        provider.close = async () => {};
-        return provider;
-      },
-      createHerdrClient(sessionName) {
-        return openFakeHerdrClient(sessionName, {
-          closed: [],
-          progressEvents: [],
-          startedAgents: [],
-        });
-      },
+      config: openConfig(),
       events,
-      generateText: async (options) => {
-        generatedModels.push(options.model);
-        return { text: "Using override." };
-      },
+      piSessionDir: join(tempDirs[0] ?? tmpdir(), "pi-sessions"),
       sqlite,
     });
 
-    await expect(
-      requireGatewayRunner(runtime).runTurn({
-        messages: [{ content: "use another provider", role: "user" }],
-        providerOverride: { model: "gpt-5.3-alt", provider: "alt" },
-        sessionId: session.id,
-      }),
-    ).resolves.toEqual({ text: "Using override." });
-    await runtime.close();
+    const queued = runtime.turns.queueTurn({
+      sessionId: session.id,
+      triggeringEventId: userEvent.id,
+    });
 
-    expect(generatedModels).toEqual(["gpt-5.3-alt"]);
+    expect(queued.event).toMatchObject({
+      payload: {
+        piTurnId: queued.turn.id,
+        triggeringEventId: userEvent.id,
+      },
+      type: "pi.turn.queued",
+    });
+    expect(runtime.turns.claimNextTurn({ ownerId: "owner-1", sessionId: session.id })).toMatchObject(
+      {
+        turn: {
+          id: queued.turn.id,
+          piTurnId: queued.turn.id,
+          userText: "start implementation",
+        },
+      },
+    );
+
+    await runtime.close();
   });
 });
-
-function requireGatewayRunner(runtime: ReturnType<typeof createGatewayRuntime>) {
-  if (!runtime.runner) {
-    throw new Error("Expected legacy gateway runner to be configured");
-  }
-
-  return runtime.runner;
-}
-
-function configuredProviders(config: ShepherdConfig): NonNullable<ShepherdConfig["providers"]> {
-  if (!config.providers) {
-    throw new Error("Expected legacy providers to be configured");
-  }
-
-  return config.providers;
-}
-
-function executeAiTool(tools: ToolSet, name: string, input: unknown): Promise<unknown> {
-  const candidate = tools[name] as { execute?: (input: unknown) => Promise<unknown> } | undefined;
-  if (!candidate?.execute) {
-    throw new Error(`Missing AI SDK tool: ${name}`);
-  }
-
-  return candidate.execute(input);
-}
 
 function openConfig(): ShepherdConfig {
   return {
@@ -166,114 +81,12 @@ function openConfig(): ShepherdConfig {
     },
     default_agent: "claude",
     gateway: {
-      default_provider: "codex",
-      model: "gpt-5.3-codex",
-    },
-    providers: {
-      codex: {
-        auth_source: "codex_cli",
-        mode: "app_server",
-        type: "codex_cli",
+      pi: {
+        idle_timeout_ms: 600_000,
+        readiness_timeout_ms: 10_000,
       },
     },
   };
-}
-
-function openFakeHerdrClient(
-  sessionName: string,
-  state: { closed: string[]; progressEvents: unknown[]; startedAgents: unknown[] },
-): HerdrControlClient & { close(): void } {
-  let sentProgress = false;
-  return {
-    close() {
-      state.closed.push(sessionName);
-    },
-    async createTab(params) {
-      return { tab_id: `w1:${params.label}` };
-    },
-    async createWorkspace() {
-      return { workspace_id: "w1" };
-    },
-    async focusAgent() {
-      return { focused: true };
-    },
-    async focusWorkspace() {
-      return { focused: true };
-    },
-    async getAgent(params) {
-      return { target: params.target };
-    },
-    async getPane(params) {
-      return { pane_id: params.pane_id };
-    },
-    async getTab(params) {
-      return { tab_id: params.tab_id };
-    },
-    async getWorkspace(params) {
-      return { workspace_id: params.workspace_id };
-    },
-    async listAgents() {
-      return [{ target: "claude" }];
-    },
-    async listPanes() {
-      return [{ pane_id: "w1:p1" }];
-    },
-    async listTabs() {
-      return [{ tab_id: "w1:agents" }];
-    },
-    async listWorkspaces() {
-      return [{ workspace_id: "w1" }];
-    },
-    async readPane() {
-      return { text: "pane output" };
-    },
-    async readAgent() {
-      return { text: "ready" };
-    },
-    async runPaneCommand() {
-      return { ran: true };
-    },
-    async sendPaneText() {
-      return { sentText: true };
-    },
-    async sendAgentMessage() {
-      return { sent: true };
-    },
-    async splitPane() {
-      return { pane_id: "w1:p2" };
-    },
-    async startAgent(params) {
-      state.startedAgents.push(params);
-      return { pane_id: "w1:p1" };
-    },
-    async waitForAgent() {
-      return { status: "idle" };
-    },
-    async waitForEvent() {
-      if (sentProgress) {
-        return new Promise(() => undefined);
-      }
-      sentProgress = true;
-      return {
-        data: { agent: "claude-impl", status: "idle" },
-        id: "evt-1",
-        type: "agent.status",
-      };
-    },
-    async waitForOutput() {
-      return { matched: true };
-    },
-  };
-}
-
-async function waitFor(predicate: () => boolean): Promise<void> {
-  const startedAt = Date.now();
-  while (!predicate()) {
-    if (Date.now() - startedAt > 1_000) {
-      throw new Error("Timed out while waiting for condition");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
 }
 
 function openMigratedDatabase(): {

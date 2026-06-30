@@ -90,54 +90,24 @@ describe("Shepherd config schema", () => {
     expect(result.ok).toBe(false);
   });
 
-  test("accepts session and channel provider overrides for configured providers", () => {
-    const result = parseShepherdConfig(
-      minimalConfig({
+  test("rejects removed provider config surfaces", () => {
+    for (const override of [
+      { providers: { openai: { api_key_env: "OPENAI_API_KEY", type: "openai" } } },
+      { gateway: { ...minimalConfig().gateway, default_provider: "openai" } },
+      { gateway: { ...minimalConfig().gateway, model: "gpt-5.3" } },
+      {
         gateway: {
-          default_provider: "codex",
-          model: "gpt-5.3-codex",
-          provider_overrides: {
-            channels: {
-              "slack:C123": { provider: "openai", model: "gpt-4.1" },
-            },
-            sessions: {
-              "session-1": { provider: "codex", model: "gpt-5.3-codex-high" },
-            },
-          },
+          ...minimalConfig().gateway,
+          provider_overrides: { sessions: { "session-1": { provider: "openai" } } },
         },
-        providers: {
-          codex: {
-            auth_source: "codex_cli",
-            mode: "app_server",
-            type: "codex_cli",
-          },
-          openai: {
-            api_key_env: "OPENAI_API_KEY",
-            type: "openai",
-          },
-        },
-      }),
-    );
-
-    expect(result.ok).toBe(true);
-  });
-
-  test("rejects provider overrides that reference unknown providers", () => {
-    const result = parseShepherdConfig(
-      minimalConfig({
-        gateway: {
-          default_provider: "codex",
-          model: "gpt-5.3-codex",
-          provider_overrides: {
-            sessions: {
-              "session-1": { provider: "missing" },
-            },
-          },
-        },
-      }),
-    );
-
-    expect(result.ok).toBe(false);
+      },
+    ]) {
+      const result = parseShepherdConfig(minimalConfig(override));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.some((error) => error.keyword === "additionalProperties")).toBe(true);
+      }
+    }
   });
 
   test("accepts runtime path overrides", () => {

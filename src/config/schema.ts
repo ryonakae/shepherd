@@ -10,38 +10,6 @@ export const agentProfileSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const codexProviderSchema = Type.Object(
-  {
-    auth_source: Type.Literal("codex_cli"),
-    mode: Type.Literal("app_server"),
-    settings: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-    type: Type.Literal("codex_cli"),
-  },
-  { additionalProperties: false },
-);
-
-const apiKeyProviderSchema = Type.Object(
-  {
-    api_key_env: Type.String({ minLength: 1 }),
-    type: Type.Union([
-      Type.Literal("openrouter"),
-      Type.Literal("openai"),
-      Type.Literal("anthropic"),
-    ]),
-  },
-  { additionalProperties: false },
-);
-
-export const gatewayProviderSchema = Type.Union([codexProviderSchema, apiKeyProviderSchema]);
-
-const providerOverrideSchema = Type.Object(
-  {
-    model: Type.Optional(Type.String({ minLength: 1 })),
-    provider: Type.Optional(Type.String({ minLength: 1 })),
-  },
-  { additionalProperties: false },
-);
-
 const slackStreamingSchema = Type.Object(
   {
     buffer_threshold_chars: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -108,8 +76,6 @@ export const shepherdConfigSchema = Type.Object(
     default_agent: Type.String({ minLength: 1 }),
     gateway: Type.Object(
       {
-        default_provider: Type.Optional(Type.String({ minLength: 1 })),
-        model: Type.Optional(Type.String({ minLength: 1 })),
         pi: Type.Optional(
           Type.Object(
             {
@@ -119,28 +85,10 @@ export const shepherdConfigSchema = Type.Object(
             { additionalProperties: false },
           ),
         ),
-        provider_overrides: Type.Optional(
-          Type.Object(
-            {
-              channels: Type.Optional(
-                Type.Record(Type.String({ minLength: 1 }), providerOverrideSchema),
-              ),
-              sessions: Type.Optional(
-                Type.Record(Type.String({ minLength: 1 }), providerOverrideSchema),
-              ),
-            },
-            { additionalProperties: false },
-          ),
-        ),
       },
       { additionalProperties: false },
     ),
     platforms: Type.Optional(platformsSchema),
-    providers: Type.Optional(
-      Type.Record(Type.String({ minLength: 1 }), gatewayProviderSchema, {
-        minProperties: 1,
-      }),
-    ),
     runtime: Type.Optional(runtimePathsSchema),
   },
   { additionalProperties: false },
@@ -172,38 +120,6 @@ export function parseShepherdConfig(value: unknown): ValidationResult<ShepherdCo
       };
     }
 
-    if (config.gateway.default_provider !== undefined) {
-      if (!config.providers || !(config.gateway.default_provider in config.providers)) {
-        return {
-          errors: [
-            {
-              instancePath: "/gateway/default_provider",
-              keyword: "requiredProvider",
-              message: "must reference a configured provider",
-              params: { provider: config.gateway.default_provider },
-              schemaPath: "#/requiredProvider",
-            },
-          ],
-          ok: false,
-        };
-      }
-    }
-
-    for (const invalidOverride of invalidProviderOverridePaths(config)) {
-      return {
-        errors: [
-          {
-            instancePath: invalidOverride.path,
-            keyword: "requiredProvider",
-            message: "must reference a configured provider",
-            params: { provider: invalidOverride.provider },
-            schemaPath: "#/requiredProvider",
-          },
-        ],
-        ok: false,
-      };
-    }
-
     const invalidSlackDefaultChannel = invalidSlackTuiDefaultChannel(config);
     if (invalidSlackDefaultChannel) {
       return {
@@ -224,29 +140,6 @@ export function parseShepherdConfig(value: unknown): ValidationResult<ShepherdCo
   }
 
   return { errors: validateShepherdConfig.errors ?? [], ok: false };
-}
-
-function invalidProviderOverridePaths(
-  config: ShepherdConfig,
-): Array<{ path: string; provider: string }> {
-  const invalid: Array<{ path: string; provider: string }> = [];
-  const groups = [
-    ["sessions", config.gateway.provider_overrides?.sessions],
-    ["channels", config.gateway.provider_overrides?.channels],
-  ] as const;
-
-  for (const [groupName, overrides] of groups) {
-    for (const [key, override] of Object.entries(overrides ?? {})) {
-      if (override.provider && !(override.provider in (config.providers ?? {}))) {
-        invalid.push({
-          path: `/gateway/provider_overrides/${groupName}/${key}/provider`,
-          provider: override.provider,
-        });
-      }
-    }
-  }
-
-  return invalid;
 }
 
 function invalidSlackTuiDefaultChannel(config: ShepherdConfig): string | undefined {

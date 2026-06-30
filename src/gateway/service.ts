@@ -5,14 +5,12 @@ import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { SessionBindingStore } from "@/db/session-bindings.js";
-import { SessionSummaryStore } from "@/db/session-summary.js";
 import { WorkingContextStore } from "@/db/working-contexts.js";
 import { readOrCreateGatewayId } from "@/gateway/identity.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { HeadlessPiSupervisor } from "@/gateway/pi-supervisor.js";
 import { prepareGatewaySocketPath } from "@/gateway/process-manager.js";
-import { createConfiguredProviderOverrideResolver } from "@/gateway/provider-overrides.js";
 import { recoverGatewayState } from "@/gateway/recovery.js";
 import { createGatewayRuntime } from "@/gateway/runtime.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
@@ -30,7 +28,6 @@ export async function runGatewayService(
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
   const sessionBindings = new SessionBindingStore(sqlite);
-  const summaries = new SessionSummaryStore(sqlite);
   recoverGatewayState({ events, sqlite });
 
   const config = runtime.config;
@@ -54,13 +51,12 @@ export async function runGatewayService(
         sqlite,
       })
     : undefined;
-  const headlessPi =
-    config && gatewayRuntime && !gatewayRuntime.runner
-      ? new HeadlessPiSupervisor({
-          idleTimeoutMs: config.gateway.pi?.idle_timeout_ms ?? 600_000,
-          socketPath: runtime.paths.socketPath,
-        })
-      : undefined;
+  const headlessPi = config
+    ? new HeadlessPiSupervisor({
+        idleTimeoutMs: config.gateway.pi?.idle_timeout_ms ?? 600_000,
+        socketPath: runtime.paths.socketPath,
+      })
+    : undefined;
   const platformRuntime = config
     ? createPlatformRuntime({
         config,
@@ -71,26 +67,17 @@ export async function runGatewayService(
     : undefined;
 
   server = new ShepherdGatewayServer({
+    bindings: sessionBindings,
     gatewayId: readOrCreateGatewayId(stateDir),
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
     ...(platformRuntime?.streamDelivery ? { streamDelivery: platformRuntime.streamDelivery } : {}),
-    ...(gatewayRuntime?.runner ? { gatewayRunner: gatewayRuntime.runner } : {}),
-    ...(gatewayRuntime && !gatewayRuntime.runner ? { gatewayRuns: gatewayRuntime.runs } : {}),
+    ...(gatewayRuntime ? { gatewayRuns: gatewayRuntime.turns } : {}),
     ...(headlessPi ? { headlessPi } : {}),
     localWorkingContexts: workingContexts,
     ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),
-    ...(config
-      ? {
-          providerOverrides: createConfiguredProviderOverrideResolver({
-            bindings: sessionBindings,
-            config,
-          }),
-        }
-      : {}),
     piSessions,
     socketPath: runtime.paths.socketPath,
     store: events,
-    summaries,
     ...(config ? { configPath: runtime.paths.configPath } : {}),
   });
 
@@ -119,10 +106,8 @@ export async function runGatewayService(
   process.once("SIGTERM", stop);
 }
 
-function shouldCheckPiReadiness(
-  gatewayRuntime: ReturnType<typeof createGatewayRuntime> | undefined,
-): boolean {
-  return gatewayRuntime !== undefined && gatewayRuntime.runner === undefined;
+function shouldCheckPiReadiness(gatewayRuntime: ReturnType<typeof createGatewayRuntime> | undefined): boolean {
+  return gatewayRuntime !== undefined;
 }
 
 function applyEnvironment(environment: NodeJS.ProcessEnv): void {
