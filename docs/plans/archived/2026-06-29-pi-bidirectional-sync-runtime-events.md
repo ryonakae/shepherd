@@ -1,6 +1,12 @@
 # Pi Bidirectional Sync and Runtime Events Implementation Plan
 
-> **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
+## Status
+
+Archived. Superseded by [`../2026-06-30-pi-runtime-gateway-rebuild.md`](../2026-06-30-pi-runtime-gateway-rebuild.md).
+
+This plan captured the first `pi.*` runtime event design, but the target architecture changed during the 2026-06-30 design pass: `gateway_runs` became `pi_turns`, `gateway.message` became `assistant.message`, legacy provider runner compatibility was dropped, and the DB migration history is reset.
+
+> **For implementers:** Historical reference only. Do not execute this plan task-by-task.
 
 **Goal:** Make Shepherd synchronize Pi TUI/RPC input, Pi assistant output, and Pi tool activity bidirectionally with Slack and the Shepherd event stream without waking duplicate Gateway runs for Pi-originated input.
 
