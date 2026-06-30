@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { WorkerAgentBindingStore } from "@/db/worker-agent-bindings.js";
 import { WorkingContextStore } from "@/db/working-contexts.js";
 import { createBuiltinToolRegistry } from "@/gateway/builtin-tools.js";
 import { LogicalToolRunner } from "@/gateway/tools.js";
@@ -28,23 +29,23 @@ describe("builtin logical tools", () => {
       type: "user.message",
     });
 
-    await expect(runner.run("session_read", { afterEventId: 0 }, { sessionId })).resolves.toEqual([
+    await expect(runner.run("session_read", { afterEventId: 0 }, { piTurnId: "turn-1", sessionId })).resolves.toEqual([
       event,
     ]);
   });
 
-  test("ensure_herdr_workspace delegates to Herdr orchestration", async () => {
+  test("ensure_workspace delegates to Herdr orchestration", async () => {
     const { runner, sessionId } = openRunner();
 
     await expect(
       runner.run(
-        "ensure_herdr_workspace",
+        "ensure_workspace",
         {
           taskSlug: "Review Slack Sync",
           workingContextSlug: "shepherd",
           workingDirectory: "/repo",
         },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toMatchObject({
       herdrSessionName: "shepherd-shepherd",
@@ -52,19 +53,19 @@ describe("builtin logical tools", () => {
     });
   });
 
-  test("attach_herdr_workspace records an explicit existing Herdr binding", async () => {
+  test("attach_workspace records an explicit existing Herdr binding", async () => {
     const { runner, sessionId } = openRunner();
 
     await expect(
       runner.run(
-        "attach_herdr_workspace",
+        "attach_workspace",
         {
           confirmedUserRequestedAttach: true,
           herdrSessionName: "manual-main",
           tabs: { agents: "w1:t1" },
           workspaceId: "w1",
         },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({
       herdrSessionName: "manual-main",
@@ -74,13 +75,13 @@ describe("builtin logical tools", () => {
 
     await expect(
       runner.run(
-        "ensure_herdr_workspace",
+        "ensure_workspace",
         {
           taskSlug: "Review Slack Sync",
           workingContextSlug: "shepherd",
           workingDirectory: "/repo",
         },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toMatchObject({
       herdrSessionName: "manual-main",
@@ -92,7 +93,7 @@ describe("builtin logical tools", () => {
     const { runner, sessionId } = openRunner({ allowedRoots: ["/repo"] });
 
     await expect(
-      runner.run("workspace_discovery", { scanAllowedRoots: false }, { sessionId }),
+      runner.run("workspace_discovery", { scanAllowedRoots: false }, { piTurnId: "turn-1", sessionId }),
     ).resolves.toMatchObject({
       allowedRoots: ["/repo"],
       candidates: [],
@@ -102,7 +103,7 @@ describe("builtin logical tools", () => {
       runner.run(
         "resolve_working_context",
         { label: "Shepherd", path: "/repo/shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toMatchObject({
       herdrSessionName: "shepherd-shepherd",
@@ -112,24 +113,60 @@ describe("builtin logical tools", () => {
     });
   });
 
-  test("herdr_start_agent uses configured agent profiles", async () => {
+  test("ensure_worker_agent uses configured agent profiles", async () => {
     const { runner, sessionId } = openRunner();
 
     await expect(
       runner.run(
-        "herdr_start_agent",
+        "ensure_worker_agent",
         {
           agentName: "claude-impl",
           agentProfile: "claude",
+          role: "implementation",
           taskSlug: "Implement Slack Sync",
           workingContextSlug: "shepherd",
           workingDirectory: "/repo",
         },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toMatchObject({
       agentName: "claude-impl",
       paneId: "w1:p1",
+    });
+  });
+
+  test("worker binding tools list and get cached worker agents", async () => {
+    const { runner, sessionId } = openRunner();
+
+    await runner.run(
+      "ensure_worker_agent",
+      {
+        agentName: "claude-impl",
+        agentProfile: "claude",
+        description: "Implementation worker",
+        lastTask: "Implement Slack Sync",
+        role: "implementation",
+        taskSlug: "Implement Slack Sync",
+        workingContextSlug: "shepherd",
+        workingDirectory: "/repo",
+      },
+      { piTurnId: "turn-1", sessionId },
+    );
+
+    await expect(
+      runner.run("list_worker_agents", {}, { piTurnId: "turn-1", sessionId }),
+    ).resolves.toEqual([expect.objectContaining({ agentName: "claude-impl" })]);
+    await expect(
+      runner.run(
+        "get_worker_agent",
+        { agentName: "claude-impl" },
+        { piTurnId: "turn-1", sessionId },
+      ),
+    ).resolves.toMatchObject({
+      agentName: "claude-impl",
+      description: "Implementation worker",
+      lastTask: "Implement Slack Sync",
+      role: "implementation",
     });
   });
 
@@ -140,14 +177,14 @@ describe("builtin logical tools", () => {
       runner.run(
         "herdr_read",
         { resource: "workspaces", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual([{ workspace_id: "w1" }]);
     await expect(
       runner.run(
         "herdr_read",
         { paneId: "w1:p1", resource: "pane", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ pane_id: "w1:p1" });
   });
@@ -156,7 +193,7 @@ describe("builtin logical tools", () => {
     const { runner, sessionId } = openRunner();
 
     await expect(
-      runner.run("herdr_read", { resource: "pane", workingContextSlug: "shepherd" }, { sessionId }),
+      runner.run("herdr_read", { resource: "pane", workingContextSlug: "shepherd" }, { piTurnId: "turn-1", sessionId }),
     ).rejects.toThrow("paneId is required for pane reads");
   });
 
@@ -167,7 +204,7 @@ describe("builtin logical tools", () => {
       runner.run(
         "herdr_read",
         { resource: "servers", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).rejects.toThrow("Invalid input for logical tool");
   });
@@ -179,14 +216,14 @@ describe("builtin logical tools", () => {
       runner.run(
         "herdr_send_agent_message",
         { target: "w1:p1", text: "please implement", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ sent: true });
     await expect(
       runner.run(
         "herdr_read_agent",
         { lines: 50, source: "recent", target: "w1:p1", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ text: "agent output" });
   });
@@ -197,20 +234,22 @@ describe("builtin logical tools", () => {
 
     expect(tools.map((tool) => tool.name).sort()).toEqual(
       [
-        "attach_herdr_workspace",
-        "ensure_herdr_workspace",
+        "attach_workspace",
+        "ensure_workspace",
         "herdr_read",
+        "get_worker_agent",
         "herdr_read_agent",
         "herdr_send_agent_message",
-        "herdr_start_agent",
-        "open_pane",
-        "read_pane",
+        "ensure_worker_agent",
+        "herdr_open_pane",
+        "herdr_read_pane",
         "resolve_working_context",
-        "run_pane_command",
-        "send_pane_text",
+        "herdr_run_pane_command",
+        "herdr_send_pane_text",
+        "list_worker_agents",
         "session_read",
-        "wait_for_agent",
-        "wait_for_herdr_event",
+        "herdr_wait_for_agent",
+        "herdr_wait_for_event",
         "workspace_discovery",
       ].sort(),
     );
@@ -220,11 +259,11 @@ describe("builtin logical tools", () => {
     expect(byName.get("resolve_working_context")?.promptGuidelines).toContain(
       "Use shepherd_resolve_working_context before creating Herdr resources when the working context is ambiguous.",
     );
-    expect(byName.get("attach_herdr_workspace")?.promptGuidelines).toContain(
-      "Use shepherd_attach_herdr_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
+    expect(byName.get("attach_workspace")?.promptGuidelines).toContain(
+      "Use shepherd_attach_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
     );
-    expect(byName.get("run_pane_command")?.promptGuidelines).toContain(
-      "Use shepherd_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
+    expect(byName.get("herdr_run_pane_command")?.promptGuidelines).toContain(
+      "Use shepherd_herdr_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
     );
   });
 
@@ -233,49 +272,49 @@ describe("builtin logical tools", () => {
 
     await expect(
       runner.run(
-        "open_pane",
+        "herdr_open_pane",
         {
           direction: "right",
           taskSlug: "Run Tests",
           workingContextSlug: "shepherd",
           workingDirectory: "/repo",
         },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toMatchObject({ paneId: "w1:p2" });
     await expect(
       runner.run(
-        "run_pane_command",
+        "herdr_run_pane_command",
         { command: "pnpm test", paneId: "w1:p2", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ ran: true });
     await expect(
       runner.run(
-        "read_pane",
+        "herdr_read_pane",
         { lines: 20, paneId: "w1:p2", source: "recent", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ text: "pane output" });
     await expect(
       runner.run(
-        "send_pane_text",
+        "herdr_send_pane_text",
         { paneId: "w1:p2", text: "hello", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ sentText: true });
     await expect(
       runner.run(
-        "wait_for_agent",
+        "herdr_wait_for_agent",
         { status: "idle", target: "w1:p1", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ status: "idle" });
     await expect(
       runner.run(
-        "wait_for_herdr_event",
+        "herdr_wait_for_event",
         { match: "done", paneId: "w1:p2", workingContextSlug: "shepherd" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ matched: true });
   });
@@ -370,6 +409,7 @@ function openRunner(options: { allowedRoots?: string[] } = {}): {
     },
     events,
     herdr,
+    workerBindings: new WorkerAgentBindingStore(sqlite),
     workingContexts: new WorkingContextResolver({
       allowedRoots: options.allowedRoots ?? [],
       store: new WorkingContextStore(sqlite),

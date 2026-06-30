@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
 import { PiTurnStore } from "@/db/pi-turns.js";
+import { WorkerAgentBindingStore } from "@/db/worker-agent-bindings.js";
 import { WorkingContextStore } from "@/db/working-contexts.js";
 import { HerdrClientPool } from "@/herdr/client-pool.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
@@ -60,6 +61,7 @@ export function createGatewayRuntime(options: GatewayRuntimeOptions): GatewayRun
     agents: options.config.agents,
     events: options.events,
     herdr,
+    workerBindings: new WorkerAgentBindingStore(options.sqlite),
     workingContexts: new WorkingContextResolver({
       allowedRoots: options.config.context?.allowed_roots ?? [],
       store: new WorkingContextStore(options.sqlite),

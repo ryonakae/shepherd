@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { ShepherdConfig } from "@/config/schema.js";
 import type { EventStore } from "@/db/event-store.js";
+import type { WorkerAgentBindingStore, WorkerAgentRole } from "@/db/worker-agent-bindings.js";
 import type { WorkingContextResolver } from "@/gateway/working-contexts.js";
 import { herdrSessionNameForWorkingContext } from "@/herdr/naming.js";
 import type { HerdrOrchestrator } from "@/herdr/orchestrator.js";
@@ -10,6 +11,7 @@ export type BuiltinToolDependencies = {
   agents?: ShepherdConfig["agents"];
   events: EventStore;
   herdr: HerdrOrchestrator;
+  workerBindings?: WorkerAgentBindingStore;
   workingContexts?: WorkingContextResolver;
 };
 
@@ -51,9 +53,21 @@ type HerdrReadInput = {
   workspaceId?: string;
 };
 
-type HerdrStartAgentInput = EnsureHerdrWorkspaceInput & {
+type EnsureWorkerAgentInput = EnsureHerdrWorkspaceInput & {
   agentName: string;
   agentProfile: string;
+  description?: string;
+  lastTask?: string;
+  role: WorkerAgentRole;
+};
+
+type ListWorkerAgentsInput = {
+  sessionScope?: "current";
+};
+
+type GetWorkerAgentInput = {
+  agentName: string;
+  workspaceId?: string;
 };
 
 type HerdrSendAgentMessageInput = {
@@ -122,7 +136,7 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
     execute: (input: SessionReadInput, context) =>
       deps.events
         .listEvents(context.sessionId, input.afterEventId ?? 0, input.limit ?? 50)
-        .filter((event) => input.includeInternal || !event.type.startsWith("gateway.tool.")),
+        .filter((event) => input.includeInternal || !event.type.startsWith("pi.tool.")),
     inputSchema: Type.Object({
       afterEventId: Type.Optional(Type.Number()),
       includeInternal: Type.Optional(Type.Boolean()),
@@ -267,12 +281,12 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
       workingDirectory: Type.String({ minLength: 1 }),
     }),
-    name: "ensure_herdr_workspace",
+    name: "ensure_workspace",
     promptGuidelines: [
-      "Use shepherd_ensure_herdr_workspace for Shepherd-managed work; do not attach user-owned Herdr workspaces with it.",
+      "Use shepherd_ensure_workspace for Shepherd-managed work; do not attach user-owned Herdr workspaces with it.",
     ],
     promptSnippet:
-      "Use shepherd_ensure_herdr_workspace to create or reuse the Shepherd-managed Herdr workspace for a task.",
+      "Use shepherd_ensure_workspace to create or reuse the Shepherd-managed Herdr workspace for a task.",
   });
 
   registry.register({
@@ -293,44 +307,149 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       ),
       workspaceId: Type.String({ minLength: 1 }),
     }),
-    name: "attach_herdr_workspace",
+    name: "attach_workspace",
     promptGuidelines: [
-      "Use shepherd_attach_herdr_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
+      "Use shepherd_attach_workspace only when the user explicitly asks to attach an existing non-Shepherd Herdr workspace.",
     ],
     promptSnippet:
-      "Use shepherd_attach_herdr_workspace to bind an explicitly requested existing Herdr workspace to the current Shepherd session.",
+      "Use shepherd_attach_workspace to bind an explicitly requested existing Herdr workspace to the current Shepherd session.",
   });
 
   registry.register({
-    description: "Start a configured coding agent inside the Shepherd Herdr workspace.",
-    execute: (input: HerdrStartAgentInput, context) => {
+    description: "Ensure a configured worker agent exists inside the Shepherd Herdr workspace.",
+    execute: async (input: EnsureWorkerAgentInput, context) => {
       const profile = deps.agents?.[input.agentProfile];
       if (!profile) {
         throw new Error(`Unknown agent profile: ${input.agentProfile}`);
       }
 
-      return deps.herdr.startAgent({
+      const herdrSessionName = herdrSessionNameForWorkingContext(input.workingContextSlug);
+      const workspace = await deps.herdr.ensureWorkspace({
+        herdrSessionName,
+        sessionId: context.sessionId,
+        taskSlug: input.taskSlug,
+        workingDirectory: input.workingDirectory,
+      });
+      const existing = deps.workerBindings
+        ? tryGetWorkerBinding(deps.workerBindings, {
+            agentName: input.agentName,
+            sessionId: context.sessionId,
+            workspaceId: workspace.workspaceId,
+          })
+        : undefined;
+      if (existing) {
+        return existing;
+      }
+
+      const started = await deps.herdr.startAgent({
         agentName: input.agentName,
-        herdrSessionName: herdrSessionNameForWorkingContext(input.workingContextSlug),
+        herdrSessionName,
         profile,
         sessionId: context.sessionId,
         taskSlug: input.taskSlug,
         workingDirectory: input.workingDirectory,
       });
+      if (!deps.workerBindings) {
+        return started;
+      }
+      const binding = deps.workerBindings.upsertBinding({
+        agentName: input.agentName,
+        agentProfile: input.agentProfile,
+        agentStatus: "unknown",
+        bindingHealth: "present",
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        herdrSessionName,
+        ...(input.lastTask !== undefined ? { lastTask: input.lastTask } : {}),
+        paneId: started.paneId,
+        role: input.role,
+        sessionId: context.sessionId,
+        ...(started.tabId !== undefined ? { tabId: started.tabId } : {}),
+        workspaceId: started.workspaceId,
+      });
+      deps.events.appendEvent({
+        payload: binding,
+        sessionId: context.sessionId,
+        type: "worker_agent.bound",
+      });
+      return binding;
     },
     inputSchema: Type.Object({
       agentName: Type.String({ minLength: 1 }),
       agentProfile: Type.String({ minLength: 1 }),
+      description: Type.Optional(Type.String({ minLength: 1 })),
+      lastTask: Type.Optional(Type.String({ minLength: 1 })),
+      role: Type.Union([
+        Type.Literal("implementation"),
+        Type.Literal("review"),
+        Type.Literal("research"),
+        Type.Literal("test"),
+        Type.Literal("general"),
+      ]),
       taskSlug: Type.String({ minLength: 1 }),
       workingContextSlug: Type.String({ minLength: 1 }),
       workingDirectory: Type.String({ minLength: 1 }),
     }),
-    name: "herdr_start_agent",
+    name: "ensure_worker_agent",
     promptGuidelines: [
-      "Use shepherd_herdr_start_agent to delegate implementation or review work to configured Herdr worker agents instead of doing long-running work in Pi.",
+      "Use shepherd_ensure_worker_agent to ensure or reuse configured Herdr worker agents instead of doing long-running work in Pi.",
     ],
     promptSnippet:
-      "Use shepherd_herdr_start_agent to start a configured worker agent inside the Shepherd-managed Herdr workspace.",
+      "Use shepherd_ensure_worker_agent to ensure or reuse a configured worker agent inside the Shepherd-managed Herdr workspace.",
+  });
+
+  registry.register({
+    description: "List Shepherd worker agent bindings for the current session.",
+    execute: (_input: ListWorkerAgentsInput, context) => {
+      if (!deps.workerBindings) {
+        throw new Error("Worker agent binding store is not configured");
+      }
+      return deps.workerBindings.listForSession(context.sessionId);
+    },
+    inputSchema: Type.Object({
+      sessionScope: Type.Optional(Type.Literal("current")),
+    }),
+    name: "list_worker_agents",
+    promptGuidelines: [
+      "Use shepherd_list_worker_agents to inspect existing worker agents before starting another one.",
+    ],
+    promptSnippet:
+      "Use shepherd_list_worker_agents to inspect Shepherd worker agents bound to the current session.",
+  });
+
+  registry.register({
+    description: "Get one Shepherd worker agent binding by name and optional workspace id.",
+    execute: (input: GetWorkerAgentInput, context) => {
+      if (!deps.workerBindings) {
+        throw new Error("Worker agent binding store is not configured");
+      }
+      if (input.workspaceId) {
+        return deps.workerBindings.getByAgentName({
+          agentName: input.agentName,
+          sessionId: context.sessionId,
+          workspaceId: input.workspaceId,
+        });
+      }
+      const matches = deps.workerBindings
+        .listForSession(context.sessionId)
+        .filter((binding) => binding.agentName === input.agentName);
+      if (matches.length === 0) {
+        throw new Error("Worker agent binding not found");
+      }
+      if (matches.length > 1) {
+        throw new Error("workspaceId is required because multiple worker agents match");
+      }
+      return matches[0];
+    },
+    inputSchema: Type.Object({
+      agentName: Type.String({ minLength: 1 }),
+      workspaceId: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+    name: "get_worker_agent",
+    promptGuidelines: [
+      "Use shepherd_get_worker_agent to inspect a known worker binding without querying raw Herdr state.",
+    ],
+    promptSnippet:
+      "Use shepherd_get_worker_agent to inspect one Shepherd worker agent binding by name.",
   });
 
   registry.register({
@@ -359,9 +478,9 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       workingContextSlug: Type.String({ minLength: 1 }),
       workingDirectory: Type.String({ minLength: 1 }),
     }),
-    name: "open_pane",
+    name: "herdr_open_pane",
     promptSnippet:
-      "Use shepherd_open_pane to open a Shepherd-managed Herdr pane for shells, logs, servers, or tests.",
+      "Use shepherd_herdr_open_pane to open a Shepherd-managed Herdr pane for shells, logs, servers, or tests.",
   });
 
   registry.register({
@@ -377,12 +496,12 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       paneId: Type.String({ minLength: 1 }),
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
-    name: "run_pane_command",
+    name: "herdr_run_pane_command",
     promptGuidelines: [
-      "Use shepherd_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
+      "Use shepherd_herdr_run_pane_command only inside Shepherd-managed Herdr panes for tests, servers, logs, and controlled terminal workflows.",
     ],
     promptSnippet:
-      "Use shepherd_run_pane_command to run a command in a Shepherd-managed Herdr pane.",
+      "Use shepherd_herdr_run_pane_command to run a command in a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -400,9 +519,9 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       source: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("recent")])),
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
-    name: "read_pane",
+    name: "herdr_read_pane",
     promptSnippet:
-      "Use shepherd_read_pane to read recent output from a Shepherd-managed Herdr pane.",
+      "Use shepherd_herdr_read_pane to read recent output from a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -418,9 +537,9 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       text: Type.String({ minLength: 1 }),
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
-    name: "send_pane_text",
+    name: "herdr_send_pane_text",
     promptSnippet:
-      "Use shepherd_send_pane_text to send literal text to a Shepherd-managed Herdr pane.",
+      "Use shepherd_herdr_send_pane_text to send literal text to a Shepherd-managed Herdr pane.",
   });
 
   registry.register({
@@ -495,12 +614,12 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
-    name: "wait_for_agent",
+    name: "herdr_wait_for_agent",
     promptGuidelines: [
-      "Use shepherd_wait_for_agent before summarizing delegated Herdr agent work when the agent may still be working.",
+      "Use shepherd_herdr_wait_for_agent before summarizing delegated Herdr agent work when the agent may still be working.",
     ],
     promptSnippet:
-      "Use shepherd_wait_for_agent to wait for a Herdr-managed agent to become idle, done, blocked, working, or unknown.",
+      "Use shepherd_herdr_wait_for_agent to wait for a Herdr-managed agent to become idle, done, blocked, working, or unknown.",
   });
 
   registry.register({
@@ -530,10 +649,24 @@ export function createBuiltinToolRegistry(deps: BuiltinToolDependencies): Logica
       timeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
       workingContextSlug: Type.String({ minLength: 1 }),
     }),
-    name: "wait_for_herdr_event",
+    name: "herdr_wait_for_event",
     promptSnippet:
-      "Use shepherd_wait_for_herdr_event to wait for expected text in a Herdr pane before continuing.",
+      "Use shepherd_herdr_wait_for_event to wait for expected text in a Herdr pane before continuing.",
   });
 
   return registry;
+}
+
+function tryGetWorkerBinding(
+  store: WorkerAgentBindingStore,
+  input: { agentName: string; sessionId: string; workspaceId: string },
+) {
+  try {
+    return store.getByAgentName(input);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Worker agent binding not found")) {
+      return undefined;
+    }
+    throw error;
+  }
 }

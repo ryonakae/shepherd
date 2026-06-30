@@ -74,6 +74,7 @@ export type ToolDefinitionWireRecord = {
 export type RunToolInput = {
   input?: unknown;
   name: string;
+  piTurnId: string;
   sessionId: string;
 };
 

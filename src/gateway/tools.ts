@@ -5,6 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 import type { EventStore } from "@/db/event-store.js";
 
 export type LogicalToolContext = {
+  piTurnId: string;
   sessionId: string;
 };
 
@@ -31,6 +32,7 @@ export type LogicalToolCallRecord = {
   idempotencyKey: string;
   input: unknown;
   result: unknown;
+  piTurnId: string;
   sessionId: string;
   status: LogicalToolCallStatus;
   toolName: string;
@@ -43,6 +45,7 @@ type LogicalToolCallRow = {
   id: string;
   idempotency_key: string;
   input_json: string;
+  pi_turn_id: string;
   result_json: string | null;
   session_id: string;
   status: LogicalToolCallStatus;
@@ -85,6 +88,7 @@ export class LogicalToolCallStore {
   begin(input: {
     idempotencyKey: string;
     input: unknown;
+    piTurnId: string;
     sessionId: string;
     toolName: string;
   }): LogicalToolCallRecord {
@@ -92,11 +96,12 @@ export class LogicalToolCallStore {
     this.#sqlite
       .prepare(
         `insert or ignore into logical_tool_calls
-          (id, session_id, tool_name, idempotency_key, input_json, status, result_json, completed_at, created_at, updated_at)
-         values (?, ?, ?, ?, ?, 'pending', null, null, ?, ?)`,
+          (id, pi_turn_id, session_id, tool_name, idempotency_key, input_json, status, result_json, completed_at, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, 'pending', null, null, ?, ?)`,
       )
       .run(
         randomUUID(),
+        input.piTurnId,
         input.sessionId,
         input.toolName,
         input.idempotencyKey,
@@ -105,13 +110,13 @@ export class LogicalToolCallStore {
         now,
       );
 
-    return this.getByIdempotencyKey(input.sessionId, input.idempotencyKey);
+    return this.getByIdempotencyKey(input.piTurnId, input.idempotencyKey);
   }
 
-  getByIdempotencyKey(sessionId: string, idempotencyKey: string): LogicalToolCallRecord {
+  getByIdempotencyKey(piTurnId: string, idempotencyKey: string): LogicalToolCallRecord {
     const row = this.#sqlite
-      .prepare("select * from logical_tool_calls where session_id = ? and idempotency_key = ?")
-      .get(sessionId, idempotencyKey) as LogicalToolCallRow | undefined;
+      .prepare("select * from logical_tool_calls where pi_turn_id = ? and idempotency_key = ?")
+      .get(piTurnId, idempotencyKey) as LogicalToolCallRow | undefined;
 
     if (!row) {
       throw new Error(`Logical tool call not found for idempotency key: ${idempotencyKey}`);
@@ -196,18 +201,18 @@ export class LogicalToolRunner {
 
     if (!this.#policy.allowedTools.has(name)) {
       this.#events.appendEvent({
-        payload: { name, reason: "tool_not_allowed" },
+        payload: { piTurnId: context.piTurnId, reason: "tool_not_allowed", status: "failed", toolName: name },
         sessionId: context.sessionId,
-        type: "gateway.tool.denied",
+        type: "pi.tool.failed",
       });
       throw new Error(`Logical tool is not allowed: ${name}`);
     }
 
     if (!Value.Check(tool.inputSchema, input)) {
       this.#events.appendEvent({
-        payload: { input, name, reason: "invalid_input" },
+        payload: { piTurnId: context.piTurnId, reason: "invalid_input", status: "failed", toolName: name },
         sessionId: context.sessionId,
-        type: "gateway.tool.denied",
+        type: "pi.tool.failed",
       });
       throw new Error(`Invalid input for logical tool: ${name}`);
     }
@@ -218,6 +223,7 @@ export class LogicalToolRunner {
         ? this.#toolCalls.begin({
             idempotencyKey,
             input,
+            piTurnId: context.piTurnId,
             sessionId: context.sessionId,
             toolName: name,
           })
@@ -225,18 +231,18 @@ export class LogicalToolRunner {
 
     if (priorCall?.status === "completed") {
       this.#events.appendEvent({
-        payload: { idempotencyKey, name, reused: true },
+        payload: { idempotencyKey, piTurnId: context.piTurnId, reused: true, status: "completed", toolName: name },
         sessionId: context.sessionId,
-        type: "gateway.tool.result",
+        type: "pi.tool.completed",
       });
       return priorCall.result;
     }
 
     if (priorCall && priorCall.status !== "pending") {
       this.#events.appendEvent({
-        payload: { idempotencyKey, name, reason: `idempotent_call_${priorCall.status}` },
+        payload: { idempotencyKey, piTurnId: context.piTurnId, reason: `idempotent_call_${priorCall.status}`, status: "failed", toolName: name },
         sessionId: context.sessionId,
-        type: "gateway.tool.denied",
+        type: "pi.tool.failed",
       });
       throw new Error(
         `Logical tool idempotency key is already ${priorCall.status}: ${idempotencyKey}`,
@@ -245,17 +251,17 @@ export class LogicalToolRunner {
 
     const callRecord = priorCall ? this.#toolCalls?.markRunning(priorCall.id) : undefined;
     const callEvent = this.#events.appendEvent({
-      payload: { idempotencyKey, input, name },
+      payload: { idempotencyKey, piTurnId: context.piTurnId, status: "started", toolName: name },
       sessionId: context.sessionId,
-      type: "gateway.tool.call",
+      type: "pi.tool.started",
     });
 
     try {
       const output = await tool.execute(input, context);
       this.#events.appendEvent({
-        payload: { callEventId: callEvent.id, name, output },
+        payload: { callEventId: callEvent.id, piTurnId: context.piTurnId, status: "completed", toolName: name },
         sessionId: context.sessionId,
-        type: "gateway.tool.result",
+        type: "pi.tool.completed",
       });
       if (callRecord && this.#toolCalls) {
         this.#toolCalls.markCompleted(callRecord.id, output);
@@ -269,10 +275,12 @@ export class LogicalToolRunner {
         payload: {
           callEventId: callEvent.id,
           message: error instanceof Error ? error.message : String(error),
-          name,
+          piTurnId: context.piTurnId,
+          status: "failed",
+          toolName: name,
         },
         sessionId: context.sessionId,
-        type: "gateway.tool.error",
+        type: "pi.tool.failed",
       });
       throw error;
     }
@@ -298,6 +306,7 @@ function mapLogicalToolCall(row: LogicalToolCallRow): LogicalToolCallRecord {
     idempotencyKey: row.idempotency_key,
     input: JSON.parse(row.input_json),
     result: row.result_json === null ? null : JSON.parse(row.result_json),
+    piTurnId: row.pi_turn_id,
     sessionId: row.session_id,
     status: row.status,
     toolName: row.tool_name,

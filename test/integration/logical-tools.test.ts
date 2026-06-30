@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { PiTurnStore } from "@/db/pi-turns.js";
 import { LogicalToolCallStore, LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
 
 const tempDirs: string[] = [];
@@ -32,13 +33,13 @@ describe("LogicalToolRunner", () => {
       registry,
     });
 
-    await expect(runner.run("session_read", { limit: 3 }, { sessionId })).resolves.toEqual({
+    await expect(runner.run("session_read", { limit: 3 }, { piTurnId: "turn-1", sessionId })).resolves.toEqual({
       limit: 3,
     });
 
     expect(events.listEvents(sessionId).map((event) => event.type)).toEqual([
-      "gateway.tool.call",
-      "gateway.tool.result",
+      "pi.tool.started",
+      "pi.tool.completed",
     ]);
   });
 
@@ -49,7 +50,7 @@ describe("LogicalToolRunner", () => {
       description: "Open a pane",
       execute: () => ({ ok: true }),
       inputSchema: Type.Object({}),
-      name: "open_pane",
+      name: "herdr_open_pane",
     });
     const runner = new LogicalToolRunner({
       events,
@@ -57,16 +58,17 @@ describe("LogicalToolRunner", () => {
       registry,
     });
 
-    await expect(runner.run("open_pane", {}, { sessionId })).rejects.toThrow(
+    await expect(runner.run("herdr_open_pane", {}, { piTurnId: "turn-1", sessionId })).rejects.toThrow(
       "Logical tool is not allowed",
     );
     expect(events.listEvents(sessionId).map((event) => event.type)).toEqual([
-      "gateway.tool.denied",
+      "pi.tool.failed",
     ]);
   });
 
   test("reuses completed idempotent tool results without rerunning side effects", async () => {
     const { events, sessionId, sqlite } = openStore();
+    new PiTurnStore(sqlite).createQueuedTurn({ id: "turn-1", sessionId });
     const registry = new LogicalToolRegistry();
     const calls: unknown[] = [];
     registry.register({
@@ -76,27 +78,27 @@ describe("LogicalToolRunner", () => {
         return { output: `ran ${input.command}` };
       },
       inputSchema: Type.Object({ command: Type.String() }),
-      name: "run_pane_command",
+      name: "herdr_run_pane_command",
     });
     const runner = new LogicalToolRunner({
       events,
-      policy: { allowedTools: new Set(["run_pane_command"]) },
+      policy: { allowedTools: new Set(["herdr_run_pane_command"]) },
       registry,
       toolCalls: new LogicalToolCallStore(sqlite),
     });
 
     await expect(
       runner.run(
-        "run_pane_command",
+        "herdr_run_pane_command",
         { command: "pnpm test", idempotencyKey: "tool-1" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ output: "ran pnpm test" });
     await expect(
       runner.run(
-        "run_pane_command",
+        "herdr_run_pane_command",
         { command: "pnpm test", idempotencyKey: "tool-1" },
-        { sessionId },
+        { piTurnId: "turn-1", sessionId },
       ),
     ).resolves.toEqual({ output: "ran pnpm test" });
 

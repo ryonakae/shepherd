@@ -66,6 +66,7 @@ export async function handleShepherdToolsRequest(
 
     return client.runTool({
       name: params.name,
+      piTurnId: `manual:${request.id ?? "stdio"}`,
       sessionId: params.sessionId,
       ...(params.input !== undefined ? { input: params.input } : {}),
     });

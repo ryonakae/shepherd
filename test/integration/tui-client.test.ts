@@ -191,6 +191,7 @@ describe("ShepherdSessionClient", () => {
       client.runTool({
         input: { text: "hello" },
         name: "echo",
+        piTurnId: "manual:test",
         sessionId: session.id,
       }),
     ).resolves.toEqual({ output: { echoed: "hello" } });

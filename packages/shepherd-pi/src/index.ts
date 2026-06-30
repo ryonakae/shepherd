@@ -632,6 +632,7 @@ async function registerShepherdTools(pi: PiApi, state: ShepherdState): Promise<v
         const output = await client.request("tool.run", {
           input: params,
           name: tool.name,
+          piTurnId: state.activePiTurnId ?? newPiTurnId(),
           sessionId,
         });
         return {

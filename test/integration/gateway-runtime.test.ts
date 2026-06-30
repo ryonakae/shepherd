@@ -27,7 +27,7 @@ describe("createGatewayRuntime", () => {
     });
 
     expect(Object.keys(runtime).sort()).toEqual(["close", "herdrProgress", "tools", "turns"]);
-    expect(runtime.tools.list().map((tool) => tool.name)).toContain("herdr_start_agent");
+    expect(runtime.tools.list().map((tool) => tool.name)).toContain("ensure_worker_agent");
     expect(runtime.tools.list().map((tool) => tool.name)).not.toContain("gateway_provider");
 
     await runtime.close();

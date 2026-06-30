@@ -1409,11 +1409,12 @@ export class ShepherdGatewayServer {
     const params = request.params as {
       input?: unknown;
       name?: string;
+      piTurnId?: string;
       sessionId?: string;
     };
-    if (!params?.sessionId || !params.name) {
+    if (!params?.sessionId || !params.name || !params.piTurnId) {
       this.#write(socket, {
-        error: { message: "sessionId and name are required" },
+        error: { message: "sessionId, piTurnId, and name are required" },
         id: request.id,
       });
       return;
@@ -1421,6 +1422,7 @@ export class ShepherdGatewayServer {
 
     try {
       const output = await this.#logicalTools.run(params.name, params.input ?? {}, {
+        piTurnId: params.piTurnId,
         sessionId: params.sessionId,
       });
       this.#write(socket, {
