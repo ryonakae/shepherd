@@ -104,7 +104,7 @@ describe("ShepherdSessionClient", () => {
     const replayed = store.appendEvent({
       payload: { text: "already there" },
       sessionId: session.id,
-      type: "gateway.message",
+      type: "assistant.message",
     });
     const events: unknown[] = [];
     const client = await ShepherdSessionClient.connect(socketPath);
@@ -120,7 +120,7 @@ describe("ShepherdSessionClient", () => {
       }),
     ).resolves.toEqual({ replayed: 1, subscribed: true });
 
-    expect(events).toMatchObject([{ id: replayed.id, type: "gateway.message" }]);
+    expect(events).toMatchObject([{ id: replayed.id, type: "assistant.message" }]);
 
     await client.sendUserMessage({
       actorId: "tui:user",

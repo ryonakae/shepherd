@@ -79,7 +79,7 @@ describe("SessionDeliveryFanout", () => {
     expect(sent).toEqual([]);
   });
 
-  test("delivers gateway messages to bound platforms", async () => {
+  test("delivers assistant messages to bound platforms", async () => {
     const { bindings, events, fanout, sent } = openHarness();
     const session = events.createSession({ id: "session-1" });
     bindings.ensureBinding({
@@ -92,7 +92,7 @@ describe("SessionDeliveryFanout", () => {
     const event = events.appendEvent({
       payload: { text: "work completed" },
       sessionId: session.id,
-      type: "gateway.message",
+      type: "assistant.message",
     });
 
     await expect(fanout.deliverEvent(event)).resolves.toHaveLength(1);

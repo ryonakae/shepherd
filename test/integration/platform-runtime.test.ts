@@ -159,7 +159,7 @@ describe("createPlatformRuntime", () => {
     const gatewayEvent = events.appendEvent({
       payload: { text: "done" },
       sessionId,
-      type: "gateway.message",
+      type: "assistant.message",
     });
 
     await runtime.deliveryFanout?.deliverEvent(gatewayEvent);

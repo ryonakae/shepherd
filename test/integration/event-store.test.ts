@@ -27,7 +27,7 @@ describe("EventStore", () => {
     const second = store.appendEvent({
       payload: { text: "working" },
       sessionId: session.id,
-      type: "gateway.message",
+      type: "assistant.message",
     });
 
     expect(store.listEvents(session.id).map((event) => event.id)).toEqual([first.id, second.id]);

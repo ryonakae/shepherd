@@ -94,7 +94,7 @@ function openHarness(): {
   const event = events.appendEvent({
     payload: { text: "hello" },
     sessionId: session.id,
-    type: "gateway.message",
+    type: "assistant.message",
   });
   const store = new DeliveryReceiptStore(sqlite);
   const sent: unknown[] = [];

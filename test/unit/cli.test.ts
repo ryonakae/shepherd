@@ -272,8 +272,8 @@ describe("Shepherd CLI", () => {
         idempotencyKey: null,
         payload: { text: "done" },
         sessionId: "session-1",
-        type: "gateway.message",
+        type: "assistant.message",
       }),
-    ).toBe('42\t2026-06-24T10:00:00.000Z\tsession-1\tgateway\tgateway.message\t{"text":"done"}');
+    ).toBe('42\t2026-06-24T10:00:00.000Z\tsession-1\tgateway\tassistant.message\t{"text":"done"}');
   });
 });

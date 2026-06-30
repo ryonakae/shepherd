@@ -25,7 +25,7 @@ describe("SlackDeliveryAdapter", () => {
       adapter.deliver({
         event: openEvent({
           payload: { text: "hello from Shepherd" },
-          type: "gateway.message",
+          type: "assistant.message",
         }),
         targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
       }),
