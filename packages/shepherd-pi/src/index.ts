@@ -32,20 +32,31 @@ type ShepherdBinding = {
 type ShepherdOwnerKind = string;
 
 type ShepherdRun = {
+  actorId?: string | null;
   id: string;
+  piSessionFile?: string;
+  piSessionId?: string;
+  piTurnId: string;
+  presentation?: unknown;
+  triggeringEventId?: number | null;
   userText: string;
 };
 
 type ShepherdState = {
   binding: ShepherdBinding | undefined;
   client: ShepherdGatewayClient | undefined;
+  activeInputEventIds: number[];
+  activePiTurnId: string | undefined;
+  activeSource: "extension" | "interactive" | "rpc" | undefined;
   currentRun: ShepherdRun | undefined;
   heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   lastAssistantText: string;
+  pendingImmediate: { inputEventId?: number; piTurnId: string; source: "interactive" | "rpc"; text: string } | undefined;
   ownerId: string | undefined;
   ownerKind: ShepherdOwnerKind | undefined;
   sessionId: string | undefined;
   streamedAssistantText: string;
+  toolStartTimes: Map<string, { preview?: string; startedAt: number; toolName: string }>;
   unsubscribeEvents: (() => void) | undefined;
 };
 
@@ -123,11 +134,14 @@ type GatewayTool = {
 };
 
 type GatewayResponseMap = {
-  "gateway.claim_next_run": { run?: ShepherdRun };
-  "gateway.complete_run": unknown;
-  "gateway.start_run": unknown;
-  "gateway.stream_delta": unknown;
-  "gateway.stream_finish": unknown;
+  "pi.claim_next_turn": { turn?: ShepherdRun };
+  "pi.complete_turn": unknown;
+  "pi.fail_turn": unknown;
+  "pi.mirror_user_message": { event?: { id?: number } };
+  "pi.record_tool_progress": unknown;
+  "pi.start_turn": unknown;
+  "pi.stream_delta": unknown;
+  "pi.stream_finish": unknown;
   "pi.attach": ShepherdBinding & { ownerId: string; ownerKind: ShepherdOwnerKind | undefined };
   "pi.handshake": { ownerId: string; ownerKind: ShepherdOwnerKind | undefined; sessionId: string | undefined };
   "pi.heartbeat": unknown;
@@ -221,13 +235,18 @@ export default function shepherdPiExtension(pi: PiApi): void {
   const state: ShepherdState = {
     client: undefined,
     binding: undefined,
+    activeInputEventIds: [],
+    activePiTurnId: undefined,
+    activeSource: undefined,
     currentRun: undefined,
     lastAssistantText: "",
+    pendingImmediate: undefined,
     streamedAssistantText: "",
     heartbeatTimer: undefined,
     ownerId: undefined,
     ownerKind: undefined,
     sessionId: undefined,
+    toolStartTimes: new Map(),
     unsubscribeEvents: undefined,
   };
 
@@ -350,11 +369,12 @@ export default function shepherdPiExtension(pi: PiApi): void {
         content: [
           "[SHEPHERD ATTACHED CONTEXT]",
           `Shepherd session id: ${state.sessionId}`,
-          state.currentRun ? `Current Shepherd gateway run id: ${state.currentRun.id}` : undefined,
-          "Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation; Herdr owns terminal execution surfaces.",
+          state.activePiTurnId ? `Current Pi turn id: ${state.activePiTurnId}` : undefined,
+          "Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation; Herdr owns terminal execution surfaces; Shepherd Gateway owns session, delivery, queue, policy, and audit.",
+          "Choose the execution surface that fits the work. Use Pi directly for quick reasoning, small edits, and short checks. Use Shepherd/Herdr when a visible terminal surface, parallel worker agents, long-running commands, resumable execution, or inspection by the user or another Pi owner would help.",
           "Prefer shepherd_* tools for Shepherd session inspection and Herdr orchestration when attached.",
-          "Use Shepherd logical tools instead of raw Herdr control unless the user explicitly asks for direct Herdr work.",
-          "Do not expose Shepherd session ids, Gateway run ids, socket paths, or owner ids unless the user asks.",
+          "Use Shepherd logical tools instead of raw Herdr mutation unless the user explicitly asks for direct Herdr work.",
+          "Do not expose Shepherd session ids, Pi turn ids, socket paths, or owner ids unless the user asks.",
         ]
           .filter(Boolean)
           .join("\n"),
@@ -362,6 +382,66 @@ export default function shepherdPiExtension(pi: PiApi): void {
       },
       systemPrompt: `${event.systemPrompt}\n\nWhen attached to Shepherd, hidden Shepherd context may include platform and orchestration metadata. Treat that metadata as internal unless the user asks for it.`,
     };
+  });
+
+  pi.on("input", async (event: { source?: string; streamingBehavior?: string; text?: string }, ctx: PiContext) => {
+    if (!state.client || !state.sessionId || !state.ownerId || !state.ownerKind) return { action: "continue" };
+    if (event.source !== "interactive" && event.source !== "rpc") return { action: "continue" };
+    const text = event.text ?? "";
+    if (!text) return { action: "continue" };
+    const piTurnId = newPiTurnId();
+    const delivery = inputDelivery(event);
+    const result = await state.client.request("pi.mirror_user_message", {
+      delivery,
+      displayName: displayNameFor(event.source),
+      ownerId: state.ownerId,
+      ownerKind: state.ownerKind,
+      piSessionFile: ctx.sessionManager.getSessionFile(),
+      piSessionId: ctx.sessionManager.getSessionId(),
+      piTurnId,
+      sessionId: state.sessionId,
+      source: event.source,
+      text,
+    });
+    if (delivery === "immediate") {
+      state.pendingImmediate = {
+        ...(result.event?.id !== undefined ? { inputEventId: result.event.id } : {}),
+        piTurnId,
+        source: event.source,
+        text,
+      };
+    }
+    return { action: "continue" };
+  });
+
+  pi.on("agent_start", async (_event: unknown, ctx: PiContext) => {
+    if (!state.client || !state.sessionId || !state.ownerId || !state.ownerKind) return;
+    if (state.activePiTurnId) return;
+    const pending = state.pendingImmediate;
+    const piTurnId = state.currentRun?.piTurnId ?? pending?.piTurnId ?? newPiTurnId();
+    const source = state.currentRun ? "extension" : pending?.source ?? "interactive";
+    const inputEventIds = state.currentRun?.triggeringEventId
+      ? [state.currentRun.triggeringEventId]
+      : pending?.inputEventId
+        ? [pending.inputEventId]
+        : [];
+    state.activePiTurnId = piTurnId;
+    state.activeSource = source;
+    state.activeInputEventIds = inputEventIds;
+    state.pendingImmediate = undefined;
+    state.lastAssistantText = "";
+    state.streamedAssistantText = "";
+    await state.client.request("pi.start_turn", {
+      inputEventIds,
+      ownerId: state.ownerId,
+      ownerKind: state.ownerKind,
+      piSessionFile: ctx.sessionManager.getSessionFile(),
+      piSessionId: ctx.sessionManager.getSessionId(),
+      piTurnId,
+      sessionId: state.sessionId,
+      source,
+      ...(state.currentRun?.triggeringEventId ? { triggeringEventId: state.currentRun.triggeringEventId } : {}),
+    });
   });
 
   pi.on("message_update", async (event: { message?: Message }) => {
@@ -376,33 +456,92 @@ export default function shepherdPiExtension(pi: PiApi): void {
     }
   });
 
+  pi.on("tool_execution_start", async (event: { args?: unknown; toolCallId?: string; toolName?: string }, ctx: PiContext) => {
+    if (!state.client || !state.activePiTurnId || !state.ownerId || !state.ownerKind || !state.sessionId) return;
+    const toolCallId = event.toolCallId ?? newPiTurnId();
+    const toolName = event.toolName ?? "tool";
+    const preview = toolPreview(toolName, event.args);
+    state.toolStartTimes.set(toolCallId, { preview, startedAt: Date.now(), toolName });
+    await state.client.request("pi.record_tool_progress", {
+      ownerId: state.ownerId,
+      ownerKind: state.ownerKind,
+      piSessionFile: ctx.sessionManager.getSessionFile(),
+      piSessionId: ctx.sessionManager.getSessionId(),
+      piTurnId: state.activePiTurnId,
+      preview,
+      sessionId: state.sessionId,
+      status: "started",
+      text: `${toolName} started`,
+      toolCallId,
+      toolName,
+    }).catch(() => undefined);
+  });
+
+  pi.on("tool_execution_end", async (event: { isError?: boolean; toolCallId?: string; toolName?: string }, ctx: PiContext) => {
+    if (!state.client || !state.activePiTurnId || !state.ownerId || !state.ownerKind || !state.sessionId) return;
+    const toolCallId = event.toolCallId ?? newPiTurnId();
+    const started = state.toolStartTimes.get(toolCallId);
+    const toolName = event.toolName ?? started?.toolName ?? "tool";
+    state.toolStartTimes.delete(toolCallId);
+    await state.client.request("pi.record_tool_progress", {
+      ...(started ? { durationMs: Date.now() - started.startedAt } : {}),
+      isError: event.isError === true,
+      ownerId: state.ownerId,
+      ownerKind: state.ownerKind,
+      piSessionFile: ctx.sessionManager.getSessionFile(),
+      piSessionId: ctx.sessionManager.getSessionId(),
+      piTurnId: state.activePiTurnId,
+      ...(started?.preview !== undefined ? { preview: started.preview } : {}),
+      sessionId: state.sessionId,
+      status: event.isError === true ? "failed" : "completed",
+      text: event.isError === true ? `${toolName} failed` : `${toolName} completed`,
+      toolCallId,
+      toolName,
+    }).catch(() => undefined);
+  });
+
   pi.on("agent_end", async (_event: unknown, ctx: PiContext) => {
-    if (!state.client || !state.currentRun || !state.ownerId) return;
+    if (!state.client || !state.activePiTurnId || !state.ownerId || !state.ownerKind || !state.sessionId) return;
     const client = state.client;
     const ownerId = state.ownerId;
-    const run = state.currentRun;
-    state.currentRun = undefined;
+    const ownerKind = state.ownerKind;
+    const piTurnId = state.activePiTurnId;
     try {
       const finalText = state.lastAssistantText.trim();
       await client
-        .request("gateway.stream_finish", {
+        .request("pi.stream_finish", {
           finalText,
-          gatewayRunId: run.id,
           ownerId,
+          piTurnId,
+          sessionId: state.sessionId,
         })
         .catch(() => undefined);
-      await client.request("gateway.complete_run", {
-        gatewayRunId: run.id,
+      await client.request("pi.complete_turn", {
+        finalText,
         ownerId,
+        ownerKind,
         piSessionFile: ctx.sessionManager.getSessionFile(),
         piSessionId: ctx.sessionManager.getSessionId(),
-        text: finalText,
+        piTurnId,
+        sessionId: state.sessionId,
+        ...(state.currentRun?.triggeringEventId ? { triggeringEventId: state.currentRun.triggeringEventId } : {}),
       });
-      state.lastAssistantText = "";
-      state.streamedAssistantText = "";
+      clearActiveTurn(state);
       await claimNext(pi, ctx, state);
     } catch (error) {
-      ctx.ui.notify?.(`Failed to complete Shepherd run: ${messageOf(error)}`, "error");
+      await client
+        .request("pi.fail_turn", {
+          message: messageOf(error),
+          ownerId,
+          ownerKind,
+          piSessionFile: ctx.sessionManager.getSessionFile(),
+          piSessionId: ctx.sessionManager.getSessionId(),
+          piTurnId,
+          sessionId: state.sessionId,
+        })
+        .catch(() => undefined);
+      clearActiveTurn(state);
+      ctx.ui.notify?.(`Failed to complete Shepherd Pi turn: ${messageOf(error)}`, "error");
     }
   });
 }
@@ -413,15 +552,15 @@ async function recordAssistantTextDelta(state: ShepherdState, text: string): Pro
     : text;
   state.lastAssistantText = text;
   state.streamedAssistantText = text;
-  if (!delta || !state.client || !state.currentRun || !state.ownerId) return;
+  if (!delta || !state.client || !state.activePiTurnId || !state.ownerId || !state.sessionId) return;
   const client = state.client;
-  const currentRun = state.currentRun;
   const ownerId = state.ownerId;
   await client
-    .request("gateway.stream_delta", {
+    .request("pi.stream_delta", {
       delta,
-      gatewayRunId: currentRun.id,
       ownerId,
+      piTurnId: state.activePiTurnId,
+      sessionId: state.sessionId,
     })
     .catch(() => undefined);
 }
@@ -454,7 +593,7 @@ async function attachAndSubscribe(
   state.unsubscribeEvents?.();
   state.unsubscribeEvents = client.onEvent((event) => {
     if (event.sessionId !== sessionId) return;
-    if (event.type === "gateway.run.queued") {
+    if (event.type === "pi.turn.queued") {
       void claimNext(pi, ctx, state);
     }
     if (event.type === "session.renamed") {
@@ -510,20 +649,30 @@ async function claimNext(pi: PiApi, ctx: PiContext, state: ShepherdState): Promi
   const client = state.client;
   const ownerId = state.ownerId;
   const sessionId = state.sessionId;
-  const result = await client.request("gateway.claim_next_run", {
+  const result = await client.request("pi.claim_next_turn", {
     ownerId,
     sessionId,
   });
-  if (!result.run) return;
+  if (!result.turn) return;
 
-  state.currentRun = result.run;
+  state.currentRun = result.turn;
+  state.activePiTurnId = result.turn.piTurnId;
+  state.activeSource = "extension";
+  state.activeInputEventIds = result.turn.triggeringEventId ? [result.turn.triggeringEventId] : [];
   state.lastAssistantText = "";
   state.streamedAssistantText = "";
-  await client.request("gateway.start_run", {
-    gatewayRunId: result.run.id,
+  await client.request("pi.start_turn", {
+    inputEventIds: state.activeInputEventIds,
     ownerId,
+    ownerKind: state.ownerKind ?? "headless_pi",
+    piSessionFile: result.turn.piSessionFile ?? ctx.sessionManager.getSessionFile(),
+    piSessionId: result.turn.piSessionId ?? ctx.sessionManager.getSessionId(),
+    piTurnId: result.turn.piTurnId,
+    sessionId,
+    source: "extension",
+    ...(result.turn.triggeringEventId ? { triggeringEventId: result.turn.triggeringEventId } : {}),
   });
-  pi.sendUserMessage(result.run.userText);
+  pi.sendUserMessage(result.turn.userText);
 }
 
 async function ensureClient(state: ShepherdState, ctx: PiContext): Promise<void> {
@@ -542,6 +691,52 @@ async function ensureClient(state: ShepherdState, ctx: PiContext): Promise<void>
   });
   state.ownerId = handshake.ownerId;
   state.ownerKind = handshake.ownerKind;
+}
+
+function newPiTurnId(): string {
+  return `pi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function localUserName(): string {
+  return process.env.USER || process.env.LOGNAME || "local";
+}
+
+function displayNameFor(source: "interactive" | "rpc"): string {
+  return source === "rpc" ? `Pi RPC / ${localUserName()}` : `Pi / ${localUserName()}`;
+}
+
+function inputDelivery(event: { streamingBehavior?: string }): "followUp" | "immediate" | "steer" {
+  if (event.streamingBehavior === "steer") return "steer";
+  if (event.streamingBehavior === "followUp") return "followUp";
+  return "immediate";
+}
+
+function toolPreview(toolName: string, args: unknown): string {
+  const record = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+  if (toolName === "bash" && typeof record.command === "string") {
+    return capPreview(`bash: ${record.command.split(/\r?\n/, 1)[0] ?? ""}`);
+  }
+  if (toolName === "read" && typeof record.path === "string") {
+    return capPreview(`read: ${record.path}`);
+  }
+  if (toolName === "edit" && typeof record.path === "string") {
+    return capPreview(`edit: ${record.path}`);
+  }
+  return capPreview(toolName);
+}
+
+function capPreview(value: string): string {
+  return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+}
+
+function clearActiveTurn(state: ShepherdState): void {
+  state.activeInputEventIds = [];
+  state.activePiTurnId = undefined;
+  state.activeSource = undefined;
+  state.currentRun = undefined;
+  state.lastAssistantText = "";
+  state.streamedAssistantText = "";
+  state.toolStartTimes.clear();
 }
 
 function startHeartbeat(state: ShepherdState): void {

@@ -6,13 +6,14 @@ disable-model-invocation: true
 
 # Shepherd Bridge
 
-Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation and provider runtime; Herdr owns terminal execution surfaces; Shepherd binds platform messages, sessions, and Herdr resources together.
+Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation and provider runtime; Herdr owns terminal execution surfaces; Shepherd Gateway owns session, delivery, queue, policy, and audit.
 
 When attached to Shepherd:
 
+- Choose the execution surface that fits the work. Use Pi directly for quick reasoning, small edits, and short checks. Use Shepherd/Herdr when a visible terminal surface, parallel worker agents, long-running commands, resumable execution, or inspection by the user or another Pi owner would help.
 - Prefer `shepherd_*` tools for Shepherd session inspection and Herdr orchestration.
-- Use Shepherd logical tools instead of raw Herdr control unless the user explicitly asks for direct Herdr work.
-- Treat Shepherd session ids, Gateway run ids, socket paths, and owner ids as internal metadata. Do not show them unless the user asks.
+- Use Shepherd logical tools instead of raw Herdr mutation unless the user explicitly asks for direct Herdr work.
+- Treat Shepherd session ids, Pi turn ids, socket paths, and owner ids as internal metadata. Do not show them unless the user asks.
 - Inspect current Shepherd/Herdr state before creating new workspaces, panes, or agents when the user asks for coordination.
 - Non-Shepherd Herdr resources are user-owned. Attach to them only when the user explicitly asks.
 
