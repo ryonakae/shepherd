@@ -103,22 +103,22 @@ describe("SlackStreamDelivery", () => {
 
     await stream.delta({
       delta: "hello",
-      gatewayRunId: "run-1",
+      streamId: "run-1",
       targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
     });
     now = 10;
     await stream.delta({
       delta: "!",
-      gatewayRunId: "run-1",
+      streamId: "run-1",
       targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
     });
     now = 110;
     await stream.delta({
       delta: " done",
-      gatewayRunId: "run-1",
+      streamId: "run-1",
       targetId: slackTargetId({ channelId: "C123", threadTs: "1700000000.000001" }),
     });
-    await stream.finish({ finalText: "hello! done", gatewayRunId: "run-1" });
+    await stream.finish({ finalText: "hello! done", streamId: "run-1" });
 
     expect(calls).toEqual([
       {

@@ -1,1698 +1,370 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createConnection, type Socket } from "node:net";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Type } from "@sinclair/typebox";
+import { createConnection, type Socket } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
-import { SessionSummaryStore } from "@/db/session-summary.js";
-import { WorkingContextStore } from "@/db/working-contexts.js";
-import { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
+import { PiTurnStore } from "@/db/pi-turns.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
-import { GatewayRunner } from "@/gateway/runner.js";
+import { PiTurnQueue } from "@/gateway/pi-turn-queue.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
-import { LogicalToolRegistry, LogicalToolRunner } from "@/gateway/tools.js";
-import { GatewayRunStore } from "@/gateway/turn-queue.js";
-import { WorkingContextResolver } from "@/gateway/working-contexts.js";
 
 const tempDirs: string[] = [];
-const servers: ShepherdGatewayServer[] = [];
-const sockets: Socket[] = [];
 
-afterEach(async () => {
-  for (const socket of sockets.splice(0)) {
-    socket.destroy();
-  }
-  await Promise.all(servers.splice(0).map((server) => server.stop()));
+afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true });
   }
 });
 
 describe("ShepherdGatewayServer JSON Lines RPC", () => {
-  test("creates sessions with optional Slack auto-bind metadata", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "create-1",
-        method: "session.create",
-        params: {
-          slackAutoBind: { channelId: "C123" },
-          title: "TUI session",
-        },
-      }),
-    );
-
-    const [response] = await readMessages(client, 1);
-
-    expect(response).toMatchObject({
-      id: "create-1",
-      result: {
-        session: {
-          metadata: {
-            slackAutoBind: {
-              channelId: "C123",
-              status: "pending",
-            },
-          },
-          title: "TUI session",
-        },
-      },
-    });
-    const sessionId = (response as { result: { session: { id: string } } }).result.session.id;
-    expect(store.getSession(sessionId)).toMatchObject({
-      metadata: { slackAutoBind: { channelId: "C123", status: "pending" } },
-      title: "TUI session",
-    });
-  });
-
-  test("creates sessions with a local working context path", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
-    tempDirs.push(dir);
-    const project = join(dir, "project");
-    mkdirSync(project);
-    const { server, socketPath, store } = await openServer({
-      allowedRoots: [dir],
-      enableLocalWorkingContexts: true,
-    });
-    servers.push(server);
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "create-local-1",
-        method: "session.create",
-        params: { title: null, workingContextPath: project },
-      }),
-    );
-
-    const [response] = await readMessages(client, 1);
-    expect(response).toMatchObject({
-      id: "create-local-1",
-      result: {
-        session: {
-          title: null,
-          workingContextId: expect.any(String),
-        },
-      },
-    });
-    const sessionId = (response as { result: { session: { id: string } } }).result.session.id;
-    expect(store.getSession(sessionId).workingContextId).toBeTruthy();
-  });
-
-  test("creates local working contexts when allowed roots are unconfigured", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
-    tempDirs.push(dir);
-    const project = join(dir, "unconfigured-project");
-    mkdirSync(project);
-    const { server, socketPath, store } = await openServer({ enableLocalWorkingContexts: true });
-    servers.push(server);
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "create-local-unconfigured-1",
-        method: "session.create",
-        params: { workingContextPath: project },
-      }),
-    );
-
-    const [response] = await readMessages(client, 1);
-    const session = (
-      response as { result: { session: { id: string; workingContextId: string | null } } }
-    ).result.session;
-    expect(session.workingContextId).toEqual(expect.any(String));
-    expect(store.getSession(session.id).workingContextId).toBe(session.workingContextId);
-  });
-
-  test("rejects local working context paths outside configured allowed roots", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "shepherd-local-context-"));
-    tempDirs.push(dir);
-    const outside = join(dir, "outside");
-    mkdirSync(outside);
-    const { server, socketPath } = await openServer({
-      allowedRoots: [join(dir, "allowed")],
-      enableLocalWorkingContexts: true,
-    });
-    servers.push(server);
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "create-local-denied-1",
-        method: "session.create",
-        params: { workingContextPath: outside },
-      }),
-    );
-
-    await expect(readMessages(client, 1)).resolves.toMatchObject([
-      {
-        error: { message: expect.stringContaining("outside allowed roots") },
-        id: "create-local-denied-1",
-      },
-    ]);
-  });
-
-  test("ensures Pi metadata for an existing session", async () => {
-    const { server, socketPath, store } = await openServer({ enablePiSessionStore: true });
-    servers.push(server);
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "pi-ensure-1",
-        method: "pi.ensure_session",
-        params: { sessionId: session.id },
-      }),
-    );
-
-    const [response] = await readMessages(client, 1);
-    expect(response).toMatchObject({
-      id: "pi-ensure-1",
-      result: {
-        pi: {
-          sessionFile: expect.stringContaining("session-1.jsonl"),
-          sessionId: expect.any(String),
-        },
-      },
-    });
-    expect(store.getSession(session.id).metadata.pi).toMatchObject(
-      (response as { result: { pi: object } }).result.pi,
-    );
-  });
-
-  test("replays subscribed session events after a cursor", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const first = store.appendEvent({
-      payload: { text: "already seen" },
-      sessionId: session.id,
-      type: "user.message",
-    });
-    const second = store.appendEvent({
-      payload: { text: "missed" },
-      sessionId: session.id,
-      type: "gateway.message",
-    });
-
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: first.id, sessionId: session.id },
-      }),
-    );
-
-    const messages = await readMessages(client, 2);
-
-    expect(messages[0]).toEqual({ id: "subscribe-1", result: { replayed: 1, subscribed: true } });
-    expect(messages[1]).toMatchObject({
-      method: "session.event",
-      params: {
-        event: {
-          createdAt: second.createdAt.toISOString(),
-          id: second.id,
-          payload: { text: "missed" },
-          sessionId: session.id,
-          type: "gateway.message",
-        },
-      },
-    });
-  });
-
-  test("broadcasts appended events to live subscribers", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "append-1",
-        method: "session.append_event",
-        params: {
-          payload: { text: "hello from TUI" },
-          sessionId: session.id,
-          type: "user.message",
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 2);
-
-    expect(messages[0]).toMatchObject({
-      id: "append-1",
-      result: {
-        event: {
-          payload: { text: "hello from TUI" },
-          sessionId: session.id,
-          type: "user.message",
-        },
-      },
-    });
-    expect(messages[1]).toMatchObject({
-      method: "session.event",
-      params: {
-        event: {
-          payload: { text: "hello from TUI" },
-          sessionId: session.id,
-          type: "user.message",
-        },
-      },
-    });
-  });
-
-  test("renames sessions and broadcasts a session event", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1", title: "Old title" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "rename-1",
-        method: "session.rename",
-        params: {
-          sessionId: session.id,
-          title: "New title",
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 2);
-
-    expect(messages[0]).toMatchObject({
-      id: "rename-1",
-      result: {
-        session: {
-          id: session.id,
-          title: "New title",
-        },
-      },
-    });
-    expect(messages[1]).toMatchObject({
-      method: "session.event",
-      params: {
-        event: {
-          payload: { title: "New title" },
-          type: "session.renamed",
-        },
-      },
-    });
-  });
-
-  test("records approval requests and responses as delivered session events", async () => {
-    const delivered: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureDeliveryFanout() {
-        return {
-          async deliverEvent(event) {
-            delivered.push({ payload: event.payload, type: event.type });
-          },
-        };
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "approval-1",
-        method: "approval.request",
-        params: {
-          approvalId: "codex-tool-1",
-          provider: "codex",
-          request: { command: "pnpm test" },
-          sessionId: session.id,
-          text: "Codex requests approval to run pnpm test.",
-        },
-      }),
-    );
-
-    const requestMessages = await readMessages(client, 2);
-
-    client.write(
-      encodeJsonLine({
-        id: "approval-2",
-        method: "approval.respond",
-        params: {
-          approvalId: "codex-tool-1",
-          decision: "approved",
-          responderActorId: "tui:user",
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    const responseMessages = await readMessages(client, 2);
-    const messages = [...requestMessages, ...responseMessages];
-
-    expect(messages[0]).toMatchObject({
-      method: "session.event",
-      params: { event: { type: "approval.requested" } },
-    });
-    expect(messages[1]).toMatchObject({
-      id: "approval-1",
-      result: {
-        event: {
-          payload: {
-            approvalId: "codex-tool-1",
-            provider: "codex",
-            request: { command: "pnpm test" },
-            text: "Codex requests approval to run pnpm test.",
-          },
-          type: "approval.requested",
-        },
-      },
-    });
-    expect(messages[2]).toMatchObject({
-      method: "session.event",
-      params: { event: { type: "approval.responded" } },
-    });
-    expect(messages[3]).toMatchObject({
-      id: "approval-2",
-      result: {
-        event: {
-          actorId: "tui:user",
-          payload: {
-            approvalId: "codex-tool-1",
-            decision: "approved",
-            text: "Approval approved: codex-tool-1",
-          },
-          type: "approval.responded",
-        },
-      },
-    });
-    expect(delivered).toEqual([
-      expect.objectContaining({ type: "approval.requested" }),
-      expect.objectContaining({ type: "approval.responded" }),
-    ]);
-  });
-
-  test("records Herdr progress and publishes it to subscribers and delivery fanout", async () => {
-    const delivered: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureDeliveryFanout() {
-        return {
-          async deliverEvent(event) {
-            delivered.push({ payload: event.payload, type: event.type });
-          },
-        };
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "herdr-progress-1",
-        method: "herdr.progress",
-        params: {
-          herdrSessionName: "shepherd-api",
-          rawEvent: {
-            data: { agent: "claude-impl", status: "idle" },
-            id: "evt-1",
-            type: "agent.status",
-          },
-          sessionId: session.id,
-          workspaceId: "w1",
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 2);
-
-    expect(messages[0]).toMatchObject({
-      method: "session.event",
-      params: {
-        event: {
-          idempotencyKey: "herdr:shepherd-api:event:evt-1",
-          payload: {
-            agent: "claude-impl",
-            eventId: "evt-1",
-            eventType: "agent.status",
-            herdrSessionName: "shepherd-api",
-            status: "idle",
-            text: "Herdr progress agent.status status=idle agent=claude-impl",
-            workspaceId: "w1",
-          },
-          type: "herdr.progress",
-        },
-      },
-    });
-    expect(messages[1]).toMatchObject({
-      id: "herdr-progress-1",
-      result: {
-        event: {
-          type: "herdr.progress",
-        },
-      },
-    });
-    expect(delivered).toEqual([expect.objectContaining({ type: "herdr.progress" })]);
-  });
-
-  test("records Pi extension handshakes", async () => {
-    const { server, socketPath } = await openServer();
-    servers.push(server);
-
-    const handshake = server.waitForPiHandshake({ timeoutMs: 500 });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-handshake-1",
-        method: "pi.handshake",
-        params: {
-          extensionVersion: "0.1.0",
-          mode: "rpc",
-          piSessionFile: "/tmp/pi-session.jsonl",
-          piSessionId: "pi-session-1",
-        },
-      }),
-    );
-
-    const [response, recorded] = await Promise.all([readMessages(client, 1), handshake]);
-
-    expect(response[0]).toMatchObject({
-      id: "pi-handshake-1",
-      result: {
-        attached: false,
-        gatewayId: "default",
-        ownerKind: "headless_pi",
-      },
-    });
-    expect(recorded).toMatchObject({
-      attached: false,
-      extensionVersion: "0.1.0",
-      mode: "rpc",
-      ownerKind: "headless_pi",
-      piSessionFile: "/tmp/pi-session.jsonl",
-      piSessionId: "pi-session-1",
-    });
-  });
-
-  test("does not auto-attach a Pi handshake for a different gateway id", async () => {
-    const { server, socketPath } = await openServer({ gatewayId: "gateway-current" });
-    servers.push(server);
-
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-handshake-mismatch-1",
-        method: "pi.handshake",
-        params: {
-          binding: { gatewayId: "gateway-other", sessionId: "session-1" },
-          extensionVersion: "0.1.0",
-          mode: "rpc",
-        },
-      }),
-    );
-
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      expect.objectContaining({
-        id: "pi-handshake-mismatch-1",
-        result: expect.objectContaining({ attached: false, gatewayId: "gateway-current" }),
-      }),
-    ]);
-  });
-
-  test("attaches Pi sessions and accepts owner heartbeats", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-attach-1",
-        method: "pi.attach",
-        params: {
-          mode: "tui",
-          piSessionFile: "/tmp/pi-session.jsonl",
-          piSessionId: "pi-session-1",
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    const [attachResponse] = await readMessages(client, 1);
-    expect(attachResponse).toMatchObject({
-      id: "pi-attach-1",
-      result: {
-        gatewayId: "default",
-        ownerKind: "tui_pi",
-        session: {
-          id: session.id,
-          metadata: {
-            pi: {
-              sessionFile: "/tmp/pi-session.jsonl",
-              sessionId: "pi-session-1",
-            },
-          },
-        },
-        socketPath,
-      },
-    });
-
-    const ownerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
-    client.write(
-      encodeJsonLine({
-        id: "pi-heartbeat-1",
-        method: "pi.heartbeat",
-        params: { ownerId, sessionId: session.id },
-      }),
-    );
-
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      {
-        id: "pi-heartbeat-1",
-        result: {
-          ok: true,
-          ownerId,
-          ownerKind: "tui_pi",
-          sessionId: session.id,
-        },
-      },
-    ]);
-  });
-
-  test("rejects conflicting Pi attach without force", async () => {
-    const { server, socketPath, store } = await openServer();
-    servers.push(server);
-
-    const session = store.createSession({
-      id: "session-1",
-      metadata: {
-        pi: {
-          createdAt: "2026-06-25T00:00:00.000Z",
-          sessionFile: "/tmp/existing.jsonl",
-          sessionId: "pi-existing",
-          updatedAt: "2026-06-25T00:00:00.000Z",
-        },
-      },
-    });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-attach-conflict-1",
-        method: "pi.attach",
-        params: {
-          mode: "rpc",
-          piSessionFile: "/tmp/other.jsonl",
-          piSessionId: "pi-other",
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    const [response] = await readMessages(client, 1);
-    expect(response).toMatchObject({
-      error: { message: "Session is already attached to a different Pi session" },
-      id: "pi-attach-conflict-1",
-    });
-  });
-
-  test("reloads config through RPC", async () => {
-    const configPath = writeTempFile(
-      "shepherd.yaml",
-      `
-gateway:
-  default_provider: codex
-  model: gpt-5.3-codex
-providers:
-  codex:
-    type: codex_cli
-    mode: app_server
-    auth_source: codex_cli
-default_agent: implementer
-agents:
-  implementer:
-    command: codex
-`,
-    );
-    const { server, socketPath } = await openServer({ configPath });
-    servers.push(server);
-
-    const client = await connect(socketPath);
-    client.write(encodeJsonLine({ id: "reload-1", method: "config.reload" }));
-
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "reload-1", result: { ok: true } },
-    ]);
-  });
-
-  test("runs a gateway turn through RPC and broadcasts resulting events", async () => {
-    const { server, socketPath, store } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate() {
-              return { text: "I will start Herdr work now." };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "gateway-1",
-        method: "gateway.run_turn",
-        params: {
-          messages: [{ content: "please coordinate this", role: "user" }],
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 4);
-
-    expect(messages[0]).toEqual({
-      id: "gateway-1",
-      result: { text: "I will start Herdr work now." },
-    });
-    expect(messages.slice(1).map((message) => eventType(message))).toEqual([
-      "gateway.run.started",
-      "gateway.message",
-      "gateway.run.completed",
-    ]);
-  });
-
-  test("passes explicit gateway provider overrides through RPC", async () => {
-    const providerOverrides: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              providerOverrides.push(input.providerOverride);
-              return { text: "override accepted" };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "gateway-override-1",
-        method: "gateway.run_turn",
-        params: {
-          messages: [{ content: "please coordinate this", role: "user" }],
-          providerOverride: { model: "gpt-4.1", provider: "openai" },
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "gateway-override-1", result: { text: "override accepted" } },
-    ]);
-    expect(providerOverrides).toEqual([{ model: "gpt-4.1", provider: "openai" }]);
-  });
-
-  test("uses configured provider overrides when a message has no explicit override", async () => {
-    const providerOverrides: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              providerOverrides.push(input.providerOverride);
-              return { text: "configured override accepted" };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-      providerOverrides: () => ({ model: "gpt-5.3-codex-high", provider: "codex" }),
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "message-override-1",
-        method: "session.user_message",
-        params: {
-          sessionId: session.id,
-          text: "please start",
-        },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() => providerOverrides.length === 1);
-
-    expect(providerOverrides).toEqual([{ model: "gpt-5.3-codex-high", provider: "codex" }]);
-  });
-
-  test("queues, claims, and completes a final-only Pi gateway run", async () => {
+  test("queues Slack/user messages as Pi turns and lets Pi claim/start/complete them", async () => {
     const delivered: string[] = [];
-    const startedHeadlessPi: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureDeliveryFanout() {
-        return {
-          async deliverEvent(event) {
-            delivered.push(event.type);
-          },
-        };
+    const { client, server, store } = await openServer({
+      deliveryFanout: {
+        async deliverEvent(event) {
+          delivered.push(event.type);
+        },
       },
-      configureHeadlessPi() {
-        return {
-          ensureStarted(input) {
-            startedHeadlessPi.push(input);
-          },
-        };
-      },
-      enableGatewayRuns: true,
     });
-    servers.push(server);
-
     const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: {
-          actorId: "slack:T123:U123",
-          presentation: { displayName: "U123", sourcePlatform: "slack", sourceUserId: "U123" },
-          sessionId: session.id,
-          text: "from Slack",
-        },
-      }),
-    );
-
-    const queuedMessages = await readMessages(client, 3);
-    expect(queuedMessages[0]).toMatchObject({ id: "message-1" });
-    expect(queuedMessages.slice(1).map((message) => eventType(message))).toEqual([
-      "user.message",
-      "gateway.run.queued",
-    ]);
-    expect(queuedMessages[2]).toMatchObject({
-      params: {
-        event: {
-          payload: {
-            piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
-            piSessionId: expect.any(String),
-          },
-        },
-      },
+    await client.request("pi.handshake", {
+      extensionVersion: "0.0.0-test",
+      mode: "tui",
     });
-    expect(startedHeadlessPi).toEqual([
-      {
-        piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
-        sessionId: session.id,
-      },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "claim-1",
-        method: "gateway.claim_next_run",
-        params: { ownerId: "owner-1", sessionId: session.id },
-      }),
-    );
-    const claimMessages = await readMessages(client, 2);
-    expect(claimMessages[0]).toMatchObject({
-      id: "claim-1",
-      result: {
-        run: {
-          actorId: "slack:T123:U123",
-          piSessionFile: expect.stringContaining("pi-sessions/session-1.jsonl"),
-          piSessionId: expect.any(String),
-          userText: "from Slack",
-        },
-      },
+    const attach = await client.request("pi.attach", {
+      mode: "tui",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      sessionId: session.id,
     });
-    expect(eventType(claimMessages[1])).toBe("gateway.run.started");
+    const ownerId = (attach as { ownerId: string }).ownerId;
 
-    const gatewayRunId = (claimMessages[0] as { result: { run: { id: string } } }).result.run.id;
-    client.write(
-      encodeJsonLine({
-        id: "start-1",
-        method: "gateway.start_run",
-        params: { gatewayRunId, ownerId: "owner-1" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      expect.objectContaining({
-        id: "start-1",
-        result: { run: expect.objectContaining({ status: "running" }) },
-      }),
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "complete-1",
-        method: "gateway.complete_run",
-        params: {
-          gatewayRunId,
-          ownerId: "owner-1",
-          piSessionFile: "/tmp/pi-session.jsonl",
-          piSessionId: "pi-session-1",
-          text: "final answer",
-        },
-      }),
-    );
-
-    const completeMessages = await readMessages(client, 3);
-    expect(completeMessages[0]).toMatchObject({
-      id: "complete-1",
-      result: { run: { status: "completed" } },
+    const userResponse = await client.request("session.user_message", {
+      actorId: "slack:U1",
+      presentation: { sourcePlatform: "slack", sourceUserId: "U1" },
+      sessionId: session.id,
+      text: "start work",
     });
-    expect(completeMessages.slice(1).map((message) => eventType(message))).toEqual([
-      "gateway.message",
-      "gateway.run.completed",
-    ]);
-    expect(delivered).toEqual([
-      "user.message",
-      "gateway.run.queued",
-      "gateway.run.started",
-      "gateway.message",
-      "gateway.run.completed",
-    ]);
-  });
+    expect((userResponse as { event: { type: string } }).event.type).toBe("user.message");
+    await waitFor(() => store.listEvents(session.id).some((event) => event.type === "pi.turn.queued"));
 
-  test("gives TUI Pi owners priority over headless claim attempts", async () => {
-    const { server, socketPath, store } = await openServer({ enableGatewayRuns: true });
-    servers.push(server);
+    const claim = await client.request("pi.claim_next_turn", { ownerId, sessionId: session.id });
+    const turn = (claim as { turn: { piTurnId: string; userText: string } }).turn;
+    expect(turn.userText).toBe("start work");
 
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-attach-priority-1",
-        method: "pi.attach",
-        params: {
-          mode: "tui",
-          piSessionFile: "/tmp/pi-session.jsonl",
-          piSessionId: "pi-session-1",
-          sessionId: session.id,
-        },
-      }),
-    );
-    const [attachResponse] = await readMessages(client, 1);
-    const tuiOwnerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
-
-    client.write(
-      encodeJsonLine({
-        id: "message-priority-1",
-        method: "session.user_message",
-        params: { sessionId: session.id, text: "hello" },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() =>
-      store.listEvents(session.id).some((event) => event.type === "gateway.run.queued"),
-    );
-
-    client.write(
-      encodeJsonLine({
-        id: "claim-headless-priority-1",
-        method: "gateway.claim_next_run",
-        params: { ownerId: "headless-owner", sessionId: session.id },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "claim-headless-priority-1", result: { run: null } },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "claim-tui-priority-1",
-        method: "gateway.claim_next_run",
-        params: { ownerId: tuiOwnerId, sessionId: session.id },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      expect.objectContaining({
-        id: "claim-tui-priority-1",
-        result: { run: expect.objectContaining({ userText: "hello" }) },
-      }),
-    ]);
-  });
-
-  test("marks running TUI-owned runs as recovery required after heartbeat timeout", async () => {
-    const { server, socketPath, store } = await openServer({
-      enableGatewayRuns: true,
+    await client.request("pi.start_turn", {
+      inputEventIds: [1],
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: turn.piTurnId,
+      sessionId: session.id,
+      source: "extension",
     });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "pi-attach-recovery-1",
-        method: "pi.attach",
-        params: {
-          mode: "tui",
-          piSessionFile: "/tmp/pi-session.jsonl",
-          piSessionId: "pi-session-1",
-          sessionId: session.id,
-        },
-      }),
-    );
-    const [attachResponse] = await readMessages(client, 1);
-    const tuiOwnerId = (attachResponse as { result: { ownerId: string } }).result.ownerId;
-
-    client.write(
-      encodeJsonLine({
-        id: "message-recovery-1",
-        method: "session.user_message",
-        params: { sessionId: session.id, text: "hello" },
-      }),
-    );
-    await readMessages(client, 1);
-    client.write(
-      encodeJsonLine({
-        id: "claim-recovery-1",
-        method: "gateway.claim_next_run",
-        params: { ownerId: tuiOwnerId, sessionId: session.id },
-      }),
-    );
-    const [claimResponse] = await readMessages(client, 1);
-    const gatewayRunId = (claimResponse as { result: { run: { id: string } } }).result.run.id;
-
-    server.reapStalePiOwners(Date.now() + 60_000);
-
-    expect(store.listEvents(session.id).map((event) => event.type)).toContain("recovery.note");
-    expect(
-      store.listEvents(session.id).find((event) => event.type === "recovery.note")?.payload,
-    ).toMatchObject({ gatewayRunId, ownerId: tuiOwnerId, previousStatus: "running" });
-  });
-
-  test("streams transient gateway deltas before completing a run", async () => {
-    const streamed: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureStreamDelivery() {
-        const finished = new Set<string>();
-        return {
-          async delta(input) {
-            streamed.push({ method: "delta", input });
-          },
-          async finish(input) {
-            streamed.push({ method: "finish", input });
-            finished.add(input.gatewayRunId);
-          },
-          hasFinished(gatewayRunId) {
-            return finished.has(gatewayRunId);
-          },
-        };
-      },
-      enableGatewayRuns: true,
+    await client.request("pi.complete_turn", {
+      finalText: "done",
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: turn.piTurnId,
+      sessionId: session.id,
     });
-    servers.push(server);
 
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: { sessionId: session.id, text: "hello" },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() =>
-      store.listEvents(session.id).some((event) => event.type === "gateway.run.queued"),
-    );
-    client.write(
-      encodeJsonLine({
-        id: "claim-stream-1",
-        method: "gateway.claim_next_run",
-        params: { ownerId: "owner-1", sessionId: session.id },
-      }),
-    );
-    const [claimResponse] = await readMessages(client, 1);
-    const gatewayRunId = (claimResponse as { result: { run: { id: string } } }).result.run.id;
-
-    client.write(
-      encodeJsonLine({
-        id: "stream-delta-1",
-        method: "gateway.stream_delta",
-        params: { delta: "partial", gatewayRunId, ownerId: "owner-1" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "stream-delta-1", result: { streamed: true } },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "stream-finish-1",
-        method: "gateway.stream_finish",
-        params: { finalText: "final", gatewayRunId, ownerId: "owner-1" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "stream-finish-1", result: { streamed: true } },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "segment-break-1",
-        method: "gateway.stream_segment_break",
-        params: { gatewayRunId, ownerId: "owner-1" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "segment-break-1", result: { status: "segment_break" } },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "tool-progress-1",
-        method: "gateway.stream_tool_progress",
-        params: { gatewayRunId, ownerId: "owner-1", text: "tool" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      { id: "tool-progress-1", result: { status: "tool_progress_off" } },
-    ]);
-
-    client.write(
-      encodeJsonLine({
-        id: "complete-stream-1",
-        method: "gateway.complete_run",
-        params: { gatewayRunId, ownerId: "owner-1", text: "final" },
-      }),
-    );
-    await expect(readMessages(client, 1)).resolves.toEqual([
-      expect.objectContaining({ id: "complete-stream-1" }),
-    ]);
-    expect(streamed).toEqual([
-      {
-        input: { delta: "partial", gatewayRunId, sessionId: session.id },
-        method: "delta",
-      },
-      {
-        input: { finalText: "final", gatewayRunId },
-        method: "finish",
-      },
-    ]);
-    expect(
-      store.listEvents(session.id).find((event) => event.type === "gateway.message")?.payload,
-    ).toMatchObject({ deliveredByStream: true, text: "final" });
-  });
-
-  test("lists and runs logical tools through RPC", async () => {
-    const { server, socketPath, store } = await openServer({
-      configureLogicalTools(events) {
-        const registry = new LogicalToolRegistry();
-        registry.register({
-          description: "Echo a message",
-          execute: (input: { text: string }) => ({ echoed: input.text }),
-          inputSchema: Type.Object({ text: Type.String() }),
-          label: "Echo message",
-          name: "echo",
-          promptGuidelines: ["Use shepherd_echo only when a test needs an echo response."],
-          promptSnippet: "Echo a message through the Shepherd Gateway.",
-        });
-        return new LogicalToolRunner({
-          events,
-          policy: { allowedTools: new Set(["echo"]) },
-          registry,
-        });
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(encodeJsonLine({ id: "tools-1", method: "tool.list" }));
-    client.write(
-      encodeJsonLine({
-        id: "tools-2",
-        method: "tool.run",
-        params: {
-          input: { text: "hello" },
-          name: "echo",
-          sessionId: session.id,
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 2);
-
-    expect(messages[0]).toMatchObject({
-      id: "tools-1",
-      result: {
-        tools: [
-          {
-            description: "Echo a message",
-            inputSchema: expect.any(Object),
-            label: "Echo message",
-            name: "echo",
-            promptGuidelines: ["Use shepherd_echo only when a test needs an echo response."],
-            promptSnippet: "Echo a message through the Shepherd Gateway.",
-          },
-        ],
-      },
-    });
-    expect(messages[1]).toEqual({
-      id: "tools-2",
-      result: { output: { echoed: "hello" } },
-    });
     expect(store.listEvents(session.id).map((event) => event.type)).toEqual([
-      "gateway.tool.call",
-      "gateway.tool.result",
-    ]);
-  });
-
-  test("persists a user message and wakes the gateway turn", async () => {
-    const { server, socketPath, store } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              return { text: `Gateway saw: ${input.messages.at(-1)?.content ?? ""}` };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-    client.write(
-      encodeJsonLine({
-        id: "subscribe-1",
-        method: "session.subscribe",
-        params: { afterEventId: 0, sessionId: session.id },
-      }),
-    );
-    await readMessages(client, 1);
-
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: {
-          actorId: "user-1",
-          presentation: { displayName: "Ryo", sourcePlatform: "tui" },
-          sessionId: session.id,
-          text: "please start",
-        },
-      }),
-    );
-
-    const messages = await readMessages(client, 5);
-
-    expect(messages[0]).toMatchObject({
-      id: "message-1",
-      result: {
-        event: {
-          actorId: "user-1",
-          payload: {
-            presentation: { displayName: "Ryo", sourcePlatform: "tui" },
-            text: "please start",
-          },
-          sessionId: session.id,
-          type: "user.message",
-        },
-      },
-    });
-    expect(messages.slice(1).map((message) => eventType(message))).toEqual([
       "user.message",
-      "gateway.run.started",
-      "gateway.message",
-      "gateway.run.completed",
+      "pi.turn.queued",
+      "pi.turn.started",
+      "assistant.message",
+      "pi.turn.completed",
     ]);
+    expect(delivered).toEqual([
+      "user.message",
+      "pi.turn.queued",
+      "pi.turn.started",
+      "assistant.message",
+      "pi.turn.completed",
+    ]);
+
+    client.close();
+    await server.stop();
   });
 
-  test("wakes the gateway with recent session context", async () => {
-    const generatedMessages: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              generatedMessages.push(input.messages);
-              return { text: "I remember the context." };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
+  test("mirrors direct Pi user messages without queueing a new turn", async () => {
+    const { client, server, store } = await openServer();
     const session = store.createSession({ id: "session-1" });
-    store.appendEvent({
-      payload: { text: "previous user message" },
+    const attach = await client.request("pi.attach", {
+      mode: "tui",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
       sessionId: session.id,
-      type: "user.message",
     });
-    store.appendEvent({
-      payload: { text: "previous gateway response" },
+    const ownerId = (attach as { ownerId: string }).ownerId;
+
+    const mirrored = await client.request("pi.mirror_user_message", {
+      delivery: "immediate",
+      displayName: "Pi / local",
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: "turn-direct",
       sessionId: session.id,
-      type: "gateway.message",
+      source: "interactive",
+      text: "inspect directly",
     });
-    const client = await connect(socketPath);
 
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: {
-          sessionId: session.id,
-          text: "new user message",
-        },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() => generatedMessages.length === 1);
+    expect((mirrored as { event: { type: string } }).event.type).toBe("user.message");
+    expect(store.listEvents(session.id).map((event) => event.type)).toEqual(["user.message"]);
 
-    expect(generatedMessages[0]).toEqual([
-      { content: "previous user message", role: "user" },
-      { content: "previous gateway response", role: "assistant" },
-      { content: "new user message", role: "user" },
-    ]);
+    client.close();
+    await server.stop();
   });
 
-  test("includes stored session summary when waking the gateway", async () => {
-    const generatedMessages: unknown[] = [];
-    const { server, socketPath, store, summaries } = await openServer({
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              generatedMessages.push(input.messages);
-              return { text: "I have summary context." };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
+  test("streams, records tool progress, and completes direct Pi turns", async () => {
+    const runtimeCalls: unknown[] = [];
+    const finished = new Set<string>();
+    const { client, server, store } = await openServer({
+      runtimeDelivery: {
+        async completeToolProgress(input) {
+          runtimeCalls.push({ completeToolProgress: input });
+        },
+        async delta(input) {
+          runtimeCalls.push({ delta: input });
+        },
+        async failToolProgress(input) {
+          runtimeCalls.push({ failToolProgress: input });
+        },
+        async finish(input) {
+          runtimeCalls.push({ finish: input });
+          finished.add(input.streamId);
+        },
+        hasFinished(streamId) {
+          return finished.has(streamId);
+        },
+        async recordToolProgress(input) {
+          runtimeCalls.push({ recordToolProgress: input });
+        },
       },
     });
-    servers.push(server);
-
     const session = store.createSession({ id: "session-1" });
-    summaries.upsertSummary({
-      content: "Existing durable session summary.",
+    const attach = await client.request("pi.attach", {
+      mode: "tui",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
       sessionId: session.id,
-      summarizedThroughEventId: 1,
     });
-    const client = await connect(socketPath);
+    const ownerId = (attach as { ownerId: string }).ownerId;
 
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: {
-          sessionId: session.id,
-          text: "new user message",
-        },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() => generatedMessages.length === 1);
+    await client.request("pi.start_turn", {
+      inputEventIds: [],
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: "turn-direct",
+      sessionId: session.id,
+      source: "interactive",
+    });
+    await client.request("pi.stream_delta", {
+      delta: "partial",
+      ownerId,
+      piTurnId: "turn-direct",
+      sessionId: session.id,
+    });
+    await client.request("pi.stream_finish", {
+      finalText: "final",
+      ownerId,
+      piTurnId: "turn-direct",
+      sessionId: session.id,
+    });
+    await client.request("pi.record_tool_progress", {
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: "turn-direct",
+      sessionId: session.id,
+      status: "completed",
+      text: "bash completed token=secret-value",
+      toolCallId: "tool-1",
+      toolName: "bash",
+    });
+    await client.request("pi.complete_turn", {
+      finalText: "final",
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: "turn-direct",
+      sessionId: session.id,
+    });
 
-    expect(generatedMessages[0]).toEqual([
+    expect(runtimeCalls).toEqual([
+      { delta: { delta: "partial", sessionId: session.id, streamId: "turn-direct" } },
+      { finish: { finalText: "final", streamId: "turn-direct" } },
       {
-        content: "Session summary so far:\nExisting durable session summary.",
-        role: "system",
-      },
-      { content: "new user message", role: "user" },
-    ]);
-  });
-
-  test("publishes appended and gateway message events to the delivery fanout", async () => {
-    const delivered: unknown[] = [];
-    const { server, socketPath, store } = await openServer({
-      configureDeliveryFanout() {
-        return {
-          async deliverEvent(event) {
-            delivered.push({ id: event.id, type: event.type });
-          },
-        };
-      },
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate() {
-              return { text: "Gateway response" };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
-    const session = store.createSession({ id: "session-1" });
-    const client = await connect(socketPath);
-
-    client.write(
-      encodeJsonLine({
-        id: "message-1",
-        method: "session.user_message",
-        params: {
+        recordToolProgress: {
+          piTurnId: "turn-direct",
           sessionId: session.id,
-          text: "please start",
+          status: "completed",
+          text: "bash completed token=[redacted]",
+          toolName: "bash",
         },
-      }),
-    );
-    await readMessages(client, 1);
-    await waitFor(() => delivered.length === 4);
-
-    expect(delivered).toEqual([
-      expect.objectContaining({ type: "user.message" }),
-      expect.objectContaining({ type: "gateway.run.started" }),
-      expect.objectContaining({ type: "gateway.message" }),
-      expect.objectContaining({ type: "gateway.run.completed" }),
+      },
+      { completeToolProgress: { piTurnId: "turn-direct", sessionId: session.id } },
     ]);
+    expect(store.listEvents(session.id).map((event) => event.type)).toEqual([
+      "pi.turn.started",
+      "pi.tool.completed",
+      "assistant.message",
+      "pi.turn.completed",
+    ]);
+    expect(store.listEvents(session.id)[2]?.payload).toMatchObject({ deliveredByStream: true });
+
+    client.close();
+    await server.stop();
   });
 
-  test("exposes a public user message receiver for platform adapters", async () => {
-    const delivered: unknown[] = [];
-    const { server, store } = await openServer({
-      configureDeliveryFanout() {
-        return {
-          async deliverEvent(event) {
-            delivered.push(event.type);
-          },
-        };
-      },
-      configureGatewayRunner(events) {
-        const registry = new LogicalToolRegistry();
-        return new GatewayRunner({
-          events,
-          provider: {
-            async generate(input) {
-              return { text: `Gateway saw ${input.messages.at(-1)?.content ?? ""}` };
-            },
-          },
-          tools: new LogicalToolRunner({
-            events,
-            policy: { allowedTools: new Set() },
-            registry,
-          }),
-        });
-      },
-    });
-    servers.push(server);
-
+  test("marks stale running Pi owner turns as recovery required", async () => {
+    const { client, server, store } = await openServer({ ownerHeartbeatTimeoutMs: 1_000 });
     const session = store.createSession({ id: "session-1" });
-    const result = await server.receiveUserMessage({
-      actorId: "slack:T123:U123",
-      idempotencyKey: "slack:T123:C123:1700000001.000001",
-      presentation: {
-        displayName: "U123",
-        sourcePlatform: "slack",
-        sourceUserId: "U123",
-      },
+    const attach = await client.request("pi.attach", {
+      mode: "tui",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
       sessionId: session.id,
-      text: "from Slack",
+    });
+    const ownerId = (attach as { ownerId: string }).ownerId;
+    await client.request("pi.start_turn", {
+      inputEventIds: [],
+      ownerId,
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      piTurnId: "turn-stale",
+      sessionId: session.id,
+      source: "interactive",
     });
 
-    expect(result.event).toMatchObject({
-      actorId: "slack:T123:U123",
-      payload: {
-        presentation: {
-          displayName: "U123",
-          sourcePlatform: "slack",
-          sourceUserId: "U123",
-        },
-        text: "from Slack",
-      },
-      type: "user.message",
-    });
-    expect(result.gatewayEvents.map((event) => event.type)).toEqual([
-      "gateway.run.started",
-      "gateway.message",
-      "gateway.run.completed",
+    server.reapStalePiOwners(Date.now() + 2_000);
+
+    expect(store.listEvents(session.id).map((event) => event.type)).toEqual([
+      "pi.turn.started",
+      "pi.turn.recovery_required",
+      "recovery.note",
     ]);
-    expect(delivered).toEqual([
-      "user.message",
-      "gateway.run.started",
-      "gateway.message",
-      "gateway.run.completed",
-    ]);
+
+    client.close();
+    await server.stop();
+  });
+
+  test("returns unknown method for legacy gateway run RPCs", async () => {
+    const { client, server } = await openServer();
+
+    for (const method of [
+      "gateway.claim_next_run",
+      "gateway.start_run",
+      "gateway.stream_delta",
+      "gateway.stream_finish",
+      "gateway.stream_segment_break",
+      "gateway.stream_tool_progress",
+      "gateway.complete_run",
+      "gateway.fail_run",
+    ]) {
+      await expect(client.request(method, {})).rejects.toThrow(`Unknown method: ${method}`);
+    }
+
+    client.close();
+    await server.stop();
   });
 });
 
-async function openServer(
-  options: {
-    allowedRoots?: string[];
-    configPath?: string;
-    configureDeliveryFanout?: () => {
-      deliverEvent(event: ReturnType<EventStore["appendEvent"]>): Promise<unknown>;
-    };
-    configureGatewayRunner?: (store: EventStore) => GatewayRunner;
-    configureHeadlessPi?: () => {
-      ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
-    };
-    configureLogicalTools?: (store: EventStore) => LogicalToolRunner;
-    configureStreamDelivery?: () => {
-      delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
-      finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
-      hasFinished(gatewayRunId: string): boolean;
-    };
-    gatewayId?: string;
-    enableGatewayRuns?: boolean;
-    enableLocalWorkingContexts?: boolean;
-    enablePiSessionStore?: boolean;
-    ownerHeartbeatTimeoutMs?: number;
-    providerOverrides?: () => { model?: string; provider?: string } | undefined;
-  } = {},
-): Promise<{
-  server: ShepherdGatewayServer;
-  socketPath: string;
-  store: EventStore;
-  summaries: SessionSummaryStore;
-}> {
-  const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-"));
-  tempDirs.push(dir);
+type RuntimeDelivery = ConstructorParameters<typeof ShepherdGatewayServer>[0]["runtimeDelivery"];
 
+async function openServer(options: {
+  deliveryFanout?: ConstructorParameters<typeof ShepherdGatewayServer>[0]["deliveryFanout"];
+  ownerHeartbeatTimeoutMs?: number;
+  runtimeDelivery?: RuntimeDelivery;
+} = {}): Promise<{ client: RpcClient; server: ShepherdGatewayServer; store: EventStore }> {
+  const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-rpc-"));
+  tempDirs.push(dir);
+  const socketPath = join(dir, "gateway.sock");
   const { sqlite } = openSqlite(join(dir, "test.sqlite"));
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const store = new EventStore(sqlite);
-  const summaries = new SessionSummaryStore(sqlite);
-  const socketPath = join(dir, "shepherd.sock");
+  const turns = new PiTurnQueue({
+    events: store,
+    piSessions: new PiSessionMetadataStore({ events: store, sessionDir: join(dir, "pi-sessions") }),
+    turnStore: new PiTurnStore(sqlite),
+  });
   const server = new ShepherdGatewayServer({
-    ...(options.gatewayId !== undefined ? { gatewayId: options.gatewayId } : {}),
-    ...(options.configureDeliveryFanout
-      ? { deliveryFanout: options.configureDeliveryFanout() }
-      : {}),
-    ...(options.configureGatewayRunner
-      ? { gatewayRunner: options.configureGatewayRunner(store) }
-      : {}),
-    ...(options.enableGatewayRuns
-      ? {
-          gatewayRuns: new ExternalGatewayRunQueue({
-            events: store,
-            piSessions: new PiSessionMetadataStore({
-              events: store,
-              sessionDir: join(dir, "pi-sessions"),
-            }),
-            runStore: new GatewayRunStore(sqlite),
-          }),
-        }
-      : {}),
-    ...(options.configureHeadlessPi ? { headlessPi: options.configureHeadlessPi() } : {}),
-    ...(options.enableLocalWorkingContexts
-      ? {
-          localWorkingContexts: new WorkingContextResolver({
-            allowedRoots: options.allowedRoots ?? [],
-            allowUnconfiguredLocalPaths: options.allowedRoots === undefined,
-            store: new WorkingContextStore(sqlite),
-          }),
-        }
-      : {}),
-    ...(options.configureLogicalTools
-      ? { logicalTools: options.configureLogicalTools(store) }
-      : {}),
+    gatewayId: "gateway-test",
+    ...(options.deliveryFanout ? { deliveryFanout: options.deliveryFanout } : {}),
     ...(options.ownerHeartbeatTimeoutMs !== undefined
       ? { ownerHeartbeatTimeoutMs: options.ownerHeartbeatTimeoutMs }
       : {}),
-    ...(options.enablePiSessionStore
-      ? {
-          piSessions: new PiSessionMetadataStore({
-            events: store,
-            sessionDir: join(dir, "pi-sessions"),
-          }),
-        }
-      : {}),
-    ...(options.providerOverrides ? { providerOverrides: options.providerOverrides } : {}),
-    ...(options.configureStreamDelivery
-      ? { streamDelivery: options.configureStreamDelivery() }
-      : {}),
+    piTurns: turns,
+    ...(options.runtimeDelivery ? { runtimeDelivery: options.runtimeDelivery } : {}),
     socketPath,
     store,
-    summaries,
-    ...(options.configPath ? { configPath: options.configPath } : {}),
   });
   await server.start();
-
-  return { server, socketPath, store, summaries };
+  return { client: await RpcClient.connect(socketPath), server, store };
 }
 
-function writeTempFile(name: string, contents: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "shepherd-file-"));
-  tempDirs.push(dir);
+class RpcClient {
+  readonly #decoder = new JsonLineDecoder();
+  readonly #pending = new Map<string, { reject(error: Error): void; resolve(value: unknown): void }>();
+  readonly #socket: Socket;
+  #nextId = 1;
 
-  const path = join(dir, name);
-  writeFileSync(path, contents);
-
-  return path;
-}
-
-function connect(socketPath: string): Promise<Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = createConnection(socketPath);
-    sockets.push(socket);
-    socket.once("connect", () => resolve(socket));
-    socket.once("error", reject);
-  });
-}
-
-function readMessages(socket: Socket, count: number): Promise<unknown[]> {
-  const decoder = new JsonLineDecoder();
-  const messages: unknown[] = [];
-
-  return new Promise((resolve, reject) => {
-    const onData = (chunk: Buffer) => {
-      try {
-        messages.push(...decoder.push(chunk.toString("utf8")));
-        if (messages.length >= count) {
-          socket.off("data", onData);
-          socket.off("error", reject);
-          resolve(messages.slice(0, count));
+  private constructor(socket: Socket) {
+    this.#socket = socket;
+    socket.on("data", (chunk) => {
+      for (const message of this.#decoder.push(chunk.toString("utf8"))) {
+        const record = message as { error?: { message?: string }; id?: string | number; result?: unknown };
+        if (record.id === undefined) {
+          continue;
         }
-      } catch (error) {
-        reject(error);
+        const pending = this.#pending.get(String(record.id));
+        if (!pending) {
+          continue;
+        }
+        this.#pending.delete(String(record.id));
+        if (record.error) {
+          pending.reject(new Error(record.error.message ?? "RPC error"));
+        } else {
+          pending.resolve(record.result);
+        }
       }
-    };
+    });
+  }
 
-    socket.on("data", onData);
-    socket.once("error", reject);
-  });
-}
+  static connect(socketPath: string): Promise<RpcClient> {
+    return new Promise((resolve, reject) => {
+      const socket = createConnection(socketPath);
+      socket.once("connect", () => resolve(new RpcClient(socket)));
+      socket.once("error", reject);
+    });
+  }
 
-function eventType(message: unknown): string | undefined {
-  return (message as { params?: { event?: { type?: string } } }).params?.event?.type;
+  request(method: string, params: unknown): Promise<unknown> {
+    const id = String(this.#nextId++);
+    this.#socket.write(encodeJsonLine({ id, method, params }));
+    return new Promise((resolve, reject) => {
+      this.#pending.set(id, { reject, resolve });
+    });
+  }
+
+  close(): void {
+    this.#socket.destroy();
+  }
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

@@ -307,15 +307,7 @@ function minimalConfig(overrides: Partial<ShepherdConfig> = {}): ShepherdConfig 
     },
     default_agent: "implementer",
     gateway: {
-      default_provider: "codex",
-      model: "gpt-5.3-codex",
-    },
-    providers: {
-      codex: {
-        auth_source: "codex_cli",
-        mode: "app_server",
-        type: "codex_cli",
-      },
+      pi: {},
     },
     ...overrides,
   };

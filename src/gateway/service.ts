@@ -4,7 +4,6 @@ import { resolveRuntime } from "@/config/runtime.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
-import { SessionBindingStore } from "@/db/session-bindings.js";
 import { WorkingContextStore } from "@/db/working-contexts.js";
 import { readOrCreateGatewayId } from "@/gateway/identity.js";
 import { checkPiReadiness } from "@/gateway/pi-readiness.js";
@@ -27,7 +26,6 @@ export async function runGatewayService(
   const { sqlite } = openSqlite(runtime.paths.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const events = new EventStore(sqlite);
-  const sessionBindings = new SessionBindingStore(sqlite);
   recoverGatewayState({ events, sqlite });
 
   const config = runtime.config;
@@ -67,11 +65,12 @@ export async function runGatewayService(
     : undefined;
 
   server = new ShepherdGatewayServer({
-    bindings: sessionBindings,
     gatewayId: readOrCreateGatewayId(stateDir),
     ...(platformRuntime?.deliveryFanout ? { deliveryFanout: platformRuntime.deliveryFanout } : {}),
-    ...(platformRuntime?.streamDelivery ? { streamDelivery: platformRuntime.streamDelivery } : {}),
-    ...(gatewayRuntime ? { gatewayRuns: gatewayRuntime.turns } : {}),
+    ...(platformRuntime?.runtimeDelivery
+      ? { runtimeDelivery: platformRuntime.runtimeDelivery }
+      : {}),
+    ...(gatewayRuntime ? { piTurns: gatewayRuntime.turns } : {}),
     ...(headlessPi ? { headlessPi } : {}),
     localWorkingContexts: workingContexts,
     ...(gatewayRuntime ? { logicalTools: gatewayRuntime.tools } : {}),

@@ -5,8 +5,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
+import { PiTurnStore } from "@/db/pi-turns.js";
 import { recoverGatewayState } from "@/gateway/recovery.js";
-import { GatewayRunStore } from "@/gateway/turn-queue.js";
 
 const tempDirs: string[] = [];
 
@@ -17,40 +17,42 @@ afterEach(() => {
 });
 
 describe("recoverGatewayState", () => {
-  test("marks in-flight gateway runs as recovery required and emits notes", () => {
-    const { events, runStore, sqlite } = openHarness();
+  test("marks in-flight Pi turns as recovery required and leaves queued turns queued", () => {
+    const { events, sqlite, turnStore } = openHarness();
     events.createSession({ id: "session-1" });
-    const queued = runStore.createQueuedRun({ sessionId: "session-1" });
-    const running = runStore.markRunning(runStore.createQueuedRun({ sessionId: "session-1" }).id);
+    const queued = turnStore.createQueuedTurn({ sessionId: "session-1" });
+    const running = turnStore.createRunningTurn({
+      id: "turn-running",
+      inputEventIds: [],
+      ownerId: "owner-1",
+      ownerKind: "tui_pi",
+      piSessionFile: "/tmp/pi.jsonl",
+      piSessionId: "pi-session-1",
+      sessionId: "session-1",
+      source: "extension",
+    });
 
     const result = recoverGatewayState({ events, sqlite });
 
-    expect(result.gatewayRuns).toEqual([
-      expect.objectContaining({ gatewayRunId: queued.id, previousStatus: "queued" }),
-      expect.objectContaining({ gatewayRunId: running.id, previousStatus: "running" }),
+    expect(result.piTurns).toEqual([
+      expect.objectContaining({ piTurnId: running.id, previousStatus: "running" }),
     ]);
-    expect(runStore.getRun(queued.id)).toMatchObject({
-      recovery: expect.objectContaining({ previousStatus: "queued" }),
+    expect(turnStore.getTurn(queued.id)).toMatchObject({ status: "queued" });
+    expect(turnStore.getTurn(running.id)).toMatchObject({
+      recovery: expect.objectContaining({ message: expect.stringContaining("Pi turn") }),
       status: "recovery_required",
     });
-    expect(runStore.getRun(running.id)).toMatchObject({
-      recovery: expect.objectContaining({ previousStatus: "running" }),
-      status: "recovery_required",
-    });
-    expect(events.listEvents("session-1").map((event) => event.type)).toEqual([
-      "recovery.note",
-      "recovery.note",
-    ]);
+    expect(events.listEvents("session-1").map((event) => event.type)).toEqual(["recovery.note"]);
 
-    expect(recoverGatewayState({ events, sqlite }).gatewayRuns).toEqual([]);
-    expect(events.listEvents("session-1")).toHaveLength(2);
+    expect(recoverGatewayState({ events, sqlite }).piTurns).toEqual([]);
+    expect(events.listEvents("session-1")).toHaveLength(1);
   });
 });
 
 function openHarness(): {
   events: EventStore;
-  runStore: GatewayRunStore;
   sqlite: ReturnType<typeof openSqlite>["sqlite"];
+  turnStore: PiTurnStore;
 } {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-recovery-"));
   tempDirs.push(dir);
@@ -60,7 +62,7 @@ function openHarness(): {
 
   return {
     events: new EventStore(sqlite),
-    runStore: new GatewayRunStore(sqlite),
     sqlite,
+    turnStore: new PiTurnStore(sqlite),
   };
 }

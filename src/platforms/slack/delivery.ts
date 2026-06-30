@@ -71,14 +71,14 @@ export class SlackStreamDelivery {
     this.#now = options.now ?? Date.now;
   }
 
-  hasFinished(gatewayRunId: string): boolean {
-    return !this.#states.has(gatewayRunId) && this.#finishedRunIds.has(gatewayRunId);
+  hasFinished(streamId: string): boolean {
+    return !this.#states.has(streamId) && this.#finishedStreamIds.has(streamId);
   }
 
-  readonly #finishedRunIds = new Set<string>();
+  readonly #finishedStreamIds = new Set<string>();
 
-  async delta(input: { delta: string; gatewayRunId: string; targetId: string }): Promise<void> {
-    const state = this.#ensureState(input.gatewayRunId, input.targetId);
+  async delta(input: { delta: string; streamId: string; targetId: string }): Promise<void> {
+    const state = this.#ensureState(input.streamId, input.targetId);
     state.accumulatedText += input.delta;
     state.bufferSinceLastEdit += input.delta;
 
@@ -112,8 +112,8 @@ export class SlackStreamDelivery {
     state.lastEditAt = this.#now();
   }
 
-  async finish(input: { finalText?: string; gatewayRunId: string }): Promise<void> {
-    const state = this.#states.get(input.gatewayRunId);
+  async finish(input: { finalText?: string; streamId: string }): Promise<void> {
+    const state = this.#states.get(input.streamId);
     if (!state) {
       return;
     }
@@ -125,12 +125,12 @@ export class SlackStreamDelivery {
     if (state.remoteMessageId && this.#client.chat.update) {
       await this.#update(state, state.accumulatedText);
     }
-    this.#states.delete(input.gatewayRunId);
-    this.#finishedRunIds.add(input.gatewayRunId);
+    this.#states.delete(input.streamId);
+    this.#finishedStreamIds.add(input.streamId);
   }
 
-  #ensureState(gatewayRunId: string, targetId: string): SlackStreamState {
-    const existing = this.#states.get(gatewayRunId);
+  #ensureState(streamId: string, targetId: string): SlackStreamState {
+    const existing = this.#states.get(streamId);
     if (existing) {
       return existing;
     }
@@ -148,7 +148,7 @@ export class SlackStreamDelivery {
       targetId,
       ...(target.threadTs !== undefined ? { threadTs: target.threadTs } : {}),
     };
-    this.#states.set(gatewayRunId, state);
+    this.#states.set(streamId, state);
     return state;
   }
 
@@ -224,8 +224,14 @@ export function parseSlackTargetId(targetId: string): SlackTarget {
 }
 
 function eventText(event: EventRecord): string {
-  const payload = event.payload as EventPayload;
+  const payload = event.payload as EventPayload & { delivery?: unknown };
   if (typeof payload.text === "string" && payload.text.length > 0) {
+    if (event.type === "user.message" && payload.delivery === "steer") {
+      return `↪ Steer: ${payload.text}`;
+    }
+    if (event.type === "user.message" && payload.delivery === "followUp") {
+      return `⏭ Follow-up: ${payload.text}`;
+    }
     return payload.text;
   }
 

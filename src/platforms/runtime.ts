@@ -17,16 +17,27 @@ import {
   SlackSocketModeAdapter,
 } from "./slack/socket-mode.js";
 
-export type GatewayStreamDelivery = {
-  delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
-  finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
-  hasFinished(gatewayRunId: string): boolean;
+export type PiRuntimeDelivery = {
+  completeToolProgress(input: { piTurnId: string; sessionId: string }): Promise<void>;
+  delta(input: { delta: string; sessionId: string; streamId: string }): Promise<void>;
+  failToolProgress(input: { message: string; piTurnId: string; sessionId: string }): Promise<void>;
+  finish(input: { finalText?: string; streamId: string }): Promise<void>;
+  hasFinished(streamId: string): boolean;
+  recordToolProgress(input: {
+    durationMs?: number;
+    piTurnId: string;
+    preview?: string;
+    sessionId: string;
+    status: "completed" | "failed" | "started";
+    text: string;
+    toolName: string;
+  }): Promise<void>;
 };
 
 export type PlatformRuntime = {
   close(): Promise<void>;
   deliveryFanout?: SessionDeliveryFanout;
-  streamDelivery?: GatewayStreamDelivery;
+  runtimeDelivery?: PiRuntimeDelivery;
   start(): Promise<void>;
 };
 
@@ -120,7 +131,7 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
       editIntervalMs: slack.streaming?.edit_interval_ms ?? 750,
     },
   });
-  const streamDelivery: GatewayStreamDelivery | undefined =
+  const runtimeDelivery: PiRuntimeDelivery | undefined =
     slack.streaming?.enabled === false
       ? undefined
       : {
@@ -131,7 +142,7 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
               }
               await slackStream.delta({
                 delta: input.delta,
-                gatewayRunId: input.gatewayRunId,
+                streamId: input.streamId,
                 targetId: `${binding.spaceId}:${binding.threadId}`,
               });
             }
@@ -139,9 +150,12 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
           finish(input) {
             return slackStream.finish(input);
           },
-          hasFinished(gatewayRunId) {
-            return slackStream.hasFinished(gatewayRunId);
+          hasFinished(streamId) {
+            return slackStream.hasFinished(streamId);
           },
+          async recordToolProgress() {},
+          async completeToolProgress() {},
+          async failToolProgress() {},
         };
 
   return {
@@ -151,7 +165,7 @@ export function createPlatformRuntime(options: PlatformRuntimeOptions): Platform
       }
     },
     deliveryFanout,
-    ...(streamDelivery !== undefined ? { streamDelivery } : {}),
+    ...(runtimeDelivery !== undefined ? { runtimeDelivery } : {}),
     async start() {
       for (const part of parts) {
         await part.start();

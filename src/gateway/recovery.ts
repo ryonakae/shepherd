@@ -1,48 +1,53 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { EventStore } from "@/db/event-store.js";
-import { type GatewayRunStatus, GatewayRunStore } from "@/gateway/turn-queue.js";
+import { PiTurnStore, type PiTurnStatus } from "@/db/pi-turns.js";
 
-export type GatewayRunRecoveryNote = {
-  gatewayRunId: string;
-  previousStatus: Extract<GatewayRunStatus, "queued" | "running">;
+export type PiTurnRecoveryNote = {
+  piTurnId: string;
+  previousStatus: Extract<PiTurnStatus, "running">;
   sessionId: string;
 };
 
 export type GatewayRecoveryResult = {
-  gatewayRuns: GatewayRunRecoveryNote[];
+  piTurns: PiTurnRecoveryNote[];
 };
 
 export function recoverGatewayState(options: {
   events: EventStore;
   sqlite: DatabaseSync;
 }): GatewayRecoveryResult {
-  const runStore = new GatewayRunStore(options.sqlite);
-  const gatewayRuns: GatewayRunRecoveryNote[] = [];
+  const turnStore = new PiTurnStore(options.sqlite);
+  const piTurns: PiTurnRecoveryNote[] = [];
 
-  for (const run of runStore.listRecoverableRuns()) {
-    const previousStatus = run.status as Extract<GatewayRunStatus, "queued" | "running">;
+  for (const turn of turnStore.listRecoverableTurns()) {
+    if (turn.status !== "running" || !turn.ownerId) {
+      continue;
+    }
+
     const recovery = {
-      message:
-        "Gateway run was in flight during gateway startup. Shepherd did not replay it automatically.",
-      previousStatus,
+      message: "Pi turn was in flight during gateway startup. Shepherd did not replay it automatically.",
+      ownerId: turn.ownerId,
+      piTurnId: turn.id,
+      previousStatus: "running" as const,
       recoveredAt: new Date().toISOString(),
     };
-    runStore.markRecoveryRequired(run.id, recovery);
+    turnStore.markRecoveryRequiredForRunning({
+      message: recovery.message,
+      ownerId: turn.ownerId,
+      sessionId: turn.sessionId,
+    });
     options.events.appendEvent({
-      idempotencyKey: `recovery:gateway_run:${run.id}`,
-      payload: {
-        gatewayRunId: run.id,
-        ...recovery,
-      },
-      sessionId: run.sessionId,
+      idempotencyKey: `recovery:pi_turn:${turn.id}`,
+      payload: recovery,
+      sessionId: turn.sessionId,
       type: "recovery.note",
     });
-    gatewayRuns.push({
-      gatewayRunId: run.id,
-      previousStatus,
-      sessionId: run.sessionId,
+    piTurns.push({
+      piTurnId: turn.id,
+      previousStatus: "running",
+      sessionId: turn.sessionId,
     });
   }
 
-  return { gatewayRuns };
+  return { piTurns };
 }

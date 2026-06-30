@@ -91,13 +91,19 @@ describe("Shepherd config schema", () => {
   });
 
   test("rejects removed provider config surfaces", () => {
+    const gateway = {
+      pi: {
+        idle_timeout_ms: 600_000,
+        readiness_timeout_ms: 10_000,
+      },
+    };
     for (const override of [
       { providers: { openai: { api_key_env: "OPENAI_API_KEY", type: "openai" } } },
-      { gateway: { ...minimalConfig().gateway, default_provider: "openai" } },
-      { gateway: { ...minimalConfig().gateway, model: "gpt-5.3" } },
+      { gateway: { ...gateway, default_provider: "openai" } },
+      { gateway: { ...gateway, model: "gpt-5.3" } },
       {
         gateway: {
-          ...minimalConfig().gateway,
+          ...gateway,
           provider_overrides: { sessions: { "session-1": { provider: "openai" } } },
         },
       },

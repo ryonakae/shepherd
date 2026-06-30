@@ -3,14 +3,21 @@ import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore, SessionMetadata } from "@/db/event-store.js";
-import type { SessionSummaryStore } from "@/db/session-summary.js";
-import { buildGatewayMessagesFromEvents } from "@/gateway/context.js";
-import type { ExternalGatewayRunQueue } from "@/gateway/external-run-queue.js";
+import type { PiTurnQueue } from "@/gateway/pi-turn-queue.js";
 import {
-  type ProviderOverrideResolver,
-  parseGatewayProviderOverride,
-} from "@/gateway/provider-overrides.js";
-import type { GatewayMessage, GatewayRunner } from "@/gateway/runner.js";
+  parsePiCompleteTurnParams,
+  parsePiFailTurnParams,
+  parsePiMirrorUserMessageParams,
+  parsePiRecordToolProgressParams,
+  parsePiStartTurnParams,
+  parsePiStreamDeltaParams,
+  parsePiStreamFinishParams,
+  parsePiStreamSegmentBreakParams,
+  piToolIdempotencyKey,
+  piTurnIdempotencyKey,
+  piUserMessageIdempotencyKey,
+  sanitizePiPreviewText,
+} from "@/gateway/pi-runtime-events.js";
 import type { LogicalToolRunner } from "@/gateway/tools.js";
 import { toHerdrProgressSignal } from "@/herdr/progress.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";
@@ -19,25 +26,21 @@ type ShepherdGatewayServerOptions = {
   configPath?: string;
   gatewayId?: string;
   deliveryFanout?: EventDeliveryFanout;
-  gatewayRunner?: GatewayTurnRunner;
-  gatewayRuns?: ExternalGatewayRunQueue;
+  piTurns?: PiTurnQueue;
   headlessPi?: HeadlessPiSupervisorService;
   localWorkingContexts?: LocalWorkingContextResolver;
   logicalTools?: LogicalToolService;
   ownerHeartbeatTimeoutMs?: number;
   piSessions?: PiSessionMetadataService;
-  providerOverrides?: ProviderOverrideResolver;
-  streamDelivery?: GatewayStreamDeliveryService;
+  runtimeDelivery?: PiRuntimeDeliveryService;
+  streamDelivery?: PiRuntimeDeliveryService;
   socketPath: string;
   store: EventStore;
-  summaries?: Pick<SessionSummaryStore, "getSummary">;
 };
 
 type EventDeliveryFanout = {
   deliverEvent(event: EventRecord): Promise<unknown>;
 };
-
-type GatewayTurnRunner = Pick<GatewayRunner, "runTurn">;
 
 type HeadlessPiSupervisorService = {
   ensureStarted(input: { piSessionFile: string; sessionId: string }): unknown;
@@ -53,10 +56,22 @@ type PiSessionMetadataService = {
   ensureForSession(sessionId: string): NonNullable<SessionMetadata["pi"]>;
 };
 
-type GatewayStreamDeliveryService = {
-  delta(input: { delta: string; gatewayRunId: string; sessionId: string }): Promise<void>;
-  finish(input: { finalText?: string; gatewayRunId: string }): Promise<void>;
-  hasFinished(gatewayRunId: string): boolean;
+type PiRuntimeDeliveryService = {
+  completeToolProgress?(input: { piTurnId: string; sessionId: string }): Promise<void>;
+  delta(input: { delta: string; sessionId: string; streamId: string }): Promise<void>;
+  failToolProgress?(input: { message: string; piTurnId: string; sessionId: string }): Promise<void>;
+  finish(input: { finalText?: string; streamId: string }): Promise<void>;
+  hasFinished(streamId: string): boolean;
+  recordToolProgress?(input: {
+    durationMs?: number;
+    piTurnId: string;
+    preview?: string;
+    sessionId: string;
+    status: "completed" | "failed" | "started";
+    text: string;
+    toolName: string;
+  }): Promise<void>;
+  segmentBreak?(input: { sessionId: string; streamId: string }): Promise<void>;
 };
 
 type RpcRequest = {
@@ -101,7 +116,6 @@ export type ReceiveUserMessageInput = {
   actorId?: string;
   idempotencyKey?: string;
   presentation?: unknown;
-  providerOverride?: unknown;
   sessionId: string;
   text: string;
 };
@@ -136,18 +150,15 @@ export class ShepherdGatewayServer {
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
   readonly #deliveryFanout: EventDeliveryFanout | undefined;
-  readonly #gatewayRunner: GatewayTurnRunner | undefined;
-  readonly #gatewayRuns: ExternalGatewayRunQueue | undefined;
+  readonly #piTurns: PiTurnQueue | undefined;
   readonly #headlessPi: HeadlessPiSupervisorService | undefined;
   readonly #localWorkingContexts: LocalWorkingContextResolver | undefined;
   readonly #logicalTools: LogicalToolService | undefined;
   readonly #piHandshakeWaiters: Array<(handshake: PiHandshakeRecord) => void> = [];
   readonly #piOwners = new Map<string, PiOwnerRecord>();
   readonly #piSessions: PiSessionMetadataService | undefined;
-  readonly #providerOverrides: ProviderOverrideResolver | undefined;
+  readonly #runtimeDelivery: PiRuntimeDeliveryService | undefined;
   readonly #store: EventStore;
-  readonly #streamDelivery: GatewayStreamDeliveryService | undefined;
-  readonly #summaries: Pick<SessionSummaryStore, "getSummary"> | undefined;
   readonly #subscriptions = new Map<string, Set<Socket>>();
   #config: ConfigLoadResult | undefined;
   #lastPiHandshake: PiHandshakeRecord | undefined;
@@ -157,19 +168,16 @@ export class ShepherdGatewayServer {
     this.#configPath = options.configPath;
     this.#gatewayId = options.gatewayId ?? "default";
     this.#deliveryFanout = options.deliveryFanout;
-    this.#gatewayRunner = options.gatewayRunner;
-    this.#gatewayRuns = options.gatewayRuns;
+    this.#piTurns = options.piTurns;
     this.#headlessPi = options.headlessPi;
     this.#localWorkingContexts = options.localWorkingContexts;
     this.#logicalTools = options.logicalTools;
     this.#ownerHeartbeatTimeoutMs =
       options.ownerHeartbeatTimeoutMs ?? this.#ownerHeartbeatTimeoutMs;
     this.#piSessions = options.piSessions;
-    this.#providerOverrides = options.providerOverrides;
+    this.#runtimeDelivery = options.runtimeDelivery ?? options.streamDelivery;
     this.#socketPath = options.socketPath;
     this.#store = options.store;
-    this.#streamDelivery = options.streamDelivery;
-    this.#summaries = options.summaries;
     this.#server = createServer((socket) => this.#handleConnection(socket));
   }
 
@@ -246,7 +254,7 @@ export class ShepherdGatewayServer {
   }> {
     const event = this.#storeUserMessage(input);
     await this.#publishEvent(event);
-    const gatewayEvents = await this.#wakeGatewayForUserMessage(input, event);
+    const gatewayEvents = await this.#queuePiTurnForUserMessage(input, event);
 
     return { event, gatewayEvents };
   }
@@ -337,9 +345,6 @@ export class ShepherdGatewayServer {
     return this.#store.appendEvent({
       payload: {
         presentation: input.presentation ?? {},
-        ...(input.providerOverride !== undefined
-          ? { providerOverride: input.providerOverride }
-          : {}),
         text: input.text,
       },
       sessionId: input.sessionId,
@@ -349,39 +354,21 @@ export class ShepherdGatewayServer {
     });
   }
 
-  async #wakeGatewayForUserMessage(
+  async #queuePiTurnForUserMessage(
     input: ReceiveUserMessageInput,
     event: EventRecord,
   ): Promise<EventRecord[]> {
-    if (this.#gatewayRuns) {
-      const result = this.#gatewayRuns.queueRun({
-        sessionId: input.sessionId,
-        triggeringEventId: event.id,
-      });
-      await this.#publishEvent(result.event);
-      this.#startHeadlessPiForQueuedRun(input.sessionId, result.event);
-      return [result.event];
-    }
-
-    if (!this.#gatewayRunner) {
+    if (!this.#piTurns) {
       return [];
     }
 
-    const summary = this.#summaries?.getSummary(input.sessionId)?.content;
-    const result = await this.#collectGatewayTurnResult(
-      input.sessionId,
-      event.id,
-      buildGatewayMessagesFromEvents(
-        this.#store.listRecentEvents(input.sessionId, 40),
-        summary ? { summary } : {},
-      ),
-      parseGatewayProviderOverride(input.providerOverride),
-    );
-    for (const gatewayEvent of result.events) {
-      await this.#publishEvent(gatewayEvent);
-    }
-
-    return result.events;
+    const result = this.#piTurns.queueTurn({
+      sessionId: input.sessionId,
+      triggeringEventId: event.id,
+    });
+    await this.#publishEvent(result.event);
+    this.#startHeadlessPiForQueuedTurn(input.sessionId, result.event);
+    return [result.event];
   }
 
   #handleConnection(socket: Socket): void {
@@ -472,48 +459,48 @@ export class ShepherdGatewayServer {
       return;
     }
 
-    if (request.method === "gateway.run_turn") {
-      void this.#runGatewayTurn(socket, request);
+    if (request.method === "pi.claim_next_turn") {
+      void this.#claimNextPiTurn(socket, request);
       return;
     }
 
-    if (request.method === "gateway.claim_next_run") {
-      void this.#claimNextGatewayRun(socket, request);
+    if (request.method === "pi.start_turn") {
+      void this.#startPiTurn(socket, request);
       return;
     }
 
-    if (request.method === "gateway.start_run") {
-      void this.#startGatewayRun(socket, request);
+    if (request.method === "pi.mirror_user_message") {
+      void this.#mirrorPiUserMessage(socket, request);
       return;
     }
 
-    if (request.method === "gateway.complete_run") {
-      void this.#completeGatewayRun(socket, request);
+    if (request.method === "pi.stream_delta") {
+      void this.#streamPiDelta(socket, request);
       return;
     }
 
-    if (request.method === "gateway.stream_delta") {
-      void this.#streamGatewayDelta(socket, request);
+    if (request.method === "pi.stream_finish") {
+      void this.#finishPiStream(socket, request);
       return;
     }
 
-    if (request.method === "gateway.stream_finish") {
-      void this.#finishGatewayStream(socket, request);
+    if (request.method === "pi.stream_segment_break") {
+      void this.#segmentPiStream(socket, request);
       return;
     }
 
-    if (request.method === "gateway.stream_segment_break") {
-      this.#ackTransientStreamMethod(socket, request, "segment_break");
+    if (request.method === "pi.record_tool_progress") {
+      void this.#recordPiToolProgress(socket, request);
       return;
     }
 
-    if (request.method === "gateway.stream_tool_progress") {
-      this.#ackTransientStreamMethod(socket, request, "tool_progress_off");
+    if (request.method === "pi.complete_turn") {
+      void this.#completePiTurn(socket, request);
       return;
     }
 
-    if (request.method === "gateway.fail_run") {
-      void this.#failGatewayRun(socket, request);
+    if (request.method === "pi.fail_turn") {
+      void this.#failPiTurn(socket, request);
       return;
     }
 
@@ -671,7 +658,6 @@ export class ShepherdGatewayServer {
       actorId?: string;
       idempotencyKey?: string;
       presentation?: unknown;
-      providerOverride?: unknown;
       sessionId?: string;
       text?: string;
     };
@@ -690,9 +676,6 @@ export class ShepherdGatewayServer {
       ...(params.actorId ? { actorId: params.actorId } : {}),
       ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
       ...(params.presentation !== undefined ? { presentation: params.presentation } : {}),
-      ...(params.providerOverride !== undefined
-        ? { providerOverride: params.providerOverride }
-        : {}),
     };
     const event = this.#storeUserMessage(input);
 
@@ -701,7 +684,7 @@ export class ShepherdGatewayServer {
       result: { event: toWireEvent(event) },
     });
     await this.#publishEvent(event);
-    await this.#wakeGatewayForUserMessage(input, event);
+    await this.#queuePiTurnForUserMessage(input, event);
   }
 
   #renameSession(socket: Socket, request: RpcRequest): void {
@@ -790,12 +773,12 @@ export class ShepherdGatewayServer {
     });
   }
 
-  #startHeadlessPiForQueuedRun(sessionId: string, event: EventRecord): void {
+  #startHeadlessPiForQueuedTurn(sessionId: string, event: EventRecord): void {
     if (!this.#headlessPi) {
       return;
     }
 
-    const piSessionFile = getQueuedRunPiSessionFile(event.payload);
+    const piSessionFile = getQueuedTurnPiSessionFile(event.payload);
     if (!piSessionFile) {
       return;
     }
@@ -1026,54 +1009,10 @@ export class ShepherdGatewayServer {
     });
   }
 
-  async #runGatewayTurn(socket: Socket, request: RpcRequest): Promise<void> {
-    if (!this.#gatewayRunner) {
+  async #claimNextPiTurn(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#piTurns) {
       this.#write(socket, {
-        error: { message: "Gateway runner is not configured" },
-        id: request.id,
-      });
-      return;
-    }
-
-    const params = request.params as {
-      messages?: unknown;
-      providerOverride?: unknown;
-      sessionId?: string;
-    };
-    if (!params?.sessionId || !isGatewayMessages(params.messages)) {
-      this.#write(socket, {
-        error: { message: "sessionId and messages are required" },
-        id: request.id,
-      });
-      return;
-    }
-
-    try {
-      const result = await this.#collectGatewayTurnResult(
-        params.sessionId,
-        undefined,
-        params.messages,
-        parseGatewayProviderOverride(params.providerOverride),
-      );
-      this.#write(socket, {
-        id: request.id,
-        result: result.output,
-      });
-      for (const event of result.events) {
-        await this.#publishEvent(event);
-      }
-    } catch (error) {
-      this.#write(socket, {
-        error: { message: error instanceof Error ? error.message : String(error) },
-        id: request.id,
-      });
-    }
-  }
-
-  async #claimNextGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
-    if (!this.#gatewayRuns) {
-      this.#write(socket, {
-        error: { message: "Gateway run queue is not configured" },
+        error: { message: "Pi turn queue is not configured" },
         id: request.id,
       });
       return;
@@ -1089,53 +1028,34 @@ export class ShepherdGatewayServer {
     }
 
     if (!this.#canOwnerClaim(params.ownerId, params.sessionId)) {
-      this.#write(socket, { id: request.id, result: { run: null } });
+      this.#write(socket, { id: request.id, result: { turn: null } });
       return;
     }
 
-    const result = this.#gatewayRuns.claimNextRun({
+    const result = this.#piTurns.claimNextTurn({
       ownerId: params.ownerId,
       sessionId: params.sessionId,
     });
-    if (!result) {
-      this.#write(socket, { id: request.id, result: { run: null } });
-      return;
-    }
-
     this.#write(socket, {
       id: request.id,
-      result: { run: result.run },
+      result: { turn: result?.turn ?? null },
     });
-    await this.#publishEvent(result.event);
   }
 
-  async #startGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
-    if (!this.#gatewayRuns) {
+  async #startPiTurn(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#piTurns) {
       this.#write(socket, {
-        error: { message: "Gateway run queue is not configured" },
-        id: request.id,
-      });
-      return;
-    }
-
-    const params = request.params as { gatewayRunId?: string; ownerId?: string };
-    if (!params?.ownerId || !params.gatewayRunId) {
-      this.#write(socket, {
-        error: { message: "ownerId and gatewayRunId are required" },
+        error: { message: "Pi turn queue is not configured" },
         id: request.id,
       });
       return;
     }
 
     try {
-      const result = this.#gatewayRuns.startRun({
-        gatewayRunId: params.gatewayRunId,
-        ownerId: params.ownerId,
-      });
-      this.#write(socket, {
-        id: request.id,
-        result: { run: result.run },
-      });
+      const params = parsePiStartTurnParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      const result = this.#piTurns.startTurn(params);
+      this.#write(socket, { id: request.id, result: { turn: result.turn } });
       for (const event of result.events) {
         await this.#publishEvent(event);
       }
@@ -1147,46 +1067,43 @@ export class ShepherdGatewayServer {
     }
   }
 
-  async #completeGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
-    if (!this.#gatewayRuns) {
-      this.#write(socket, {
-        error: { message: "Gateway run queue is not configured" },
-        id: request.id,
-      });
-      return;
-    }
-
-    const params = request.params as {
-      gatewayRunId?: string;
-      ownerId?: string;
-      piSessionFile?: string;
-      piSessionId?: string;
-      text?: string;
-    };
-    if (!params?.ownerId || !params.gatewayRunId || typeof params.text !== "string") {
-      this.#write(socket, {
-        error: { message: "ownerId, gatewayRunId, and text are required" },
-        id: request.id,
-      });
-      return;
-    }
-
+  async #mirrorPiUserMessage(socket: Socket, request: RpcRequest): Promise<void> {
     try {
-      const result = this.#gatewayRuns.completeRun({
-        deliveredByStream: this.#streamDelivery?.hasFinished(params.gatewayRunId) === true,
-        gatewayRunId: params.gatewayRunId,
-        ownerId: params.ownerId,
-        ...(params.piSessionFile !== undefined ? { piSessionFile: params.piSessionFile } : {}),
-        ...(params.piSessionId !== undefined ? { piSessionId: params.piSessionId } : {}),
-        text: params.text,
+      const params = parsePiMirrorUserMessageParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      const actorId = `pi:${params.ownerId}`;
+      this.#store.upsertActor({
+        displayName: params.displayName,
+        id: actorId,
+        kind: "user",
+        presentation: {
+          displayName: params.displayName,
+          sourcePlatform: params.source === "rpc" ? "pi-rpc" : "pi",
+        },
+        ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+        sourcePlatform: params.source === "rpc" ? "pi-rpc" : "pi",
+        sourceUserId: params.ownerId,
       });
-      this.#write(socket, {
-        id: request.id,
-        result: { run: result.run },
+      const event = this.#store.appendEvent({
+        actorId,
+        idempotencyKey: piUserMessageIdempotencyKey(params),
+        payload: {
+          delivery: params.delivery,
+          piSessionFile: params.piSessionFile,
+          piSessionId: params.piSessionId,
+          piTurnId: params.piTurnId,
+          presentation: {
+            displayName: params.displayName,
+            sourcePlatform: params.source === "rpc" ? "pi-rpc" : "pi",
+            ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+          },
+          text: params.text,
+        },
+        sessionId: params.sessionId,
+        type: "user.message",
       });
-      for (const event of result.events) {
-        await this.#publishEvent(event);
-      }
+      this.#write(socket, { id: request.id, result: { event: toWireEvent(event) } });
+      await this.#publishEvent(event);
     } catch (error) {
       this.#write(socket, {
         error: { message: error instanceof Error ? error.message : String(error) },
@@ -1195,35 +1112,21 @@ export class ShepherdGatewayServer {
     }
   }
 
-  async #streamGatewayDelta(socket: Socket, request: RpcRequest): Promise<void> {
-    const params = request.params as {
-      delta?: unknown;
-      gatewayRunId?: unknown;
-      ownerId?: unknown;
-    };
-    if (
-      typeof params?.ownerId !== "string" ||
-      typeof params.gatewayRunId !== "string" ||
-      typeof params.delta !== "string"
-    ) {
-      this.#write(socket, {
-        error: { message: "ownerId, gatewayRunId, and delta are required" },
-        id: request.id,
-      });
-      return;
-    }
-
-    if (!this.#gatewayRuns || !this.#streamDelivery) {
-      this.#write(socket, { id: request.id, result: { streamed: false } });
-      return;
-    }
-
+  async #streamPiDelta(socket: Socket, request: RpcRequest): Promise<void> {
     try {
-      const run = this.#gatewayRuns.getRun(params.gatewayRunId);
-      await this.#streamDelivery.delta({
+      const params = parsePiStreamDeltaParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      if (!this.#runtimeDelivery) {
+        this.#write(socket, {
+          id: request.id,
+          result: { reason: "runtime_delivery_unavailable", streamed: false },
+        });
+        return;
+      }
+      await this.#runtimeDelivery.delta({
         delta: params.delta,
-        gatewayRunId: params.gatewayRunId,
-        sessionId: run.sessionId,
+        sessionId: params.sessionId,
+        streamId: params.piTurnId,
       });
       this.#write(socket, { id: request.id, result: { streamed: true } });
     } catch (error) {
@@ -1234,29 +1137,20 @@ export class ShepherdGatewayServer {
     }
   }
 
-  async #finishGatewayStream(socket: Socket, request: RpcRequest): Promise<void> {
-    const params = request.params as {
-      finalText?: unknown;
-      gatewayRunId?: unknown;
-      ownerId?: unknown;
-    };
-    if (typeof params?.ownerId !== "string" || typeof params.gatewayRunId !== "string") {
-      this.#write(socket, {
-        error: { message: "ownerId and gatewayRunId are required" },
-        id: request.id,
-      });
-      return;
-    }
-
-    if (!this.#streamDelivery) {
-      this.#write(socket, { id: request.id, result: { streamed: false } });
-      return;
-    }
-
+  async #finishPiStream(socket: Socket, request: RpcRequest): Promise<void> {
     try {
-      await this.#streamDelivery.finish({
-        ...(typeof params.finalText === "string" ? { finalText: params.finalText } : {}),
-        gatewayRunId: params.gatewayRunId,
+      const params = parsePiStreamFinishParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      if (!this.#runtimeDelivery) {
+        this.#write(socket, {
+          id: request.id,
+          result: { reason: "runtime_delivery_unavailable", streamed: false },
+        });
+        return;
+      }
+      await this.#runtimeDelivery.finish({
+        ...(params.finalText !== undefined ? { finalText: params.finalText } : {}),
+        streamId: params.piTurnId,
       });
       this.#write(socket, { id: request.id, result: { streamed: true } });
     } catch (error) {
@@ -1267,41 +1161,161 @@ export class ShepherdGatewayServer {
     }
   }
 
-  #ackTransientStreamMethod(socket: Socket, request: RpcRequest, status: string): void {
-    this.#write(socket, { id: request.id, result: { status } });
-  }
-
-  async #failGatewayRun(socket: Socket, request: RpcRequest): Promise<void> {
-    if (!this.#gatewayRuns) {
+  async #segmentPiStream(socket: Socket, request: RpcRequest): Promise<void> {
+    try {
+      const params = parsePiStreamSegmentBreakParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      if (!this.#runtimeDelivery) {
+        this.#write(socket, {
+          id: request.id,
+          result: { reason: "runtime_delivery_unavailable", streamed: false },
+        });
+        return;
+      }
+      if (!this.#runtimeDelivery.segmentBreak) {
+        this.#write(socket, {
+          id: request.id,
+          result: { reason: "segment_break_not_supported", streamed: false },
+        });
+        return;
+      }
+      await this.#runtimeDelivery.segmentBreak({
+        sessionId: params.sessionId,
+        streamId: params.piTurnId,
+      });
+      this.#write(socket, { id: request.id, result: { streamed: true } });
+    } catch (error) {
       this.#write(socket, {
-        error: { message: "Gateway run queue is not configured" },
+        error: { message: error instanceof Error ? error.message : String(error) },
         id: request.id,
       });
-      return;
     }
+  }
 
-    const params = request.params as {
-      gatewayRunId?: string;
-      message?: string;
-      ownerId?: string;
-    };
-    if (!params?.ownerId || !params.gatewayRunId || !params.message) {
+  async #recordPiToolProgress(socket: Socket, request: RpcRequest): Promise<void> {
+    try {
+      const params = parsePiRecordToolProgressParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      const event = this.#store.appendEvent({
+        idempotencyKey: piToolIdempotencyKey(params.piTurnId, params.toolCallId, params.status),
+        payload: {
+          durationMs: params.durationMs,
+          isError: params.isError,
+          ownerId: params.ownerId,
+          ownerKind: params.ownerKind,
+          piSessionFile: params.piSessionFile,
+          piSessionId: params.piSessionId,
+          piTurnId: params.piTurnId,
+          preview: sanitizePiPreviewText(params.preview ?? ""),
+          text: sanitizePiPreviewText(params.text),
+          toolCallId: params.toolCallId,
+          toolName: params.toolName,
+          ...(params.triggeringEventId !== undefined
+            ? { triggeringEventId: params.triggeringEventId }
+            : {}),
+        },
+        sessionId: params.sessionId,
+        type: `pi.tool.${params.status}`,
+      });
+      await this.#runtimeDelivery?.recordToolProgress?.({
+        ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
+        piTurnId: params.piTurnId,
+        ...(params.preview !== undefined ? { preview: sanitizePiPreviewText(params.preview) } : {}),
+        sessionId: params.sessionId,
+        status: params.status,
+        text: sanitizePiPreviewText(params.text),
+        toolName: params.toolName,
+      });
+      this.#write(socket, { id: request.id, result: { event: toWireEvent(event) } });
+      await this.#publishEvent(event);
+    } catch (error) {
       this.#write(socket, {
-        error: { message: "ownerId, gatewayRunId, and message are required" },
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #completePiTurn(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#piTurns) {
+      this.#write(socket, {
+        error: { message: "Pi turn queue is not configured" },
         id: request.id,
       });
       return;
     }
 
     try {
-      const result = this.#gatewayRuns.failRun({
-        gatewayRunId: params.gatewayRunId,
+      const params = parsePiCompleteTurnParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      const deliveredByStream = this.#runtimeDelivery?.hasFinished(params.piTurnId) === true;
+      const assistant = this.#store.appendEvent({
+        idempotencyKey: piTurnIdempotencyKey(params.piTurnId, "assistant"),
+        payload: {
+          ...(deliveredByStream ? { deliveredByStream: true } : {}),
+          ownerId: params.ownerId,
+          ownerKind: params.ownerKind,
+          piSessionFile: params.piSessionFile,
+          piSessionId: params.piSessionId,
+          piTurnId: params.piTurnId,
+          sourceRuntime: "pi",
+          text: params.finalText,
+          ...(params.triggeringEventId !== undefined
+            ? { triggeringEventId: params.triggeringEventId }
+            : {}),
+        },
+        sessionId: params.sessionId,
+        type: "assistant.message",
+      });
+      const result = this.#piTurns.completeTurnFromPi({
+        ownerId: params.ownerId,
+        piTurnId: params.piTurnId,
+      });
+      await this.#runtimeDelivery?.completeToolProgress?.({
+        piTurnId: params.piTurnId,
+        sessionId: params.sessionId,
+      });
+      this.#write(socket, {
+        id: request.id,
+        result: { events: [assistant, ...result.events].map(toWireEvent), turn: result.turn },
+      });
+      await this.#publishEvent(assistant);
+      for (const event of result.events) {
+        await this.#publishEvent(event);
+      }
+    } catch (error) {
+      this.#write(socket, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+        id: request.id,
+      });
+    }
+  }
+
+  async #failPiTurn(socket: Socket, request: RpcRequest): Promise<void> {
+    if (!this.#piTurns) {
+      this.#write(socket, {
+        error: { message: "Pi turn queue is not configured" },
+        id: request.id,
+      });
+      return;
+    }
+
+    try {
+      const params = parsePiFailTurnParams(request.params);
+      this.#requirePiOwner(params.ownerId, params.sessionId);
+      const result = this.#piTurns.failTurnFromPi({
         message: params.message,
         ownerId: params.ownerId,
+        piTurnId: params.piTurnId,
+      });
+      await this.#runtimeDelivery?.failToolProgress?.({
+        message: params.message,
+        piTurnId: params.piTurnId,
+        sessionId: params.sessionId,
       });
       this.#write(socket, {
         id: request.id,
-        result: { run: result.run },
+        result: { events: result.events.map(toWireEvent), turn: result.turn },
       });
       for (const event of result.events) {
         await this.#publishEvent(event);
@@ -1312,6 +1326,15 @@ export class ShepherdGatewayServer {
         id: request.id,
       });
     }
+  }
+
+  #requirePiOwner(ownerId: string, sessionId: string): PiOwnerRecord {
+    this.#pruneStaleOwners();
+    const owner = this.#piOwners.get(ownerId);
+    if (!owner || owner.sessionId !== sessionId) {
+      throw new Error("Pi owner is not attached to this session");
+    }
+    return owner;
   }
 
   #canOwnerClaim(ownerId: string, sessionId: string): boolean {
@@ -1334,8 +1357,8 @@ export class ShepherdGatewayServer {
     for (const [ownerId, owner] of this.#piOwners) {
       if (now - owner.lastHeartbeatAt.getTime() >= this.#ownerHeartbeatTimeoutMs) {
         this.#piOwners.delete(ownerId);
-        const recovery = this.#gatewayRuns?.markRunningRunRecoveryRequired({
-          message: "Pi owner heartbeat timed out while a gateway run was active.",
+        const recovery = this.#piTurns?.markRunningTurnRecoveryRequired({
+          message: "Pi owner heartbeat timed out while a Pi turn was active.",
           ownerId,
           sessionId: owner.sessionId,
         });
@@ -1412,29 +1435,6 @@ export class ShepherdGatewayServer {
     }
   }
 
-  async #collectGatewayTurnResult(
-    sessionId: string,
-    triggeringEventId: number | undefined,
-    messages: GatewayMessage[],
-    explicitProviderOverride?: ReturnType<typeof parseGatewayProviderOverride>,
-  ): Promise<{ events: EventRecord[]; output: { text: string } }> {
-    if (!this.#gatewayRunner) {
-      throw new Error("Gateway runner is not configured");
-    }
-
-    const afterEventId = this.#store.getLatestEventId(sessionId);
-    const providerOverride = explicitProviderOverride ?? this.#providerOverrides?.({ sessionId });
-    const output = await this.#gatewayRunner.runTurn({
-      messages,
-      ...(providerOverride !== undefined ? { providerOverride } : {}),
-      sessionId,
-      ...(triggeringEventId !== undefined ? { triggeringEventId } : {}),
-    });
-    const events = this.#store.listEvents(sessionId, afterEventId, 500);
-
-    return { events, output };
-  }
-
   #broadcastEvent(event: EventRecord): void {
     for (const socket of this.#subscriptions.get(event.sessionId) ?? []) {
       this.#writeEvent(socket, event);
@@ -1465,7 +1465,7 @@ export class ShepherdGatewayServer {
   }
 }
 
-function getQueuedRunPiSessionFile(payload: unknown): string | undefined {
+function getQueuedTurnPiSessionFile(payload: unknown): string | undefined {
   if (typeof payload !== "object" || payload === null) {
     return undefined;
   }
@@ -1480,20 +1480,6 @@ function isPiMode(value: unknown): value is PiHandshakeRecord["mode"] {
 
 function piOwnerKindForMode(mode: PiHandshakeRecord["mode"]): PiOwnerKind {
   return mode === "tui" ? "tui_pi" : "headless_pi";
-}
-
-function isGatewayMessages(value: unknown): value is GatewayMessage[] {
-  if (!Array.isArray(value)) {
-    return false;
-  }
-
-  return value.every(
-    (message) =>
-      typeof message === "object" &&
-      message !== null &&
-      typeof (message as GatewayMessage).content === "string" &&
-      ["assistant", "system", "user"].includes((message as GatewayMessage).role),
-  );
 }
 
 function parseActorPresentation(value: unknown): ActorPresentationInput {

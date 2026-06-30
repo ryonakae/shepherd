@@ -10,7 +10,7 @@ export type SessionDeliveryFanoutResult = DeliveryResult & {
 const deliverableEventTypes = new Set([
   "approval.requested",
   "approval.responded",
-  "gateway.message",
+  "assistant.message",
   "user.message",
 ]);
 
