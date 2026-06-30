@@ -29,7 +29,7 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 - `src/daemon/`: daemon と Unix socket / JSON Lines RPC。
 - `src/db/`: `node:sqlite`、Drizzle schema、migration runner。
 - `src/delivery/`: platform delivery routing、fanout、receipt / duplicate-send prevention。
-- `src/gateway/`: provider adapters、logical tools、turn queueing、context、summary updates。
+- `src/gateway/`: Gateway JSON Lines RPC、Pi turn queueing、logical tools、context、recovery、working context helpers。
 - `src/herdr/`: Herdr named session / workspace / pane / agent orchestration。
 - `src/platforms/slack/`: Slack inbound normalization、Socket Mode wrapper、outbound delivery。
 - `src/tui/`: daemon JSON Lines RPC client。

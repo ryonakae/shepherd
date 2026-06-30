@@ -1,6 +1,6 @@
 # Shepherd
 
-Shepherd orchestrates Herdr-managed coding agents from a shared TUI and messaging event stream.
+Shepherd is a Pi-coordinated gateway for operating Herdr-managed coding agents from a shared TUI and messaging event stream.
 
 <!-- README-I18N:START -->
 
@@ -10,8 +10,9 @@ Shepherd orchestrates Herdr-managed coding agents from a shared TUI and messagin
 
 ## Features
 
-- **Herdr-first orchestration:** Shepherd stores session state and controls Herdr sessions, workspaces, tabs, panes, and agents.
+- **Clear runtime split:** Pi owns model/provider/session conversation state, Herdr owns terminal execution surfaces, and Shepherd Gateway owns sessions, delivery, Pi turn queueing, policy, bindings, and audit events.
 - **Shared session stream:** TUI and Slack clients read and write the same Shepherd session event log through platform adapters.
+- **Herdr worker orchestration:** Shepherd manages Herdr workspaces, panes, and worker-agent bindings through `shepherd_*` logical tools.
 - **Typed foundation:** TypeScript, Vitest, Biome, SQLite migrations, Drizzle schema generation, and TypeBox/Ajv schemas support the MVP.
 
 ## Contents
@@ -43,7 +44,7 @@ pnpm build
 
 Shepherd reads `$SHEPHERD_HOME/config.yaml`. If `SHEPHERD_HOME` is unset, Shepherd uses `~/.shepherd` on all platforms. Shepherd also reads `$SHEPHERD_HOME/.env`; values in that file override shell values for non-`SHEPHERD_*` variables.
 
-The `runtime:` section is optional. Relative paths are resolved from `$SHEPHERD_HOME`.
+The `runtime:` section is optional. Relative paths are resolved from `$SHEPHERD_HOME`. During development, the SQLite schema is reset destructively when migrations change; remove old `$SHEPHERD_HOME/state.db` files if an old local database blocks startup.
 
 ```yaml
 runtime:
@@ -88,9 +89,9 @@ platforms:
       tool_progress: off
 ```
 
-Shepherd requires `allowed_users` when you configure Slack. The Gateway ignores messages outside `allowed_teams`, `allowed_channels`, or `allowed_users`, then logs the denied axis and Slack IDs at debug level. If you set `tui_default_channel`, include it in `allowed_channels`.
+Shepherd no longer has provider/model config. Configure provider auth and model selection in Pi itself.
 
-For Pi-backed gateway runs, omit `providers`, `gateway.default_provider`, and `gateway.model`. Those fields select the legacy provider runner instead of the Pi runtime.
+Shepherd requires `allowed_users` when you configure Slack. The Gateway ignores messages outside `allowed_teams`, `allowed_channels`, or `allowed_users`, then logs the denied axis and Slack IDs at debug level. If you set `tui_default_channel`, include it in `allowed_channels`.
 
 ### Slack app setup
 
@@ -125,7 +126,7 @@ EOF
 
 ### Pi package setup
 
-Install the local Shepherd Pi package before starting the Gateway with Pi runtime enabled:
+Install the local Shepherd Pi package before starting the Gateway:
 
 ```bash
 pi install ./packages/shepherd-pi
@@ -218,12 +219,13 @@ node dist/src/cli/shepherd.js audit "$SHEPHERD_SESSION_ID"
 
 - `src/config`: TypeBox/Ajv runtime configuration contracts.
 - `src/cli`: command-line entrypoints for `shepherd` and `shepherd-tools`.
-- `src/gateway`: local Gateway server, JSON Lines framing, recovery, provider adapters, logical tools, turn queueing, context, and summary updates.
-- `src/db`: SQLite connection, migration application, and Drizzle schema.
+- `src/gateway`: local Gateway server, JSON Lines framing, Pi turn queueing, logical tools, recovery, context, and working-context helpers.
+- `src/db`: SQLite connection, migration application, Drizzle schema, Pi turns, worker bindings, session bindings, and summaries.
 - `src/delivery`: platform delivery routing, fanout, receipts, and duplicate-send prevention.
-- `src/gateway/working-contexts.ts`: allowed-root working context discovery and resolution.
+- `src/herdr`: Herdr socket clients, orchestration, workspace bindings, and progress subscriptions.
 - `src/platforms/slack`: Slack inbound normalization, Socket Mode wrapper, and outbound delivery.
 - `src/tui`: Gateway socket client used by TUI-style local surfaces.
+- `packages/shepherd-pi`: Pi extension package that mirrors Pi turns and registers dynamic `shepherd_*` tools.
 - `test/unit`: pure logic and contract tests.
 - `test/integration`: SQLite and cross-module integration tests.
 - `docs/plans`: active product and implementation plans; completed plans live under `docs/plans/archived`.
