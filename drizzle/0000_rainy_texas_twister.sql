@@ -25,20 +25,19 @@ CREATE TABLE `delivery_receipts` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `delivery_receipts_event_target_idx` ON `delivery_receipts` (`event_id`,`platform`,`target_id`);--> statement-breakpoint
-CREATE TABLE `gateway_runs` (
-	`id` text PRIMARY KEY NOT NULL,
-	`completed_at` integer,
+CREATE TABLE `events` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`actor_id` text,
 	`created_at` integer NOT NULL,
-	`recovery_json` text,
+	`dedupe_key` text,
+	`payload_json` text NOT NULL,
 	`session_id` text NOT NULL,
-	`started_at` integer,
-	`status` text NOT NULL,
-	`triggering_event_id` integer,
-	`updated_at` integer NOT NULL,
-	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`triggering_event_id`) REFERENCES `events`(`id`) ON UPDATE no action ON DELETE set null
+	`type` text NOT NULL,
+	FOREIGN KEY (`actor_id`) REFERENCES `actors`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `events_session_idempotency_key_idx` ON `events` (`session_id`,`dedupe_key`);--> statement-breakpoint
 CREATE TABLE `herdr_bindings` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -57,15 +56,37 @@ CREATE TABLE `logical_tool_calls` (
 	`created_at` integer NOT NULL,
 	`idempotency_key` text NOT NULL,
 	`input_json` text NOT NULL,
+	`pi_turn_id` text NOT NULL,
 	`result_json` text,
 	`session_id` text NOT NULL,
 	`status` text NOT NULL,
 	`tool_name` text NOT NULL,
 	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`pi_turn_id`) REFERENCES `pi_turns`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `logical_tool_calls_session_idempotency_idx` ON `logical_tool_calls` (`session_id`,`idempotency_key`);--> statement-breakpoint
+CREATE UNIQUE INDEX `logical_tool_calls_pi_turn_idempotency_idx` ON `logical_tool_calls` (`pi_turn_id`,`idempotency_key`);--> statement-breakpoint
+CREATE TABLE `pi_turns` (
+	`id` text PRIMARY KEY NOT NULL,
+	`completed_at` integer,
+	`created_at` integer NOT NULL,
+	`input_event_ids_json` text,
+	`owner_id` text,
+	`owner_kind` text,
+	`pi_session_file` text,
+	`pi_session_id` text,
+	`recovery_json` text,
+	`session_id` text NOT NULL,
+	`source` text,
+	`started_at` integer,
+	`status` text NOT NULL,
+	`triggering_event_id` integer,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`triggering_event_id`) REFERENCES `events`(`id`) ON UPDATE no action ON DELETE set null
+);
+--> statement-breakpoint
 CREATE TABLE `session_bindings` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -84,10 +105,44 @@ CREATE TABLE `session_summaries` (
 	`session_id` text PRIMARY KEY NOT NULL,
 	`content` text NOT NULL,
 	`created_at` integer NOT NULL,
+	`summarized_through_event_id` integer DEFAULT 0 NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE `sessions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`created_at` integer NOT NULL,
+	`metadata_json` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`title` text,
+	`updated_at` integer NOT NULL,
+	`working_context_id` text,
+	FOREIGN KEY (`working_context_id`) REFERENCES `working_contexts`(`id`) ON UPDATE no action ON DELETE set null
+);
+--> statement-breakpoint
+CREATE TABLE `worker_agent_bindings` (
+	`id` text PRIMARY KEY NOT NULL,
+	`agent_name` text NOT NULL,
+	`agent_profile` text NOT NULL,
+	`agent_status` text NOT NULL,
+	`binding_health` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`description` text,
+	`herdr_session_name` text NOT NULL,
+	`last_seen_at` integer,
+	`last_task` text,
+	`metadata_json` text,
+	`pane_id` text NOT NULL,
+	`role` text NOT NULL,
+	`session_id` text NOT NULL,
+	`tab_id` text,
+	`updated_at` integer NOT NULL,
+	`workspace_id` text NOT NULL,
+	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `worker_agent_bindings_identity_idx` ON `worker_agent_bindings` (`session_id`,`workspace_id`,`agent_name`);--> statement-breakpoint
 CREATE TABLE `working_contexts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -100,7 +155,4 @@ CREATE TABLE `working_contexts` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `working_contexts_slug_idx` ON `working_contexts` (`slug`);--> statement-breakpoint
-DROP INDEX `events_session_dedupe_key_idx`;--> statement-breakpoint
-ALTER TABLE `events` ADD `actor_id` text REFERENCES actors(id);--> statement-breakpoint
-CREATE UNIQUE INDEX `events_session_idempotency_key_idx` ON `events` (`session_id`,`dedupe_key`);--> statement-breakpoint
-ALTER TABLE `sessions` ADD `working_context_id` text REFERENCES working_contexts(id);
+CREATE UNIQUE INDEX `working_contexts_path_idx` ON `working_contexts` (`path`);

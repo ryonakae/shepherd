@@ -92,14 +92,20 @@ export const sessionBindings = sqliteTable(
   ],
 );
 
-export const gatewayRuns = sqliteTable("gateway_runs", {
+export const piTurns = sqliteTable("pi_turns", {
   id: text("id").primaryKey(),
   completedAt: integer("completed_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  inputEventIdsJson: text("input_event_ids_json"),
+  ownerId: text("owner_id"),
+  ownerKind: text("owner_kind", { enum: ["headless_pi", "tui_pi"] }),
+  piSessionFile: text("pi_session_file"),
+  piSessionId: text("pi_session_id"),
   recoveryJson: text("recovery_json"),
   sessionId: text("session_id")
     .notNull()
     .references(() => sessions.id, { onDelete: "cascade" }),
+  source: text("source", { enum: ["extension", "interactive", "rpc"] }),
   startedAt: integer("started_at", { mode: "timestamp_ms" }),
   status: text("status", {
     enum: ["queued", "running", "completed", "failed", "recovery_required"],
@@ -118,6 +124,9 @@ export const logicalToolCalls = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     inputJson: text("input_json").notNull(),
+    piTurnId: text("pi_turn_id")
+      .notNull()
+      .references(() => piTurns.id, { onDelete: "cascade" }),
     resultJson: text("result_json"),
     sessionId: text("session_id")
       .notNull()
@@ -127,8 +136,8 @@ export const logicalToolCalls = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    uniqueIndex("logical_tool_calls_session_idempotency_idx").on(
-      table.sessionId,
+    uniqueIndex("logical_tool_calls_pi_turn_idempotency_idx").on(
+      table.piTurnId,
       table.idempotencyKey,
     ),
   ],
@@ -174,6 +183,43 @@ export const herdrBindings = sqliteTable(
     workspaceId: text("workspace_id").notNull(),
   },
   (table) => [uniqueIndex("herdr_bindings_session_idx").on(table.sessionId)],
+);
+
+export const workerAgentBindings = sqliteTable(
+  "worker_agent_bindings",
+  {
+    id: text("id").primaryKey(),
+    agentName: text("agent_name").notNull(),
+    agentProfile: text("agent_profile").notNull(),
+    agentStatus: text("agent_status", {
+      enum: ["idle", "working", "blocked", "done", "unknown"],
+    }).notNull(),
+    bindingHealth: text("binding_health", {
+      enum: ["starting", "present", "missing", "error"],
+    }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    description: text("description"),
+    herdrSessionName: text("herdr_session_name").notNull(),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+    lastTask: text("last_task"),
+    metadataJson: text("metadata_json"),
+    paneId: text("pane_id").notNull(),
+    role: text("role", { enum: ["implementation", "review", "research", "test", "general"] })
+      .notNull(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    tabId: text("tab_id"),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+  },
+  (table) => [
+    uniqueIndex("worker_agent_bindings_identity_idx").on(
+      table.sessionId,
+      table.workspaceId,
+      table.agentName,
+    ),
+  ],
 );
 
 export const sessionSummaries = sqliteTable("session_summaries", {

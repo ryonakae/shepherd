@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1782289778639,
-      "tag": "0000_damp_sunset_bain",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1782290580595,
-      "tag": "0001_phase1_core_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1782296062548,
-      "tag": "0002_empty_red_wolf",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1782320835975,
-      "tag": "0003_thankful_lyja",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1782409493630,
-      "tag": "0004_daily_kinsey_walden",
+      "when": 1782809762659,
+      "tag": "0000_rainy_texas_twister",
       "breakpoints": true
     }
   ]
