@@ -204,8 +204,9 @@ export const workerAgentBindings = sqliteTable(
     lastTask: text("last_task"),
     metadataJson: text("metadata_json"),
     paneId: text("pane_id").notNull(),
-    role: text("role", { enum: ["implementation", "review", "research", "test", "general"] })
-      .notNull(),
+    role: text("role", {
+      enum: ["implementation", "review", "research", "test", "general"],
+    }).notNull(),
     sessionId: text("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),

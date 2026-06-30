@@ -143,9 +143,9 @@ export class WorkerAgentBindingStore {
   }
 
   getById(id: string): WorkerAgentBindingRecord {
-    const row = this.#sqlite
-      .prepare("select * from worker_agent_bindings where id = ?")
-      .get(id) as WorkerAgentBindingRow | undefined;
+    const row = this.#sqlite.prepare("select * from worker_agent_bindings where id = ?").get(id) as
+      | WorkerAgentBindingRow
+      | undefined;
     if (!row) {
       throw new Error(`Worker agent binding not found: ${id}`);
     }
@@ -202,7 +202,9 @@ export class WorkerAgentBindingStore {
       .run(
         input.agentStatus ?? current.agentStatus,
         input.bindingHealth ?? current.bindingHealth,
-        input.metadata === undefined ? stringifyMetadata(current.metadata) : stringifyMetadata(input.metadata),
+        input.metadata === undefined
+          ? stringifyMetadata(current.metadata)
+          : stringifyMetadata(input.metadata),
         now,
         now,
         current.id,

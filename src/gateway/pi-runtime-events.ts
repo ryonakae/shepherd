@@ -115,14 +115,19 @@ export function piUserMessageIdempotencyKey(input: {
   return `pi:turn:${input.piTurnId}:user:${input.delivery}:${input.deliverySequence ?? 0}:${createHash("sha256").update(input.text).digest("hex").slice(0, 16)}`;
 }
 
-export function sanitizePiPreviewText(value: unknown, options: { maxLength?: number } = {}): string {
+export function sanitizePiPreviewText(
+  value: unknown,
+  options: { maxLength?: number } = {},
+): string {
   const maxLength = options.maxLength ?? 240;
   const redacted = String(value ?? "")
     .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[redacted]")
     .replace(/((?:api[_-]?key|token|password|secret)\s*[=:]\s*)[^\s]+/gi, "$1[redacted]")
     .replace(/\n{4,}/g, "\n\n");
 
-  return redacted.length > maxLength ? `${redacted.slice(0, Math.max(0, maxLength - 3))}...` : redacted;
+  return redacted.length > maxLength
+    ? `${redacted.slice(0, Math.max(0, maxLength - 3))}...`
+    : redacted;
 }
 
 export function parsePiMirrorUserMessageParams(value: unknown): PiMirrorUserMessageParams {
@@ -265,7 +270,11 @@ function requireOwnerKind(value: unknown): PiOwnerKind {
   return requireEnum(value, ["headless_pi", "tui_pi"], "ownerKind");
 }
 
-function requireEnum<const T extends string>(value: unknown, values: readonly T[], name: string): T {
+function requireEnum<const T extends string>(
+  value: unknown,
+  values: readonly T[],
+  name: string,
+): T {
   if (typeof value !== "string" || !values.includes(value as T)) {
     throw new Error(`${name} is invalid`);
   }

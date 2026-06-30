@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { EventStore } from "@/db/event-store.js";
-import { PiTurnStore, type PiTurnStatus } from "@/db/pi-turns.js";
+import { type PiTurnStatus, PiTurnStore } from "@/db/pi-turns.js";
 
 export type PiTurnRecoveryNote = {
   piTurnId: string;
@@ -25,7 +25,8 @@ export function recoverGatewayState(options: {
     }
 
     const recovery = {
-      message: "Pi turn was in flight during gateway startup. Shepherd did not replay it automatically.",
+      message:
+        "Pi turn was in flight during gateway startup. Shepherd did not replay it automatically.",
       ownerId: turn.ownerId,
       piTurnId: turn.id,
       previousStatus: "running" as const,

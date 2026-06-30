@@ -1,7 +1,10 @@
 import type { EventRecord, EventStore } from "@/db/event-store.js";
 
 export type HerdrEventSource = {
-  subscribeEvents(params?: Record<string, unknown>, options?: { signal?: AbortSignal }): AsyncIterable<unknown>;
+  subscribeEvents(
+    params?: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ): AsyncIterable<unknown>;
   waitForEvent?(params?: Record<string, unknown>): Promise<unknown>;
 };
 

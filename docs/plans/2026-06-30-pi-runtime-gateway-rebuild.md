@@ -10,17 +10,15 @@
 
 ## Status
 
-Active.
+Done.
 
 ## Progress
 
-- Not started — Design decisions were settled through `/dig`; implementation has not begun.
+- Done — Implementation completed across Tasks 1–11. DB schema/migrations now use a fresh Pi-turn baseline, legacy provider runtime is removed, Gateway RPCs use `pi.*`, final assistant delivery uses `assistant.message`, Pi extension mirroring uses the new runtime protocol, logical tools are renamed and worker bindings are persisted, Herdr progress uses `events.subscribe`, docs describe the Pi/Herdr/Gateway split, and final validation passed.
 
 ## Next steps
 
-1. Start with Task 1 and reset the DB schema/migrations.
-2. Complete each task with the listed focused validation before moving to the next task.
-3. Run `pnpm check` and `pnpm build` at the end.
+No implementation steps remain for this plan. Future changes should use a new active plan.
 
 ## Global Constraints
 
@@ -354,7 +352,7 @@ Do not include worker binding lists, Herdr workspace state, recent events, or se
 - Produces `PiTurnStore`, `WorkerAgentBindingStore`, and a new `drizzle/0000_*.sql` baseline.
 - Consumes no previous task output.
 
-- [ ] **Step 1: Write failing Pi turn store tests**
+- [x] **Step 1: Write failing Pi turn store tests**
 
 Create `test/integration/pi-turn-store.test.ts` with these cases:
 
@@ -367,7 +365,7 @@ Create `test/integration/pi-turn-store.test.ts` with these cases:
 7. Calling a terminal transition on an already terminal turn returns `{ changed: false }` and does not overwrite `status` or `completedAt`.
 8. `markRecoveryRequiredForRunning(sessionId, ownerId, message)` only affects the current running turn for that owner/session.
 
-- [ ] **Step 2: Write failing worker binding store tests**
+- [x] **Step 2: Write failing worker binding store tests**
 
 Create `test/integration/worker-agent-bindings.test.ts` with these cases:
 
@@ -377,7 +375,7 @@ Create `test/integration/worker-agent-bindings.test.ts` with these cases:
 4. `getByAgentName({ sessionId, workspaceId, agentName })` throws `Worker agent binding not found` when absent.
 5. Invalid role/status/health is rejected by TypeScript callers or by explicit runtime validation in the store.
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run:
 
@@ -387,7 +385,7 @@ pnpm test test/integration/pi-turn-store.test.ts test/integration/worker-agent-b
 
 Expected: tests fail because stores and schema do not exist.
 
-- [ ] **Step 4: Rewrite `src/db/schema.ts`**
+- [x] **Step 4: Rewrite `src/db/schema.ts`**
 
 Implement the table list from **Core Interfaces / DB Tables**. Remove `gatewayRuns`. Keep `sessionSummaries` unchanged except for imports/order.
 
@@ -406,7 +404,7 @@ uniqueIndex("logical_tool_calls_pi_turn_idempotency_idx").on(table.piTurnId, tab
 
 Do not keep `events_session_idempotency_key_idx` if it allows duplicate `NULL` values differently; keep current behavior if tests depend on it.
 
-- [ ] **Step 5: Implement `PiTurnStore`**
+- [x] **Step 5: Implement `PiTurnStore`**
 
 Create `src/db/pi-turns.ts` exporting:
 
@@ -452,7 +450,7 @@ listRecoverableTurns(): PiTurnRecord[];
 
 Use `status in ('queued','running')` in terminal transition `where` clauses so terminal state is first-terminal-wins.
 
-- [ ] **Step 6: Implement `WorkerAgentBindingStore`**
+- [x] **Step 6: Implement `WorkerAgentBindingStore`**
 
 Create `src/db/worker-agent-bindings.ts` exporting:
 
@@ -476,7 +474,7 @@ updateObservedState(input: { agentName: string; sessionId: string; workspaceId: 
 
 Validate enum inputs before SQL and throw messages like `Invalid worker agent role: <value>`.
 
-- [ ] **Step 7: Reset migration files**
+- [x] **Step 7: Reset migration files**
 
 Delete old files under `drizzle/` and generate a new baseline:
 
@@ -489,7 +487,7 @@ Expected: one new SQL file under `drizzle/` and new Drizzle meta snapshots.
 
 Because compatibility is not required, do not write data migration SQL.
 
-- [ ] **Step 8: Run store tests**
+- [x] **Step 8: Run store tests**
 
 Run:
 
@@ -499,7 +497,7 @@ pnpm test test/integration/pi-turn-store.test.ts test/integration/worker-agent-b
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/db/schema.ts src/db/pi-turns.ts src/db/worker-agent-bindings.ts drizzle test/integration/pi-turn-store.test.ts test/integration/worker-agent-bindings.test.ts
@@ -530,7 +528,7 @@ git commit -m "db: reset schema around pi turns"
 - Consumes Task 1 `PiTurnStore`.
 - Produces provider-free config and runtime wiring.
 
-- [ ] **Step 1: Write failing config tests**
+- [x] **Step 1: Write failing config tests**
 
 Update `test/unit/config-schema.test.ts` and `test/unit/config-loader.test.ts`:
 
@@ -539,7 +537,7 @@ Update `test/unit/config-schema.test.ts` and `test/unit/config-loader.test.ts`:
 3. Config with `gateway.default_provider`, `gateway.model`, or `gateway.provider_overrides` fails validation with `additionalProperties`.
 4. `gateway.pi.idle_timeout_ms` and `gateway.pi.readiness_timeout_ms` remain valid positive integers.
 
-- [ ] **Step 2: Write failing runtime tests**
+- [x] **Step 2: Write failing runtime tests**
 
 Update `test/integration/gateway-runtime.test.ts`:
 
@@ -547,7 +545,7 @@ Update `test/integration/gateway-runtime.test.ts`:
 2. No test imports `GatewayRunner` or provider factory types.
 3. Runtime uses configured `agents` for `ensure_worker_agent` and no provider/model fields.
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run:
 
@@ -557,7 +555,7 @@ pnpm test test/unit/config-schema.test.ts test/unit/config-loader.test.ts test/i
 
 Expected: failures because provider config is still accepted and runtime still imports provider runner code.
 
-- [ ] **Step 4: Shrink config schema**
+- [x] **Step 4: Shrink config schema**
 
 In `src/config/schema.ts`:
 
@@ -567,7 +565,7 @@ In `src/config/schema.ts`:
 - Delete `invalidProviderOverridePaths()` and provider validation branches.
 - Keep `agents`, `default_agent`, `gateway.pi`, `platforms`, `context`, and `runtime`.
 
-- [ ] **Step 5: Rewrite runtime wiring**
+- [x] **Step 5: Rewrite runtime wiring**
 
 In `src/gateway/runtime.ts`:
 
@@ -593,7 +591,7 @@ In `src/gateway/service.ts`:
 - Remove `providerOverrides` option passed to `ShepherdGatewayServer`.
 - Remove `summaries` from the normal wake path and from `ShepherdGatewayServer` constructor options. Keep `SessionSummaryStore` as a standalone DB store with its existing integration test, but do not instantiate it in `runGatewayService()`.
 
-- [ ] **Step 6: Delete legacy provider files and tests**
+- [x] **Step 6: Delete legacy provider files and tests**
 
 Delete source files:
 
@@ -619,7 +617,7 @@ test/unit/codex-provider.test.ts
 
 Do not keep empty re-export files.
 
-- [ ] **Step 7: Remove provider dependencies**
+- [x] **Step 7: Remove provider dependencies**
 
 Update `package.json` dependencies by removing these provider-runner-only packages after deleting the imports listed in Step 6:
 
@@ -639,7 +637,7 @@ rg -n "@ai-sdk|openrouter|ai-sdk-provider-codex-cli|from \"ai\"|GatewayRunner|Ga
 
 Expected after cleanup: no active source/test references except README examples that are being updated in Task 11. If `ai` is still used by Pi/package tooling, do not remove it; otherwise remove it.
 
-- [ ] **Step 8: Run focused tests**
+- [x] **Step 8: Run focused tests**
 
 Run:
 
@@ -649,7 +647,7 @@ pnpm test test/unit/config-schema.test.ts test/unit/config-loader.test.ts test/i
 
 Expected: tests pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add package.json pnpm-lock.yaml src/config/schema.ts src/config/runtime.ts src/gateway/runtime.ts src/gateway/service.ts src/gateway test/unit/config-schema.test.ts test/unit/config-loader.test.ts test/integration/gateway-runtime.test.ts
@@ -673,7 +671,7 @@ git commit -m "gateway: remove legacy provider runtime"
 - Consumes `PiTurnStore` from Task 1.
 - Produces `PiTurnQueue` with queued/claimed/start/recovery events.
 
-- [ ] **Step 1: Write failing queue/RPC tests**
+- [x] **Step 1: Write failing queue/RPC tests**
 
 In `test/integration/gateway-rpc.test.ts`, add or update cases:
 
@@ -686,7 +684,7 @@ In `test/integration/gateway-rpc.test.ts`, add or update cases:
 7. Stale running owner marks the current running turn `recovery_required` and appends `recovery.note` with `piTurnId`.
 8. Calls to `gateway.claim_next_run` and `gateway.start_run` return unknown method errors.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -696,7 +694,7 @@ pnpm test test/integration/gateway-rpc.test.ts
 
 Expected: failures because server still exposes run terminology and queue classes.
 
-- [ ] **Step 3: Implement `PiTurnQueue`**
+- [x] **Step 3: Implement `PiTurnQueue`**
 
 Create `src/gateway/pi-turn-queue.ts` exporting:
 
@@ -724,7 +722,7 @@ export class PiTurnQueue {
 
 Use `PiSessionMetadataStore.ensureForSession()` to populate `piSessionFile`/`piSessionId` on queued events. `startTurn()` must first try `PiTurnStore.getTurn(piTurnId)`; if the turn does not exist, create it with `createRunningTurn()` for direct interactive/RPC Pi work. Keep event type names `pi.turn.queued`, `pi.turn.started`, `pi.turn.completed`, `pi.turn.failed`, and `pi.turn.recovery_required`.
 
-- [ ] **Step 4: Wire server to Pi turn queue**
+- [x] **Step 4: Wire server to Pi turn queue**
 
 In `src/gateway/server.ts`:
 
@@ -735,7 +733,7 @@ In `src/gateway/server.ts`:
 - Replace `gateway.start_run` with `pi.start_turn`; if Task 5 also uses `pi.start_turn` for direct turns, keep one method that handles both queued and direct turns.
 - Publish events after appending in user-visible order: `user.message`, `pi.turn.queued`.
 
-- [ ] **Step 5: Update recovery**
+- [x] **Step 5: Update recovery**
 
 In `src/gateway/recovery.ts`, replace `GatewayRunStore` usage with `PiTurnStore`. On startup:
 
@@ -743,7 +741,7 @@ In `src/gateway/recovery.ts`, replace `GatewayRunStore` usage with `PiTurnStore`
 - `running` turns become `recovery_required` with a recovery note.
 - No attempt is made to replay old provider turns.
 
-- [ ] **Step 6: Remove run terminology from active source**
+- [x] **Step 6: Remove run terminology from active source**
 
 Run:
 
@@ -753,7 +751,7 @@ rg -n "gatewayRun|GatewayRun|gateway\.run|gateway_runs|claim_next_run|start_run"
 
 Expected: no matches after this task, except changelog-like references in this new plan's historical sections. If this plan itself appears, ignore it.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -763,7 +761,7 @@ pnpm test test/integration/gateway-rpc.test.ts test/unit/herdr-session-lifecycle
 
 Expected: tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/gateway/pi-turn-queue.ts src/gateway/server.ts src/gateway/recovery.ts src/gateway/service.ts src/tui/client.ts packages/shepherd-pi/src/index.ts test/integration/gateway-rpc.test.ts test/unit/herdr-session-lifecycle.test.ts
@@ -790,7 +788,7 @@ git commit -m "gateway: queue work as pi turns"
 - Consumes `PiTurnQueue` from Task 3.
 - Produces final user/assistant/tool/lifecycle persistence and Slack delivery behavior.
 
-- [ ] **Step 1: Write failing helper tests**
+- [x] **Step 1: Write failing helper tests**
 
 Create `test/unit/pi-runtime-events.test.ts` with cases:
 
@@ -800,7 +798,7 @@ Create `test/unit/pi-runtime-events.test.ts` with cases:
 4. `piToolIdempotencyKey("turn-1", "tool-1", "completed")` returns `pi:turn:turn-1:tool:tool-1:completed`.
 5. Param parsers reject missing `sessionId`, `ownerId`, `piTurnId`, invalid owner kind, and invalid tool status with explicit messages.
 
-- [ ] **Step 2: Implement runtime helper module**
+- [x] **Step 2: Implement runtime helper module**
 
 Create `src/gateway/pi-runtime-events.ts` exporting:
 
@@ -826,7 +824,7 @@ export function parsePiStreamSegmentBreakParams(value: unknown): PiStreamSegment
 
 Use parser return types that match the archived bidirectional sync plan, but replace `gatewayRunId` with optional `piTurnId` links only where needed. Do not include `gatewayRunId` in new params.
 
-- [ ] **Step 3: Write failing Slack/fanout tests**
+- [x] **Step 3: Write failing Slack/fanout tests**
 
 Update tests:
 
@@ -836,7 +834,7 @@ Update tests:
 4. `pi.turn.*`, `pi.tool.*`, `worker_agent.*`, and `herdr.progress` do not normal-fanout.
 5. `SlackStreamDelivery` is keyed by generic `streamId` / `piTurnId`.
 
-- [ ] **Step 4: Implement `assistant.message` delivery**
+- [x] **Step 4: Implement `assistant.message` delivery**
 
 In `src/delivery/fanout.ts`, replace `gateway.message` with `assistant.message` in `deliverableEventTypes`.
 
@@ -849,7 +847,7 @@ In `src/platforms/slack/delivery.ts`:
   - `delivery: "followUp"` → `⏭ Follow-up: <text>`
   - otherwise `<text>`
 
-- [ ] **Step 5: Implement transient runtime delivery**
+- [x] **Step 5: Implement transient runtime delivery**
 
 In `src/platforms/runtime.ts`, expose:
 
@@ -867,7 +865,7 @@ export type PiRuntimeDelivery = {
 
 Wire Slack stream delivery and `SlackToolProgressDelivery` to every Slack binding for a session.
 
-- [ ] **Step 6: Implement `pi.*` server handlers**
+- [x] **Step 6: Implement `pi.*` server handlers**
 
 In `src/gateway/server.ts`, add handlers:
 
@@ -899,7 +897,7 @@ Terminal conflict behavior:
 - If existing terminal differs, append `pi.turn.terminal_conflict` and return `{ ignored: true, conflict: true }`.
 - Detect terminal state with idempotency-key lookups, not limited event scans.
 
-- [ ] **Step 7: Remove legacy RPC handlers**
+- [x] **Step 7: Remove legacy RPC handlers**
 
 Delete dispatch and method implementations for:
 
@@ -914,7 +912,7 @@ gateway.fail_run
 
 Tests should assert these now return unknown method errors.
 
-- [ ] **Step 8: Run focused tests**
+- [x] **Step 8: Run focused tests**
 
 Run:
 
@@ -924,7 +922,7 @@ pnpm test test/unit/pi-runtime-events.test.ts test/unit/slack-delivery.test.ts t
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/gateway/pi-runtime-events.ts src/gateway/server.ts src/platforms/runtime.ts src/platforms/slack/delivery.ts src/platforms/slack/tool-progress.ts src/delivery/fanout.ts test/unit/pi-runtime-events.test.ts test/unit/slack-delivery.test.ts test/integration/delivery-fanout.test.ts test/integration/gateway-rpc.test.ts
@@ -944,7 +942,7 @@ git commit -m "gateway: persist pi turns and assistant messages"
 - Consumes Task 4 RPCs.
 - Produces Pi-side mirroring, streaming, tool progress, and terminal state.
 
-- [ ] **Step 1: Write failing extension tests**
+- [x] **Step 1: Write failing extension tests**
 
 Extend `test/unit/shepherd-pi-extension.test.ts` or add a new test harness around exported helpers so it verifies:
 
@@ -956,7 +954,7 @@ Extend `test/unit/shepherd-pi-extension.test.ts` or add a new test harness aroun
 
 Export a pure `buildShepherdHiddenContext(state)` helper from `packages/shepherd-pi/src/index.ts` and test it directly. Cover lifecycle RPC behavior through TypeScript checks plus `test/integration/gateway-rpc.test.ts`; do not build a full fake Pi runtime harness in this task.
 
-- [ ] **Step 2: Update extension state and RPC map**
+- [x] **Step 2: Update extension state and RPC map**
 
 In `packages/shepherd-pi/src/index.ts`:
 
@@ -969,7 +967,7 @@ In `packages/shepherd-pi/src/index.ts`:
   - remove legacy completion/stream methods
   - add `pi.mirror_user_message`, `pi.stream_delta`, `pi.stream_finish`, `pi.stream_segment_break`, `pi.record_tool_progress`, `pi.complete_turn`, and `pi.fail_turn`.
 
-- [ ] **Step 3: Implement Pi input mirroring**
+- [x] **Step 3: Implement Pi input mirroring**
 
 Add `pi.on("input", ...)`:
 
@@ -982,7 +980,7 @@ Add `pi.on("input", ...)`:
 - Call `pi.mirror_user_message` with `delivery`, `displayName`, `ownerId`, `ownerKind`, `piSessionFile`, `piSessionId`, `piTurnId`, `sessionId`, `source`, and `text`.
 - Store returned event id in pending input state.
 
-- [ ] **Step 4: Start turns through `pi.start_turn`**
+- [x] **Step 4: Start turns through `pi.start_turn`**
 
 Add or update `pi.on("agent_start", ...)`:
 
@@ -992,7 +990,7 @@ Add or update `pi.on("agent_start", ...)`:
 - Set `activePiTurnId` before the model runs so hidden context can show it.
 - Call `pi.start_turn` with `source`, `inputEventIds`, owner/session/Pi metadata.
 
-- [ ] **Step 5: Stream assistant output**
+- [x] **Step 5: Stream assistant output**
 
 Update `message_update` handling:
 
@@ -1007,7 +1005,7 @@ Update `agent_end`:
 - Clear active turn state and claim the next queued turn.
 - On finalization error, call `pi.fail_turn` once with a short message.
 
-- [ ] **Step 6: Record Pi tool lifecycle**
+- [x] **Step 6: Record Pi tool lifecycle**
 
 Use Pi hooks `tool_execution_start`, `tool_execution_update`, and `tool_execution_end`. Register `tool_execution_update` as a no-op handler so mid-stream tool updates are not persisted in this rebuild.
 
@@ -1022,7 +1020,7 @@ End:
 - Call `pi.record_tool_progress` with `status: "completed"` or `"failed"`.
 - Do not send raw args/result.
 
-- [ ] **Step 7: Update claim-next flow**
+- [x] **Step 7: Update claim-next flow**
 
 Replace `claimNext()` internals:
 
@@ -1032,13 +1030,13 @@ Replace `claimNext()` internals:
 - Do not call `pi.mirror_user_message`; the queued Slack/user message already exists as `user.message`.
 - Call `pi.sendUserMessage(turn.userText)`.
 
-- [ ] **Step 8: Update hidden context and skill doc**
+- [x] **Step 8: Update hidden context and skill doc**
 
 Change `before_agent_start` hidden context to exactly the form in **Core Interfaces / Hidden Shepherd Context**. Replace `Gateway run id` with `Current Pi turn id`.
 
 Update `packages/shepherd-pi/skills/shepherd/SKILL.md` as optional reference only. It should say normal attached sessions rely on hidden context and dynamic tool descriptions.
 
-- [ ] **Step 9: Run validation**
+- [x] **Step 9: Run validation**
 
 Run:
 
@@ -1049,7 +1047,7 @@ pnpm pi-package:check
 
 Expected: tests and package validation pass.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts packages/shepherd-pi/skills/shepherd/SKILL.md test/unit/shepherd-pi-extension.test.ts
@@ -1072,7 +1070,7 @@ git commit -m "pi: drive shepherd turns through pi runtime rpc"
 - Consumes `WorkerAgentBindingStore` and `PiTurnStore` from Task 1.
 - Produces renamed tools and worker binding behavior.
 
-- [ ] **Step 1: Write failing built-in tool tests**
+- [x] **Step 1: Write failing built-in tool tests**
 
 Update `test/integration/builtin-tools.test.ts`:
 
@@ -1107,7 +1105,7 @@ Update `test/integration/builtin-tools.test.ts`:
 6. Low-level tools use `herdr_` internal names.
 7. Every tool has `promptSnippet`; boundary tools have `promptGuidelines` naming the visible `shepherd_*` tool.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -1117,7 +1115,7 @@ pnpm test test/integration/builtin-tools.test.ts
 
 Expected: failures because names and worker tools are not implemented.
 
-- [ ] **Step 3: Add `piTurnId` to logical tool context**
+- [x] **Step 3: Add `piTurnId` to logical tool context**
 
 In `src/gateway/tools.ts`:
 
@@ -1129,7 +1127,7 @@ In `src/gateway/tools.ts`:
 
 If a tool is run outside a Pi turn from a CLI/admin path, require callers to pass a synthetic `piTurnId` such as `manual:<uuid>` and create a corresponding `pi_turns` record first; do not allow missing `piTurnId` silently.
 
-- [ ] **Step 4: Rename tool registrations**
+- [x] **Step 4: Rename tool registrations**
 
 In `src/gateway/builtin-tools.ts`, rename registrations according to **Core Interfaces / Tool Names**.
 
@@ -1141,7 +1139,7 @@ Update prompt guidance:
 - `herdr_read`: normal read-only Herdr inspection.
 - `herdr_*` mutation tools: only inside Shepherd-managed Herdr resources.
 
-- [ ] **Step 5: Implement worker tools**
+- [x] **Step 5: Implement worker tools**
 
 Add input schemas:
 
@@ -1182,7 +1180,7 @@ Return all worker bindings for `context.sessionId`.
 
 If `workspaceId` is omitted and exactly one worker with `agentName` exists in session, return it. If multiple exist, throw `workspaceId is required because multiple worker agents match`.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -1192,7 +1190,7 @@ pnpm test test/integration/builtin-tools.test.ts test/integration/gateway-rpc.te
 
 Expected: tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/gateway/tools.ts src/gateway/builtin-tools.ts src/herdr/orchestrator.ts src/tui/client.ts test/integration/builtin-tools.test.ts test/integration/gateway-rpc.test.ts
@@ -1214,7 +1212,7 @@ git commit -m "tools: split shepherd and herdr tool surface"
 - Consumes `WorkerAgentBindingStore`.
 - Produces internal `herdr.progress` events and best-effort `worker_agent.status_changed` events.
 
-- [ ] **Step 1: Write failing socket client tests**
+- [x] **Step 1: Write failing socket client tests**
 
 In `test/integration/herdr-socket-client.test.ts`, add a fake Herdr socket server that responds to `events.subscribe` by streaming JSON Lines notifications. Test:
 
@@ -1223,7 +1221,7 @@ In `test/integration/herdr-socket-client.test.ts`, add a fake Herdr socket serve
 3. Calling `return()` or aborting closes/destroys the subscription socket without closing unrelated request clients.
 4. `waitForEvent()` is no longer used by progress subscriptions. Keep `waitForEvent()` only if low-level `herdr_wait_for_event` still needs a compatibility wrapper; do not use it for automatic progress.
 
-- [ ] **Step 2: Write failing progress manager tests**
+- [x] **Step 2: Write failing progress manager tests**
 
 In `test/integration/herdr-progress.test.ts`, update tests:
 
@@ -1233,7 +1231,7 @@ In `test/integration/herdr-progress.test.ts`, update tests:
 4. A subscription stream error calls `onError`, waits `retryDelayMs`, and reconnects.
 5. `close()` aborts active subscriptions.
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run:
 
@@ -1243,7 +1241,7 @@ pnpm test test/integration/herdr-socket-client.test.ts test/integration/herdr-pr
 
 Expected: failures because current code uses `events.wait`.
 
-- [ ] **Step 4: Implement Herdr event subscription client**
+- [x] **Step 4: Implement Herdr event subscription client**
 
 In `src/herdr/socket-client.ts`, add:
 
@@ -1259,7 +1257,7 @@ Implementation requirements:
 - Yield subsequent notification frames. Accept both shapes `{ method, params }` and raw event objects; normalize only enough to pass raw event through.
 - Abort/destroy socket when `signal` aborts or iterator returns.
 
-- [ ] **Step 5: Rewrite progress manager**
+- [x] **Step 5: Rewrite progress manager**
 
 In `src/herdr/progress-subscriptions.ts`:
 
@@ -1269,11 +1267,11 @@ In `src/herdr/progress-subscriptions.ts`:
 - Update worker binding store when event type and payload identify an agent target/pane.
 - Treat status as best-effort: set `agentStatus`, `bindingHealth: "present"`, and `lastSeenAt` on observed status; set `bindingHealth: "error"` only for explicit error observations.
 
-- [ ] **Step 6: Wire subscription on workspace binding**
+- [x] **Step 6: Wire subscription on workspace binding**
 
 In `src/gateway/runtime.ts` or `src/herdr/orchestrator.ts`, keep existing `onWorkspaceBound` style but ensure it calls the new subscription manager. The call should happen for both `ensure_workspace` and `attach_workspace`.
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run:
 
@@ -1283,7 +1281,7 @@ pnpm test test/integration/herdr-socket-client.test.ts test/integration/herdr-pr
 
 Expected: tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/herdr/socket-client.ts src/herdr/progress-subscriptions.ts src/herdr/orchestrator.ts src/gateway/runtime.ts test/integration/herdr-socket-client.test.ts test/integration/herdr-progress.test.ts
@@ -1306,7 +1304,7 @@ git commit -m "herdr: subscribe to progress events"
 - Consumes event names from Task 4.
 - Produces context formatter for admin/recovery only.
 
-- [ ] **Step 1: Write failing context tests**
+- [x] **Step 1: Write failing context tests**
 
 Update `test/unit/gateway-context.test.ts`:
 
@@ -1318,7 +1316,7 @@ Update `test/unit/gateway-context.test.ts`:
 6. `pi.tool.started`, `pi.turn.*`, `worker_agent.*`, and `herdr.progress` are omitted from normal context formatter unless a new explicit `includeInternal` option is true.
 7. Passing a `summary` option still prepends a system message, but no production path calls it for normal Pi turns.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -1328,7 +1326,7 @@ pnpm test test/unit/gateway-context.test.ts test/integration/session-summary.tes
 
 Expected: context tests fail on old `gateway.message` behavior; session summary store tests should still pass.
 
-- [ ] **Step 3: Update context formatter**
+- [x] **Step 3: Update context formatter**
 
 In `src/gateway/context.ts`:
 
@@ -1337,7 +1335,7 @@ In `src/gateway/context.ts`:
 - Add `pi.tool.completed`/`pi.tool.failed` compact system entries.
 - Keep summary injection only as an explicit function option for admin/recovery callers.
 
-- [ ] **Step 4: Remove automatic summary updater path**
+- [x] **Step 4: Remove automatic summary updater path**
 
 Ensure no production code imports `GatewaySummaryUpdater` or calls `maybeUpdate()`.
 
@@ -1349,7 +1347,7 @@ rg -n "GatewaySummaryUpdater|maybeUpdate\(|summaryUpdater" src test
 
 Expected: no matches for deleted updater code. `summary.updated` may remain as an event type for future/manual updates.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -1359,7 +1357,7 @@ pnpm test test/unit/gateway-context.test.ts test/integration/session-summary.tes
 
 Expected: tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/context.ts src/db/session-summary.ts src/gateway/server.ts test/unit/gateway-context.test.ts test/integration/session-summary.test.ts
@@ -1383,7 +1381,7 @@ git commit -m "gateway: keep summaries out of pi turns"
 - Consumes Tasks 2-4.
 - Produces service startup path with Pi turn queue and no provider fallback.
 
-- [ ] **Step 1: Write failing service wiring tests**
+- [x] **Step 1: Write failing service wiring tests**
 
 Add/update tests:
 
@@ -1393,7 +1391,7 @@ Add/update tests:
 4. If TUI owner disconnects idle, headless can resume.
 5. If TUI owner disappears while running, the turn becomes `recovery_required` and no automatic replay occurs.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -1403,7 +1401,7 @@ pnpm test test/integration/gateway-rpc.test.ts test/unit/pi-readiness.test.ts
 
 Expected: failures until service/server names are updated.
 
-- [ ] **Step 3: Update service wiring**
+- [x] **Step 3: Update service wiring**
 
 In `src/gateway/service.ts`:
 
@@ -1413,7 +1411,7 @@ In `src/gateway/service.ts`:
 - Keep `checkPiReadiness()` when config exists and Pi runtime is enabled.
 - Apply `config.gateway.pi?.idle_timeout_ms ?? 600_000` and `readiness_timeout_ms ?? 10_000`.
 
-- [ ] **Step 4: Update headless Pi startup event parsing**
+- [x] **Step 4: Update headless Pi startup event parsing**
 
 Replace any helper reading `gatewayRunId` with one reading queued Pi turn payload:
 
@@ -1423,7 +1421,7 @@ function getQueuedTurnPiSessionFile(payload: unknown): string | undefined
 
 It should read `payload.piSessionFile`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -1433,7 +1431,7 @@ pnpm test test/integration/gateway-rpc.test.ts test/unit/pi-readiness.test.ts
 
 Expected: tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/gateway/service.ts src/gateway/pi-supervisor.ts src/gateway/pi-readiness.ts src/cli/shepherd.ts test/integration/gateway-rpc.test.ts test/unit/pi-readiness.test.ts
@@ -1453,7 +1451,7 @@ git commit -m "gateway: run pi runtime without provider fallback"
 - Consumes completed code behavior from previous tasks.
 - Produces user-facing documentation aligned with current config and runtime.
 
-- [ ] **Step 1: Search stale active docs**
+- [x] **Step 1: Search stale active docs**
 
 Run:
 
@@ -1463,7 +1461,7 @@ rg -n "provider|default_provider|gateway\.message|gateway\.run|GatewayRunner|gat
 
 Expected before docs update: matches in README and this plan's historical sections. Only README content that describes current behavior must be changed.
 
-- [ ] **Step 2: Update README config example**
+- [x] **Step 2: Update README config example**
 
 Remove provider config examples. The minimal config should include:
 
@@ -1481,7 +1479,7 @@ gateway:
 
 Keep Slack config examples for `platforms.slack.allowed_users`, tokens, channel allowlists, and `streaming.tool_progress` because those fields remain in `src/config/schema.ts`.
 
-- [ ] **Step 3: Update architecture prose**
+- [x] **Step 3: Update architecture prose**
 
 Add a short section:
 
@@ -1493,11 +1491,11 @@ Shepherd Gateway owns platform sessions, delivery, Pi turn queueing, logical too
 
 Mention that DB reset is acceptable during development if old migrations conflict.
 
-- [ ] **Step 4: Update tool naming docs**
+- [x] **Step 4: Update tool naming docs**
 
 If README lists tools, update to the new `shepherd_ensure_worker_agent`, `shepherd_herdr_*`, `shepherd_list_worker_agents`, and `shepherd_get_worker_agent` names.
 
-- [ ] **Step 5: Run docs-adjacent checks**
+- [x] **Step 5: Run docs-adjacent checks**
 
 Run:
 
@@ -1508,7 +1506,7 @@ pnpm lint
 
 Expected: tests and Biome pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md docs/plans/2026-06-30-pi-runtime-gateway-rebuild.md
@@ -1527,7 +1525,7 @@ git commit -m "docs: describe pi runtime gateway architecture"
 - Consumes all previous tasks.
 - Produces a clean provider-free Pi runtime gateway implementation.
 
-- [ ] **Step 1: Search legacy provider/runtime names**
+- [x] **Step 1: Search legacy provider/runtime names**
 
 Run:
 
@@ -1537,7 +1535,7 @@ rg -n "GatewayRunner|GatewayProvider|provider_overrides|default_provider|gateway
 
 Expected: no active source/test/README matches. This plan may contain historical search terms; do not treat this plan's own historical checklist as a failure.
 
-- [ ] **Step 2: Search new names**
+- [x] **Step 2: Search new names**
 
 Run:
 
@@ -1547,7 +1545,7 @@ rg -n "pi_turns|pi\.turn|assistant\.message|ensure_worker_agent|worker_agent_bin
 
 Expected: implementation, tests, README, and this plan reference the new names.
 
-- [ ] **Step 3: Run DB check and migration apply on a fresh home**
+- [x] **Step 3: Run DB check and migration apply on a fresh home**
 
 Run:
 
@@ -1558,7 +1556,7 @@ SHEPHERD_HOME=/tmp/shepherd-pi-runtime-rebuild pnpm db:migrate
 
 Expected: Drizzle check passes and migration applies to a fresh SQLite DB.
 
-- [ ] **Step 4: Run full validation**
+- [x] **Step 4: Run full validation**
 
 Run:
 
@@ -1568,7 +1566,7 @@ pnpm check
 
 Expected: typecheck, tests, Biome lint, format check, Drizzle check, and Pi package check pass.
 
-- [ ] **Step 5: Run build validation**
+- [x] **Step 5: Run build validation**
 
 Run:
 
@@ -1578,7 +1576,7 @@ pnpm build
 
 Expected: TypeScript build and alias rewriting complete successfully.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src packages test README.md drizzle docs/plans/2026-06-30-pi-runtime-gateway-rebuild.md

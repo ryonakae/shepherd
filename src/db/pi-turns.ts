@@ -257,5 +257,7 @@ function parseInputEventIds(value: string | null): number[] {
     return [];
   }
   const parsed = JSON.parse(value) as unknown;
-  return Array.isArray(parsed) ? parsed.filter((item): item is number => typeof item === "number") : [];
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is number => typeof item === "number")
+    : [];
 }

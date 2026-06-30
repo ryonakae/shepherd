@@ -1,15 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConnection, type Socket } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
 import { EventStore } from "@/db/event-store.js";
 import { PiTurnStore } from "@/db/pi-turns.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { PiSessionMetadataStore } from "@/gateway/pi-sessions.js";
 import { PiTurnQueue } from "@/gateway/pi-turn-queue.js";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { ShepherdGatewayServer } from "@/gateway/server.js";
 
 const tempDirs: string[] = [];
@@ -50,7 +50,9 @@ describe("ShepherdGatewayServer JSON Lines RPC", () => {
       text: "start work",
     });
     expect((userResponse as { event: { type: string } }).event.type).toBe("user.message");
-    await waitFor(() => store.listEvents(session.id).some((event) => event.type === "pi.turn.queued"));
+    await waitFor(() =>
+      store.listEvents(session.id).some((event) => event.type === "pi.turn.queued"),
+    );
 
     const claim = await client.request("pi.claim_next_turn", { ownerId, sessionId: session.id });
     const turn = (claim as { turn: { piTurnId: string; userText: string } }).turn;
@@ -287,11 +289,13 @@ describe("ShepherdGatewayServer JSON Lines RPC", () => {
 
 type RuntimeDelivery = ConstructorParameters<typeof ShepherdGatewayServer>[0]["runtimeDelivery"];
 
-async function openServer(options: {
-  deliveryFanout?: ConstructorParameters<typeof ShepherdGatewayServer>[0]["deliveryFanout"];
-  ownerHeartbeatTimeoutMs?: number;
-  runtimeDelivery?: RuntimeDelivery;
-} = {}): Promise<{ client: RpcClient; server: ShepherdGatewayServer; store: EventStore }> {
+async function openServer(
+  options: {
+    deliveryFanout?: ConstructorParameters<typeof ShepherdGatewayServer>[0]["deliveryFanout"];
+    ownerHeartbeatTimeoutMs?: number;
+    runtimeDelivery?: RuntimeDelivery;
+  } = {},
+): Promise<{ client: RpcClient; server: ShepherdGatewayServer; store: EventStore }> {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-rpc-"));
   tempDirs.push(dir);
   const socketPath = join(dir, "gateway.sock");
@@ -320,7 +324,10 @@ async function openServer(options: {
 
 class RpcClient {
   readonly #decoder = new JsonLineDecoder();
-  readonly #pending = new Map<string, { reject(error: Error): void; resolve(value: unknown): void }>();
+  readonly #pending = new Map<
+    string,
+    { reject(error: Error): void; resolve(value: unknown): void }
+  >();
   readonly #socket: Socket;
   #nextId = 1;
 
@@ -328,7 +335,11 @@ class RpcClient {
     this.#socket = socket;
     socket.on("data", (chunk) => {
       for (const message of this.#decoder.push(chunk.toString("utf8"))) {
-        const record = message as { error?: { message?: string }; id?: string | number; result?: unknown };
+        const record = message as {
+          error?: { message?: string };
+          id?: string | number;
+          result?: unknown;
+        };
         if (record.id === undefined) {
           continue;
         }

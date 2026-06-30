@@ -1,5 +1,5 @@
-import type { PiOwnerKind, PiTurnRecord, PiTurnSource, PiTurnStore } from "@/db/pi-turns.js";
 import type { EventRecord, EventStore } from "@/db/event-store.js";
+import type { PiOwnerKind, PiTurnRecord, PiTurnSource, PiTurnStore } from "@/db/pi-turns.js";
 import type { PiSessionMetadataStore } from "./pi-sessions.js";
 
 export type PiQueuedTurn = {
@@ -78,7 +78,10 @@ export class PiTurnQueue {
       return undefined;
     }
 
-    const event = this.#events.getEventByIdempotencyKey(turn.sessionId, `pi:turn:${turn.id}:queued`);
+    const event = this.#events.getEventByIdempotencyKey(
+      turn.sessionId,
+      `pi:turn:${turn.id}:queued`,
+    );
 
     return { event, turn: this.#toClaimedTurn(turn) };
   }

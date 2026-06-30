@@ -29,9 +29,9 @@ describe("builtin logical tools", () => {
       type: "user.message",
     });
 
-    await expect(runner.run("session_read", { afterEventId: 0 }, { piTurnId: "turn-1", sessionId })).resolves.toEqual([
-      event,
-    ]);
+    await expect(
+      runner.run("session_read", { afterEventId: 0 }, { piTurnId: "turn-1", sessionId }),
+    ).resolves.toEqual([event]);
   });
 
   test("ensure_workspace delegates to Herdr orchestration", async () => {
@@ -93,7 +93,11 @@ describe("builtin logical tools", () => {
     const { runner, sessionId } = openRunner({ allowedRoots: ["/repo"] });
 
     await expect(
-      runner.run("workspace_discovery", { scanAllowedRoots: false }, { piTurnId: "turn-1", sessionId }),
+      runner.run(
+        "workspace_discovery",
+        { scanAllowedRoots: false },
+        { piTurnId: "turn-1", sessionId },
+      ),
     ).resolves.toMatchObject({
       allowedRoots: ["/repo"],
       candidates: [],
@@ -193,7 +197,11 @@ describe("builtin logical tools", () => {
     const { runner, sessionId } = openRunner();
 
     await expect(
-      runner.run("herdr_read", { resource: "pane", workingContextSlug: "shepherd" }, { piTurnId: "turn-1", sessionId }),
+      runner.run(
+        "herdr_read",
+        { resource: "pane", workingContextSlug: "shepherd" },
+        { piTurnId: "turn-1", sessionId },
+      ),
     ).rejects.toThrow("paneId is required for pane reads");
   });
 

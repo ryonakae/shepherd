@@ -201,7 +201,12 @@ export class LogicalToolRunner {
 
     if (!this.#policy.allowedTools.has(name)) {
       this.#events.appendEvent({
-        payload: { piTurnId: context.piTurnId, reason: "tool_not_allowed", status: "failed", toolName: name },
+        payload: {
+          piTurnId: context.piTurnId,
+          reason: "tool_not_allowed",
+          status: "failed",
+          toolName: name,
+        },
         sessionId: context.sessionId,
         type: "pi.tool.failed",
       });
@@ -210,7 +215,12 @@ export class LogicalToolRunner {
 
     if (!Value.Check(tool.inputSchema, input)) {
       this.#events.appendEvent({
-        payload: { piTurnId: context.piTurnId, reason: "invalid_input", status: "failed", toolName: name },
+        payload: {
+          piTurnId: context.piTurnId,
+          reason: "invalid_input",
+          status: "failed",
+          toolName: name,
+        },
         sessionId: context.sessionId,
         type: "pi.tool.failed",
       });
@@ -231,7 +241,13 @@ export class LogicalToolRunner {
 
     if (priorCall?.status === "completed") {
       this.#events.appendEvent({
-        payload: { idempotencyKey, piTurnId: context.piTurnId, reused: true, status: "completed", toolName: name },
+        payload: {
+          idempotencyKey,
+          piTurnId: context.piTurnId,
+          reused: true,
+          status: "completed",
+          toolName: name,
+        },
         sessionId: context.sessionId,
         type: "pi.tool.completed",
       });
@@ -240,7 +256,13 @@ export class LogicalToolRunner {
 
     if (priorCall && priorCall.status !== "pending") {
       this.#events.appendEvent({
-        payload: { idempotencyKey, piTurnId: context.piTurnId, reason: `idempotent_call_${priorCall.status}`, status: "failed", toolName: name },
+        payload: {
+          idempotencyKey,
+          piTurnId: context.piTurnId,
+          reason: `idempotent_call_${priorCall.status}`,
+          status: "failed",
+          toolName: name,
+        },
         sessionId: context.sessionId,
         type: "pi.tool.failed",
       });
@@ -259,7 +281,12 @@ export class LogicalToolRunner {
     try {
       const output = await tool.execute(input, context);
       this.#events.appendEvent({
-        payload: { callEventId: callEvent.id, piTurnId: context.piTurnId, status: "completed", toolName: name },
+        payload: {
+          callEventId: callEvent.id,
+          piTurnId: context.piTurnId,
+          status: "completed",
+          toolName: name,
+        },
         sessionId: context.sessionId,
         type: "pi.tool.completed",
       });

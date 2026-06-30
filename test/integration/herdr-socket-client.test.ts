@@ -122,10 +122,12 @@ describe("HerdrSocketClient", () => {
 
     const client = new HerdrSocketClient({ socketPath });
     const controller = new AbortController();
-    const iterator = client.subscribeEvents(
-      { events: ["pane.agent_status_changed"], workspace_id: "w1" },
-      { signal: controller.signal },
-    )[Symbol.asyncIterator]();
+    const iterator = client
+      .subscribeEvents(
+        { events: ["pane.agent_status_changed"], workspace_id: "w1" },
+        { signal: controller.signal },
+      )
+      [Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
       value: { id: "evt-1", type: "pane.agent_status_changed" },

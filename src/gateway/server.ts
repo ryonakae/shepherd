@@ -3,7 +3,6 @@ import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type ConfigLoadResult, loadShepherdConfig } from "@/config/load.js";
 import type { EventRecord, EventStore, SessionMetadata } from "@/db/event-store.js";
-import type { PiTurnQueue } from "@/gateway/pi-turn-queue.js";
 import {
   parsePiCompleteTurnParams,
   parsePiFailTurnParams,
@@ -18,6 +17,7 @@ import {
   piUserMessageIdempotencyKey,
   sanitizePiPreviewText,
 } from "@/gateway/pi-runtime-events.js";
+import type { PiTurnQueue } from "@/gateway/pi-turn-queue.js";
 import type { LogicalToolRunner } from "@/gateway/tools.js";
 import { toHerdrProgressSignal } from "@/herdr/progress.js";
 import { encodeJsonLine, JsonLineDecoder } from "./json-lines.js";

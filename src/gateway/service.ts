@@ -105,7 +105,9 @@ export async function runGatewayService(
   process.once("SIGTERM", stop);
 }
 
-function shouldCheckPiReadiness(gatewayRuntime: ReturnType<typeof createGatewayRuntime> | undefined): boolean {
+function shouldCheckPiReadiness(
+  gatewayRuntime: ReturnType<typeof createGatewayRuntime> | undefined,
+): boolean {
   return gatewayRuntime !== undefined;
 }
 

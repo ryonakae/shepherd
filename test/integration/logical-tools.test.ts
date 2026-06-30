@@ -33,7 +33,9 @@ describe("LogicalToolRunner", () => {
       registry,
     });
 
-    await expect(runner.run("session_read", { limit: 3 }, { piTurnId: "turn-1", sessionId })).resolves.toEqual({
+    await expect(
+      runner.run("session_read", { limit: 3 }, { piTurnId: "turn-1", sessionId }),
+    ).resolves.toEqual({
       limit: 3,
     });
 
@@ -58,12 +60,10 @@ describe("LogicalToolRunner", () => {
       registry,
     });
 
-    await expect(runner.run("herdr_open_pane", {}, { piTurnId: "turn-1", sessionId })).rejects.toThrow(
-      "Logical tool is not allowed",
-    );
-    expect(events.listEvents(sessionId).map((event) => event.type)).toEqual([
-      "pi.tool.failed",
-    ]);
+    await expect(
+      runner.run("herdr_open_pane", {}, { piTurnId: "turn-1", sessionId }),
+    ).rejects.toThrow("Logical tool is not allowed");
+    expect(events.listEvents(sessionId).map((event) => event.type)).toEqual(["pi.tool.failed"]);
   });
 
   test("reuses completed idempotent tool results without rerunning side effects", async () => {

@@ -60,15 +60,15 @@ describe("createGatewayRuntime", () => {
       },
       type: "pi.turn.queued",
     });
-    expect(runtime.turns.claimNextTurn({ ownerId: "owner-1", sessionId: session.id })).toMatchObject(
-      {
-        turn: {
-          id: queued.turn.id,
-          piTurnId: queued.turn.id,
-          userText: "start implementation",
-        },
+    expect(
+      runtime.turns.claimNextTurn({ ownerId: "owner-1", sessionId: session.id }),
+    ).toMatchObject({
+      turn: {
+        id: queued.turn.id,
+        piTurnId: queued.turn.id,
+        userText: "start implementation",
       },
-    );
+    });
 
     await runtime.close();
   });
