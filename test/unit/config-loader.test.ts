@@ -14,82 +14,38 @@ afterEach(() => {
 });
 
 describe("Shepherd config loader", () => {
-  test("loads a valid Pi runtime YAML config", () => {
+  test("loads a valid observability runtime YAML config", () => {
     const path = writeTempConfig(`
 runtime:
   db_path: data/state.db
-  socket_path: gateway.sock
-  pid_path: gateway.pid
-  log_path: logs/gateway.log
-
-gateway:
-  pi:
-    idle_timeout_ms: 600000
-    readiness_timeout_ms: 10000
-
-default_agent: implementer
-agents:
-  implementer:
-    command: codex
-    args: []
-    when: Use for implementation work.
-
-context:
-  allowed_roots:
-    - /Users/ryo.nakae/Dev
-
-platforms:
-  slack:
-    app_token_env: SLACK_APP_TOKEN
-    bot_token_env: SLACK_BOT_TOKEN
-    allow_customize: true
-    allowed_teams:
-      - T123
-    allowed_users:
-      - U123
+  socket_path: shepherd.sock
+  pid_path: shepherd.pid
+  log_path: logs/shepherd.log
+observability:
+  telemetry:
+    max_excerpt_bytes: 2048
 `);
 
     const result = loadShepherdConfig(path);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.gateway.pi?.idle_timeout_ms).toBe(600_000);
-      expect(result.value.gateway.pi?.readiness_timeout_ms).toBe(10_000);
       expect(result.value.runtime?.db_path).toBe("data/state.db");
-      expect(result.value.runtime?.socket_path).toBe("gateway.sock");
-      expect(result.value.platforms?.slack?.bot_token_env).toBe("SLACK_BOT_TOKEN");
+      expect(result.value.runtime?.socket_path).toBe("shepherd.sock");
+      expect(result.value.observability?.telemetry?.max_excerpt_bytes).toBe(2048);
     }
   });
 
-  test("rejects removed provider config fields", () => {
-    const result = parseShepherdConfig({
-      agents: {
-        implementer: {
-          command: "codex",
-        },
-      },
-      default_agent: "implementer",
-      gateway: {
-        default_provider: "codex",
-        model: "gpt-5.3-codex",
-        pi: {},
-      },
-      providers: {
-        openai: {
-          api_key_env: "OPENAI_API_KEY",
-          type: "openai",
-        },
-      },
-    });
+  test("rejects legacy provider and gateway config fields", () => {
+    const result = parseShepherdConfig({ gateway: { pi: {} }, providers: { openai: {} } });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) {
+    if (!result.ok)
       expect(result.errors.some((error) => error.keyword === "additionalProperties")).toBe(true);
-    }
   });
 
   test("returns YAML parse errors without throwing", () => {
-    const path = writeTempConfig("gateway: [");
+    const path = writeTempConfig("runtime: [");
 
     const result = loadShepherdConfig(path);
 

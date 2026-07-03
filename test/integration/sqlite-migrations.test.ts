@@ -22,14 +22,20 @@ describe("SQLite migrations", () => {
     applyMigrations(sqlite, { migrationsFolder: "drizzle" });
 
     const tables = sqlite
-      .prepare(
-        "select name from sqlite_master where type = 'table' and name in ('sessions', 'events') order by name",
-      )
+      .prepare("select name from sqlite_master where type = 'table' order by name")
       .all()
-      .map((row) => row.name);
+      .map((row) => row.name)
+      .filter((name) => name !== "__drizzle_migrations" && name !== "sqlite_sequence");
 
     sqlite.close();
 
-    expect(tables).toEqual(["events", "sessions"]);
+    expect(tables).toEqual([
+      "notification_cursors",
+      "notification_subscriptions",
+      "observed_workspaces",
+      "worker_events",
+      "worker_snapshots",
+      "workers",
+    ]);
   });
 });

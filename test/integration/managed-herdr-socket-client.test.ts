@@ -25,6 +25,29 @@ afterEach(async () => {
 });
 
 describe("ManagedHerdrSocketClient", () => {
+  test("delegates session snapshots through the managed socket", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(
+        encodeJsonLine({ id: request.id, result: { snapshot: { focused_workspace_id: "w1" } } }),
+      );
+    });
+    const client = new ManagedHerdrSocketClient({
+      herdrSessionName: "shepherd-api",
+      lifecycle: {
+        async ensureNamedSession() {
+          return { socketPath, started: false };
+        },
+      } as unknown as HerdrSessionLifecycle,
+    });
+
+    await expect(client.sessionSnapshot()).resolves.toEqual({
+      snapshot: { focused_workspace_id: "w1" },
+    });
+    client.close();
+
+    expect(requests[0]).toMatchObject({ method: "session.snapshot" });
+  });
+
   test("ensures the named session before sending socket requests", async () => {
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
       socket.write(encodeJsonLine({ id: request.id, result: { workspace_id: "w1" } }));
@@ -33,11 +56,11 @@ describe("ManagedHerdrSocketClient", () => {
     const client = new ManagedHerdrSocketClient({
       herdrSessionName: "shepherd-api",
       lifecycle: {
-        async ensureNamedSession(name) {
+        async ensureNamedSession(name: string) {
           ensured.push(name);
           return { socketPath, started: false };
         },
-      } as HerdrSessionLifecycle,
+      } as unknown as HerdrSessionLifecycle,
     });
 
     await expect(client.createWorkspace({ cwd: "/repo", label: "api" })).resolves.toEqual({

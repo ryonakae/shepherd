@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Shepherd は、Herdr 管理の coding agent を TUI / Slack などのイベントストリームから操作する orchestration gateway です。通常の作業は README と関連する `src` / `test` から始め、進行中の設計判断や延期事項は `docs/plans/`、完了済み plan の経緯は `docs/plans/archived/` を参照してください。
+Shepherd は、Herdr 管理の coding agent を観測し、worker snapshot / worker event / orchestrator notification を提供する observability layer です。Herdr の低レベル workspace/tab/pane/agent 操作は Herdr に任せ、Shepherd は構造化された worker 状態と通知を扱います。
 
 ## よく使うコマンド
 
 - `mise install`: `mise.toml` の Node.js / pnpm を入れる。
 - `pnpm install`: 依存関係を入れる。
-- `pnpm check`: typecheck、test、Biome、Drizzle check をまとめて実行する。
+- `pnpm check`: typecheck、test、Biome、Drizzle check、Pi package check、Herdr plugin check をまとめて実行する。
 - `pnpm test`: Vitest を一回実行する。
 - `pnpm test:watch`: Vitest の watch。
 - `pnpm build`: TypeScript を `dist` に build し、`tsc-alias` で実行可能な import に直す。
@@ -24,17 +24,16 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 
 ## 重要パス
 
-- `src/cli/`: `shepherd` / `shepherd-tools` の CLI entrypoints。
+- `src/observability/`: worker contracts、telemetry normalization、rules、notification service、`WorkerStatePipeline`。
+- `src/daemon/`: daemon JSON Lines RPC server/client と service startup。
+- `src/cli/`: `shepherd` CLI entrypoint。
 - `src/config/`: TypeBox/Ajv の runtime schema。
-- `src/daemon/`: daemon と Unix socket / JSON Lines RPC。
-- `src/db/`: `node:sqlite`、Drizzle schema、migration runner。
-- `src/delivery/`: platform delivery routing、fanout、receipt / duplicate-send prevention。
-- `src/gateway/`: Gateway JSON Lines RPC、Pi turn queueing、logical tools、context、recovery、working context helpers。
-- `src/herdr/`: Herdr named session / workspace / pane / agent orchestration。
-- `src/platforms/slack/`: Slack inbound normalization、Socket Mode wrapper、outbound delivery。
-- `src/tui/`: daemon JSON Lines RPC client。
+- `src/db/`: `node:sqlite`、Drizzle schema、migration runner、observability stores。
+- `src/herdr/`: Herdr socket client、managed session client、session snapshot、workspace resolver。
+- `packages/shepherd-pi/`: Pi extension package。
+- `packages/shepherd-herdr-plugin/`: Herdr companion plugin package。
 - `test/unit/`: pure logic / contract tests。
-- `test/integration/`: SQLite など実体を使う integration tests。
+- `test/integration/`: SQLite / JSON Lines RPC など実体を使う integration tests。
 - `docs/plans/`: 進行中の設計判断、MVP 状態、延期事項。作業前の必読ではなく、仕様判断が必要なときの参照先。
 - `docs/plans/archived/`: 完了済み plan の履歴。active plan として扱わない。
 
@@ -50,8 +49,8 @@ DB schema を変えた場合は、先に `pnpm db:generate` で migration を更
 
 - Active plan は `docs/plans/` 配下に置く。完了済み plan は `docs/plans/archived/` 配下に置く。
 - 大きな plan は親 plan と子 plan に分ける。親 plan は目的、全体方針、進捗サマリ、子 plan へのリンクに絞り、実装詳細はスライス・機能・タスク単位の子 plan に置く。
-- 子 plan 用ディレクトリ名は親 plan ファイル名から `.md` を除いたものと完全に一致させる。例: `docs/plans/2026-06-25-pi-runtime-gateway.md` の子 plan は `docs/plans/2026-06-25-pi-runtime-gateway/` に置く。
-- plan には進捗を追える欄を置く。最低限 `Status`、`Progress`、`Next steps` を書き、`Progress` は `Not started` / `In progress` / `Blocked` / `Done` などの状態と短い根拠を箇条書きで更新する。
+- 子 plan 用ディレクトリ名は親 plan ファイル名から `.md` を除いたものと完全に一致させる。
+- plan には進捗を追える欄を置く。最低限 `Status`、`Progress`、`Next steps` を書く。
 - 子 plan には親 plan への `Parent:` リンクを置く。親 plan には子 plan 一覧と各子 plan の現在状態を置く。
 - plan を更新するときは、関連する親子リンク、ディレクトリ名、README / AGENTS からの参照も確認する。
 - 完了済み plan を `docs/plans/archived/` に移す場合は、実装変更とは分けた docs-only commit にする。

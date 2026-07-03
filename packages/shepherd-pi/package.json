@@ -1,7 +1,7 @@
 {
   "name": "shepherd-pi",
   "version": "0.1.0",
-  "description": "Pi extension bridge for Shepherd Gateway sessions.",
+  "description": "Pi extension bridge for Shepherd worker observability.",
   "type": "module",
   "keywords": [
     "pi-package",

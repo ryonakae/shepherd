@@ -1,0 +1,18 @@
+{
+  "name": "shepherd-herdr-plugin",
+  "version": "0.1.0",
+  "description": "Herdr companion plugin for Shepherd worker observability.",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "herdr-plugin.toml"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "bin": {
+    "shepherd-herdr-plugin": "./dist/index.js"
+  }
+}

@@ -100,12 +100,16 @@ export class HerdrSocketClient {
     return this.request("pane.get", params);
   }
 
+  sendPaneInput(params: { pane_id: string; text: string }): Promise<unknown> {
+    return this.request("pane.send_input", params);
+  }
+
   sendPaneText(params: { pane_id: string; text: string }): Promise<unknown> {
-    return this.request("pane.send_text", params);
+    return this.sendPaneInput(params);
   }
 
   runPaneCommand(params: { command: string; pane_id: string }): Promise<unknown> {
-    return this.request("pane.run", params);
+    return this.sendPaneInput({ pane_id: params.pane_id, text: params.command });
   }
 
   readPane(params: {
@@ -167,15 +171,28 @@ export class HerdrSocketClient {
     source?: "recent" | "recent-unwrapped" | "visible";
     timeout_ms?: number;
   }): Promise<unknown> {
-    return this.request("wait.output", params);
+    return this.request("pane.wait_for_output", {
+      ...(params.lines !== undefined ? { lines: params.lines } : {}),
+      match:
+        params.regex === true
+          ? { type: "regex", value: params.match }
+          : { type: "substring", value: params.match },
+      pane_id: params.pane_id,
+      source: params.source ?? "recent",
+      ...(params.timeout_ms !== undefined ? { timeout_ms: params.timeout_ms } : {}),
+    });
   }
 
   waitForEvent(params: Record<string, unknown> = {}): Promise<unknown> {
     return this.request("events.wait", params);
   }
 
+  sessionSnapshot(): Promise<unknown> {
+    return this.request("session.snapshot");
+  }
+
   async *subscribeEvents(
-    params: Record<string, unknown> = {},
+    params: { paneIds: string[]; workspaceId: string },
     options: { signal?: AbortSignal } = {},
   ): AsyncIterable<unknown> {
     const queue: unknown[] = [];
@@ -189,7 +206,26 @@ export class HerdrSocketClient {
     };
     this.#subscribers.add(subscriber);
     try {
-      await this.request("events.subscribe", params);
+      await this.request("events.subscribe", {
+        subscriptions: [
+          { type: "workspace.updated" },
+          { type: "workspace.renamed" },
+          { type: "workspace.moved" },
+          { type: "workspace.closed" },
+          { type: "tab.created" },
+          { type: "tab.closed" },
+          { type: "tab.moved" },
+          { type: "pane.created" },
+          { type: "pane.closed" },
+          { type: "pane.moved" },
+          { type: "pane.exited" },
+          { type: "pane.agent_detected" },
+          ...params.paneIds.map((pane_id) => ({
+            pane_id,
+            type: "pane.agent_status_changed" as const,
+          })),
+        ],
+      });
       while (!options.signal?.aborted) {
         if (queue.length === 0) {
           await new Promise<void>((resolve) => {

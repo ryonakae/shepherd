@@ -518,7 +518,7 @@ Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: all tests in `observability-contracts.test.ts` pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/contracts.ts src/observability/schemas.ts test/unit/observability-contracts.test.ts

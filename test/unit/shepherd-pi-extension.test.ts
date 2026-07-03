@@ -2,136 +2,179 @@ import { describe, expect, test } from "vitest";
 
 const extensionModuleUrl = new URL("../../packages/shepherd-pi/src/index.ts", import.meta.url).href;
 
-type CompletionItem = {
-  description?: string;
-  label: string;
-  value: string;
+type Handler = (...args: unknown[]) => unknown;
+
+type Module = {
+  createShepherdPiExtension: (options: {
+    autoResume?: boolean;
+    clientFactory: () => FakeClient;
+  }) => (pi: FakePi) => void;
+  formatHiddenNotifications: (
+    events: Array<{ id: number; type: string; payload: unknown }>,
+  ) => string;
 };
 
-type CommandOptions = {
-  description?: string;
-  getArgumentCompletions?: (prefix: string) => CompletionItem[] | null;
-  handler: (args: string, ctx: unknown) => Promise<void> | void;
+type FakeClient = {
+  calls: unknown[];
+  close: () => void;
+  request: (method: string, params: unknown) => Promise<unknown>;
 };
 
-type AutocompleteProvider = {
-  applyCompletion: (
-    lines: string[],
-    cursorLine: number,
-    cursorCol: number,
-    item: CompletionItem,
-    prefix: string,
-  ) => { cursorCol: number; cursorLine: number; lines: string[] };
-  getSuggestions: (
-    lines: string[],
-    cursorLine: number,
-    cursorCol: number,
-    options: { force?: boolean; signal: AbortSignal },
-  ) => Promise<{ items: CompletionItem[]; prefix: string } | null>;
-  shouldTriggerFileCompletion?: (lines: string[], cursorLine: number, cursorCol: number) => boolean;
-};
+type FakePi = ReturnType<typeof createFakePi>;
 
-type ShepherdPiExtensionModule = {
-  completeShepherdCommandArguments: NonNullable<CommandOptions["getArgumentCompletions"]>;
-  createShepherdAutocompleteProvider: (current: AutocompleteProvider) => AutocompleteProvider;
-  default: (pi: {
-    on: (eventName: string, handler: unknown) => void;
-    registerCommand: (name: string, options: CommandOptions) => void;
-  }) => void;
-  shepherdCommandArgumentPrefix: (
-    lines: string[],
-    cursorLine: number,
-    cursorCol: number,
-  ) => string | undefined;
-};
+describe("shepherd-pi observability bridge", () => {
+  test("observes Herdr workspace on session_start and sends telemetry", async () => {
+    const client = createFakeClient();
+    const pi = createFakePi();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
 
-describe("shepherd-pi extension command completions", () => {
-  test("suggests /shepherd subcommands after a space", async () => {
-    const { completeShepherdCommandArguments } = (await import(
-      extensionModuleUrl
-    )) as ShepherdPiExtensionModule;
+    const previousEnv = {
+      HERDR_ENV: process.env.HERDR_ENV,
+      HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+      HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
+    };
+    process.env.HERDR_ENV = "1";
+    process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+    process.env.HERDR_WORKSPACE_ID = "w1";
+    await pi.emit("session_start", {}, fakeCtx());
+    await pi.emit("tool_result", {
+      content: "failed token=abc",
+      isError: true,
+      toolCallId: "tool-1",
+      toolName: "bash",
+      turnId: "turn-1",
+    });
+    await pi.emit("message_end", { stopReason: "stop", text: "completed", turnId: "turn-1" });
 
-    expect(completeShepherdCommandArguments("")).toEqual([
-      expect.objectContaining({ label: "attach", value: "attach " }),
-      expect.objectContaining({ label: "rename", value: "rename " }),
-      expect.objectContaining({ label: "status", value: "status" }),
-      expect.objectContaining({ label: "detach", value: "detach" }),
-    ]);
-    expect(completeShepherdCommandArguments("re")).toEqual([
-      expect.objectContaining({ label: "rename", value: "rename " }),
-    ]);
-    expect(completeShepherdCommandArguments("attach session-1")).toBeNull();
-  });
+    process.env.HERDR_ENV = previousEnv.HERDR_ENV;
+    process.env.HERDR_SOCKET_PATH = previousEnv.HERDR_SOCKET_PATH;
+    process.env.HERDR_WORKSPACE_ID = previousEnv.HERDR_WORKSPACE_ID;
 
-  test("provides Shepherd argument completions through an autocomplete provider", async () => {
-    const { createShepherdAutocompleteProvider, shepherdCommandArgumentPrefix } = (await import(
-      extensionModuleUrl
-    )) as ShepherdPiExtensionModule;
-    const current = fakeAutocompleteProvider();
-    const provider = createShepherdAutocompleteProvider(current);
-    const signal = new AbortController().signal;
-
-    expect(shepherdCommandArgumentPrefix(["/shepherd "], 0, "/shepherd ".length)).toBe("");
-    await expect(
-      provider.getSuggestions(["/shepherd "], 0, "/shepherd ".length, { force: true, signal }),
-    ).resolves.toEqual({
-      items: [
-        expect.objectContaining({ label: "attach", value: "attach " }),
-        expect.objectContaining({ label: "rename", value: "rename " }),
-        expect.objectContaining({ label: "status", value: "status" }),
-        expect.objectContaining({ label: "detach", value: "detach" }),
+    expect(client.calls).toEqual([
+      ["workspace.observe", { socketPath: "/tmp/herdr.sock", workspaceId: "w1" }],
+      [
+        "notification.subscribe",
+        {
+          autoResume: false,
+          observedWorkspaceId: "ow_1",
+          subscriberId: "pi-session",
+          subscriberKind: "pi",
+        },
       ],
-      prefix: "",
-    });
-    await expect(
-      provider.getSuggestions(["/shepherd re"], 0, "/shepherd re".length, { signal }),
-    ).resolves.toEqual({
-      items: [expect.objectContaining({ label: "rename", value: "rename " })],
-      prefix: "re",
-    });
-    expect(provider.shouldTriggerFileCompletion?.(["/shepherd "], 0, "/shepherd ".length)).toBe(
-      true,
-    );
-    await expect(
-      provider.getSuggestions(["hello"], 0, "hello".length, { signal }),
-    ).resolves.toEqual({
-      items: [{ label: "fallback", value: "fallback" }],
-      prefix: "fallback",
-    });
+      [
+        "runtime.telemetry",
+        expect.objectContaining({
+          event: expect.objectContaining({
+            errorExcerpt: "failed token=[REDACTED]",
+            type: "worker.tool.completed",
+          }),
+          observedWorkspaceId: "ow_1",
+        }),
+      ],
+      [
+        "runtime.telemetry",
+        expect.objectContaining({
+          event: expect.objectContaining({
+            textExcerpt: "completed",
+            type: "worker.message.final",
+          }),
+          observedWorkspaceId: "ow_1",
+        }),
+      ],
+    ]);
   });
 
-  test("registers /shepherd with argument completions", async () => {
-    const registeredCommands = new Map<string, CommandOptions>();
-    const { default: shepherdPiExtension, completeShepherdCommandArguments } = (await import(
+  test("handles notifications, hidden context ack, and auto-resume", async () => {
+    const client = createFakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const { createShepherdPiExtension, formatHiddenNotifications } = (await import(
       extensionModuleUrl
-    )) as ShepherdPiExtensionModule;
-
-    shepherdPiExtension({
-      on() {},
-      registerCommand(name, options) {
-        registeredCommands.set(name, options);
+    )) as Module;
+    createShepherdPiExtension({ autoResume: true, clientFactory: () => client })(pi);
+    const previousEnv = {
+      HERDR_ENV: process.env.HERDR_ENV,
+      HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+      HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
+    };
+    process.env.HERDR_ENV = "1";
+    process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+    process.env.HERDR_WORKSPACE_ID = "w1";
+    await pi.emit("session_start", {}, ctx);
+    await pi.emit(
+      "worker.event",
+      {
+        event: { id: 42, payload: { summary: "done" }, type: "worker.completed", workerId: "wk_1" },
       },
-    });
-
-    expect(registeredCommands.get("shepherd")?.getArgumentCompletions).toBe(
-      completeShepherdCommandArguments,
+      ctx,
     );
+
+    process.env.HERDR_ENV = previousEnv.HERDR_ENV;
+    process.env.HERDR_SOCKET_PATH = previousEnv.HERDR_SOCKET_PATH;
+    process.env.HERDR_WORKSPACE_ID = previousEnv.HERDR_WORKSPACE_ID;
+
+    expect(ctx.status).toEqual(["shepherd", "1 unread worker event"]);
+    expect(pi.messages).toEqual([expect.stringContaining("worker.completed")]);
+    expect(
+      formatHiddenNotifications([
+        { id: 42, payload: { summary: "done" }, type: "worker.completed" },
+      ]),
+    ).toContain("[SHEPHERD WORKER NOTIFICATIONS]");
+
+    const before = await pi.emit("before_agent_start", {}, ctx);
+    expect(before).toEqual({ hiddenContext: expect.stringContaining("worker.completed") });
+    expect(client.calls).toContainEqual([
+      "notification.ack",
+      { eventId: 42, subscriptionId: "ns_1" },
+    ]);
   });
 });
 
-function fakeAutocompleteProvider(): AutocompleteProvider {
+function createFakeClient(): FakeClient {
+  const calls: unknown[] = [];
   return {
-    applyCompletion(lines, cursorLine, cursorCol) {
-      return { cursorCol, cursorLine, lines };
-    },
-    async getSuggestions() {
-      return {
-        items: [{ label: "fallback", value: "fallback" }],
-        prefix: "fallback",
-      };
-    },
-    shouldTriggerFileCompletion() {
-      return false;
+    calls,
+    close: () => calls.push(["close"]),
+    async request(method, params) {
+      calls.push([method, params]);
+      if (method === "workspace.observe") return { observedWorkspace: { id: "ow_1" } };
+      if (method === "notification.subscribe") return { events: [], subscription: { id: "ns_1" } };
+      return { ok: true };
     },
   };
+}
+
+function createFakePi() {
+  const handlers = new Map<string, Handler>();
+  return {
+    handlers,
+    messages: [] as string[],
+    appendEntry() {},
+    emit: async (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
+    on: (name: string, handler: Handler) => handlers.set(name, handler),
+    registerCommand() {},
+    registerTool() {},
+    sendUserMessage(message: string) {
+      this.messages.push(message);
+    },
+    setSessionName() {},
+  };
+}
+
+function fakeCtx(options: { idle?: boolean } = {}) {
+  const ctx = {
+    isIdle: () => options.idle ?? false,
+    sessionManager: {
+      getSessionFile: () => "/tmp/session.jsonl",
+      getSessionId: () => "pi-session",
+    },
+    status: undefined as unknown,
+    ui: {
+      setStatus(key: string, value: string) {
+        ctx.status = [key, value];
+      },
+    },
+  };
+  return ctx;
 }

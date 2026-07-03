@@ -6,16 +6,15 @@
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Parent/child plan split is complete; implementation has not started.
+- Done — Herdr worker observability rewrite is implemented and validated.
 
 ## Next steps
 
-- Start with [01-contracts-and-rpc.md](2026-07-02-herdr-worker-observability-rewrite/01-contracts-and-rpc.md).
-- Do not edit legacy Gateway behavior before the replacement contracts and tests exist.
+- No remaining implementation steps. `pnpm check` and `pnpm build` pass; Herdr/Pi manual smoke requires a live Herdr/Pi environment.
 
 ## Decisions Carried Forward
 
@@ -41,12 +40,12 @@ Not started.
 | Order | Child plan | Status | Scope |
 |---:|---|---|---|
 | 1 | [Contracts and RPC Schemas](2026-07-02-herdr-worker-observability-rewrite/01-contracts-and-rpc.md) | Done | Shared types, public RPC methods, TypeBox schemas |
-| 2 | [Persistence Baseline](2026-07-02-herdr-worker-observability-rewrite/02-persistence.md) | Not started | DB schema, stores, migrations |
-| 3 | [Herdr Observation and Resolution](2026-07-02-herdr-worker-observability-rewrite/03-herdr-observation.md) | Not started | Herdr socket API alignment, `session.snapshot`, workspace/worker re-resolution |
-| 4 | [Runtime Telemetry Pipeline](2026-07-02-herdr-worker-observability-rewrite/04-runtime-telemetry-pipeline.md) | Not started | Runtime adapters, Pi transcript/telemetry, deterministic rules, `WorkerStatePipeline` |
-| 5 | [Notifications, RPC, and CLI](2026-07-02-herdr-worker-observability-rewrite/05-notifications-rpc-cli.md) | Not started | Notification cursors, JSONL daemon RPC, observed-workspace CLI |
-| 6 | [Pi Extension and Herdr Plugin](2026-07-02-herdr-worker-observability-rewrite/06-runtime-extensions.md) | Not started | Pi telemetry/notification bridge and Herdr companion plugin |
-| 7 | [Cleanup, Documentation, and Validation](2026-07-02-herdr-worker-observability-rewrite/07-cleanup-docs-validation.md) | Not started | Legacy Gateway/session removal, README/package metadata, final validation |
+| 2 | [Persistence Baseline](2026-07-02-herdr-worker-observability-rewrite/02-persistence.md) | Done | DB schema, stores, migrations |
+| 3 | [Herdr Observation and Resolution](2026-07-02-herdr-worker-observability-rewrite/03-herdr-observation.md) | Done | Herdr socket API alignment, `session.snapshot`, workspace/worker re-resolution |
+| 4 | [Runtime Telemetry Pipeline](2026-07-02-herdr-worker-observability-rewrite/04-runtime-telemetry-pipeline.md) | Done | Runtime adapters, Pi transcript/telemetry, deterministic rules, `WorkerStatePipeline` |
+| 5 | [Notifications, RPC, and CLI](2026-07-02-herdr-worker-observability-rewrite/05-notifications-rpc-cli.md) | Done | Notification cursors, JSONL daemon RPC, observed-workspace CLI |
+| 6 | [Pi Extension and Herdr Plugin](2026-07-02-herdr-worker-observability-rewrite/06-runtime-extensions.md) | Done | Pi telemetry/notification bridge and Herdr companion plugin |
+| 7 | [Cleanup, Documentation, and Validation](2026-07-02-herdr-worker-observability-rewrite/07-cleanup-docs-validation.md) | Done | Legacy Gateway/session removal, README/package metadata, final validation |
 
 ## Implementation Order
 

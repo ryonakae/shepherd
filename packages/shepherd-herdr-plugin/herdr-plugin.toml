@@ -1,0 +1,18 @@
+id = "shepherd.observability"
+name = "Shepherd Observability"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Observe Herdr workers through Shepherd snapshots and notifications."
+platforms = ["linux", "macos", "windows"]
+
+[[actions]]
+id = "observe-workspace"
+title = "Observe workspace with Shepherd"
+contexts = ["workspace"]
+command = ["node", "dist/index.js", "observe-workspace"]
+
+[[panes]]
+id = "dashboard"
+title = "Shepherd Workers"
+placement = "split"
+command = ["node", "dist/index.js", "dashboard"]

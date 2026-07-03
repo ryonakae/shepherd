@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 9 through Task 11.
+- Done — Task 9 through Task 11.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- No remaining implementation steps. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -34,7 +34,7 @@ Task 9 through Task 11.
 - Consumes: `NotificationCursorStore`, `WorkerEventStore`.
 - Produces: pending notification queries and ack methods for daemon RPC and Pi extension.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert:
 
@@ -45,13 +45,13 @@ Assert:
 5. `nextHiddenContextEvents()` returns unacked events not yet injected into hidden context.
 6. `nextAutoResumeEvent()` returns only when subscription has `autoResume: true`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/notification-service.test.ts`
 
 Expected: service missing or behavior missing.
 
-- [ ] **Step 3: Implement service**
+- [x] **Step 3: Implement service**
 
 Export:
 
@@ -69,13 +69,13 @@ export class NotificationService {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test test/integration/notification-service.test.ts`
 
 Expected: all notification tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/notification-service.ts test/integration/notification-service.test.ts
@@ -97,7 +97,7 @@ git commit -m "feat(observability): add notification cursors"
 - Consumes: stores, pipeline, notification service, schemas.
 - Produces: public daemon API used by CLI and Pi extension.
 
-- [ ] **Step 1: Write failing RPC tests**
+- [x] **Step 1: Write failing RPC tests**
 
 Use a socket test harness to assert:
 
@@ -109,13 +109,13 @@ Use a socket test harness to assert:
 6. `notification.ack` advances cursor.
 7. unknown method returns JSON-RPC error.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: server missing.
 
-- [ ] **Step 3: Implement RPC server**
+- [x] **Step 3: Implement RPC server**
 
 The server must:
 
@@ -128,7 +128,7 @@ The server must:
 {"method":"worker.event","params":{"event":{...}}}
 ```
 
-- [ ] **Step 4: Wire daemon service**
+- [x] **Step 4: Wire daemon service**
 
 Create service startup that:
 
@@ -141,13 +141,13 @@ Create service startup that:
 7. starts Herdr `events.subscribe` loops for active observed workspaces
 8. starts JSONL RPC server
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: all RPC tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts src/daemon/client.ts src/daemon/service.ts src/gateway/service.ts test/integration/observability-rpc.test.ts
@@ -168,7 +168,7 @@ git commit -m "feat(daemon): expose observability RPC"
 - Consumes: `src/daemon/client.ts`.
 - Produces: formal CLI entrypoint for scripts, Herdr plugin, and humans.
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 Update `test/unit/cli.test.ts` for the commands listed in Core Interfaces. Assert:
 
@@ -180,13 +180,13 @@ Update `test/unit/cli.test.ts` for the commands listed in Core Interfaces. Asser
 - `ack --subscription ns_1 --event 42 --json` calls `notification.ack`
 - old `send`, `open`, `watch`, `audit` commands are rejected
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: old CLI behavior causes failures.
 
-- [ ] **Step 3: Implement CLI parser and runners**
+- [x] **Step 3: Implement CLI parser and runners**
 
 Implement command types for new commands. Output JSON when `--json` is present; otherwise print concise human text:
 
@@ -196,17 +196,17 @@ Observed workspace ow_abc123 (active) -> Herdr workspace w1
 
 For `events`, print JSON Lines in `--json` mode and tab-separated summaries otherwise.
 
-- [ ] **Step 4: Delete `shepherd-tools`**
+- [x] **Step 4: Delete `shepherd-tools`**
 
 Delete `src/cli/shepherd-tools.ts` and remove the bin entry. Do not rewrite it for the MVP because the formal API is the observed-workspace CLI plus JSONL daemon RPC.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: CLI tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/cli/shepherd.ts src/cli/shepherd-tools.ts package.json test/unit/cli.test.ts

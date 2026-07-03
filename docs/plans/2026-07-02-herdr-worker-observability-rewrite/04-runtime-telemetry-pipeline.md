@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 5 through Task 8.
+- Done — Task 5 through Task 8.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- No remaining implementation steps. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -35,7 +35,7 @@ Task 5 through Task 8.
 - Consumes: `AgentSessionRef` and Pi session format.
 - Produces: transcript summaries and evidence for pipeline backfill.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create fixture JSONL in test code with:
 
@@ -54,13 +54,13 @@ Assert adapter returns:
 - blocked hint from final assistant text
 - evidence refs containing session file path and entry ids
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/pi-transcript-adapter.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 3: Define interfaces**
+- [x] **Step 3: Define interfaces**
 
 Create `src/observability/runtime-adapter.ts`:
 
@@ -90,7 +90,7 @@ export interface WorkerRuntimeAdapter {
 }
 ```
 
-- [ ] **Step 4: Implement Pi transcript adapter**
+- [x] **Step 4: Implement Pi transcript adapter**
 
 Create `PiTranscriptAdapter` that:
 
@@ -103,13 +103,13 @@ Create `PiTranscriptAdapter` that:
 - sets blocked hint when final assistant text matches `/\b(blocked|ブロック|確認が必要|cannot proceed|need input)\b/i`
 - sets completion hint when final assistant text matches `/\b(done|completed|完了|実装しました|修正しました)\b/i`
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pnpm test test/unit/pi-transcript-adapter.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/observability/runtime-adapter.ts src/observability/pi-transcript-adapter.ts test/unit/pi-transcript-adapter.test.ts
@@ -128,7 +128,7 @@ git commit -m "feat(observability): add Pi transcript adapter"
 - Consumes: `WorkerTelemetryEvent`.
 - Produces: sanitizer and parser used by daemon RPC and Pi extension tests.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert:
 
@@ -138,13 +138,13 @@ Assert:
 4. `normalizePiMessageFinalTelemetry()` emits completion/blocked/needsInput hints from final text.
 5. idempotency key format is `telemetry:pi:<turnId>:tool:<toolCallId>:completed` for tool events and `telemetry:pi:<turnId>:message:final` for final message.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/pi-telemetry.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 3: Implement helper functions**
+- [x] **Step 3: Implement helper functions**
 
 Create:
 
@@ -183,13 +183,13 @@ export function normalizePiMessageFinalTelemetry(input: {
 }): WorkerMessageFinalTelemetryEvent;
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test test/unit/pi-telemetry.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/pi-telemetry.ts test/unit/pi-telemetry.test.ts
@@ -208,7 +208,7 @@ git commit -m "feat(observability): normalize Pi telemetry"
 - Consumes: Herdr AgentInfo-like records, transcript backfill, telemetry events.
 - Produces: `WorkerSnapshot` and `WorkerEventType` decisions.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Test cases:
 
@@ -220,13 +220,13 @@ Test cases:
 6. Status changes emit `worker.status.changed` only when status changed from previous snapshot.
 7. Evidence array contains at most five entries and each excerpt is bounded.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/worker-state-rules.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 3: Implement rule engine**
+- [x] **Step 3: Implement rule engine**
 
 Export:
 
@@ -249,13 +249,13 @@ export function evaluateWorkerState(input: WorkerRuleInput): WorkerRuleOutput;
 
 Rules must be deterministic and must not call an LLM.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test test/unit/worker-state-rules.test.ts`
 
 Expected: all rule tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/rules.ts test/unit/worker-state-rules.test.ts
@@ -274,7 +274,7 @@ git commit -m "feat(observability): add worker state rules"
 - Consumes: stores, Herdr client, resolver, transcript adapters, rules.
 - Produces: update methods used by daemon RPC and Herdr subscriptions.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Test end-to-end scenarios:
 
@@ -285,13 +285,13 @@ Test end-to-end scenarios:
 5. Pipeline dedupes repeated telemetry by idempotency key.
 6. Pipeline marks workspace `missing` when snapshot cannot resolve it.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/worker-state-pipeline.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 3: Implement pipeline class**
+- [x] **Step 3: Implement pipeline class**
 
 Constructor dependencies:
 
@@ -320,13 +320,13 @@ export class WorkerStatePipeline {
 2. `event.sessionRef` converted to worker identity key
 3. no-op with a `worker.summary.updated` event only if no worker exists is forbidden; instead append no event and return
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test test/integration/worker-state-pipeline.test.ts`
 
 Expected: all pipeline tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/worker-state-pipeline.ts test/integration/worker-state-pipeline.test.ts

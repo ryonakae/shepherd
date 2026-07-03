@@ -38,11 +38,11 @@ describe("Shepherd runtime resolver", () => {
       dbPath: join(homeDir, "state.db"),
       envPath: join(homeDir, ".env"),
       homeDir,
-      logPath: join(homeDir, "logs/gateway.log"),
-      pidPath: join(homeDir, "gateway.pid"),
+      logPath: join(homeDir, "logs/shepherd.log"),
+      pidPath: join(homeDir, "shepherd.pid"),
       piSessionDir: join(homeDir, "pi-sessions"),
       runtimeRecordPath: join(homeDir, "runtime.json"),
-      socketPath: join(homeDir, "gateway.sock"),
+      socketPath: join(homeDir, "shepherd.sock"),
     });
   });
 
@@ -72,18 +72,18 @@ describe("Shepherd runtime resolver", () => {
       homeDir,
       `runtime:
   db_path: /var/tmp/shepherd/state.sqlite
-  socket_path: /var/tmp/shepherd/gateway.sock
-  pid_path: /var/tmp/shepherd/gateway.pid
-  log_path: /var/tmp/shepherd/gateway.log
+  socket_path: /var/tmp/shepherd/shepherd.sock
+  pid_path: /var/tmp/shepherd/shepherd.pid
+  log_path: /var/tmp/shepherd/shepherd.log
 `,
     );
 
     const runtime = resolveRuntime({ environment: { SHEPHERD_HOME: homeDir } });
 
     expect(runtime.paths.dbPath).toBe("/var/tmp/shepherd/state.sqlite");
-    expect(runtime.paths.socketPath).toBe("/var/tmp/shepherd/gateway.sock");
-    expect(runtime.paths.pidPath).toBe("/var/tmp/shepherd/gateway.pid");
-    expect(runtime.paths.logPath).toBe("/var/tmp/shepherd/gateway.log");
+    expect(runtime.paths.socketPath).toBe("/var/tmp/shepherd/shepherd.sock");
+    expect(runtime.paths.pidPath).toBe("/var/tmp/shepherd/shepherd.pid");
+    expect(runtime.paths.logPath).toBe("/var/tmp/shepherd/shepherd.log");
   });
 
   test("loads .env values over shell values while ignoring SHEPHERD variables", () => {
@@ -172,9 +172,9 @@ SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
 
     expect(runtime.configErrors?.length).toBeGreaterThan(0);
     expect(paths.dbPath).toBe(join(homeDir, "state.db"));
-    expect(paths.socketPath).toBe(join(homeDir, "gateway.sock"));
-    expect(paths.pidPath).toBe(join(homeDir, "gateway.pid"));
-    expect(paths.logPath).toBe(join(homeDir, "logs/gateway.log"));
+    expect(paths.socketPath).toBe(join(homeDir, "shepherd.sock"));
+    expect(paths.pidPath).toBe(join(homeDir, "shepherd.pid"));
+    expect(paths.logPath).toBe(join(homeDir, "logs/shepherd.log"));
   });
 
   test("resolves explicit runtime path values", () => {
@@ -185,9 +185,6 @@ SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
   test("resolves paths from an already loaded config", () => {
     const paths = resolveRuntimePaths({
       config: {
-        agents: { implementer: { command: "codex" } },
-        default_agent: "implementer",
-        gateway: {},
         runtime: { db_path: "data/state.db" },
       },
       environment: { SHEPHERD_HOME: "/tmp/shepherd-home" },
@@ -207,11 +204,8 @@ function tempHome(): string {
 function writeValidConfig(homeDir: string, extraYaml = ""): void {
   writeFileSync(
     join(homeDir, "config.yaml"),
-    `${extraYaml}gateway: {}
-default_agent: implementer
-agents:
-  implementer:
-    command: codex
+    `${extraYaml}observability:
+  telemetry: {}
 `,
   );
 }

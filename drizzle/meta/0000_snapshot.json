@@ -1,147 +1,48 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a64c9483-4e2f-49b9-8c2a-7025be81b477",
+  "id": "83d3eb15-97cf-4dbd-b8b1-9d52fdbee9a7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "actors": {
-      "name": "actors",
+    "notification_cursors": {
+      "name": "notification_cursors",
       "columns": {
-        "id": {
-          "name": "id",
+        "acked_event_id": {
+          "name": "acked_event_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "auto_resume_event_id": {
+          "name": "auto_resume_event_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "delivered_event_id": {
+          "name": "delivered_event_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "hidden_context_event_id": {
+          "name": "hidden_context_event_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "subscription_id": {
+          "name": "subscription_id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "avatar_url": {
-          "name": "avatar_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "display_name": {
-          "name": "display_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "presentation_json": {
-          "name": "presentation_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source_platform": {
-          "name": "source_platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source_user_id": {
-          "name": "source_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "actors_source_identity_idx": {
-          "name": "actors_source_identity_idx",
-          "columns": [
-            "source_platform",
-            "source_user_id"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "delivery_receipts": {
-      "name": "delivery_receipts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "failure_reason": {
-          "name": "failure_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "platform": {
-          "name": "platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "remote_message_id": {
-          "name": "remote_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "target_id": {
-          "name": "target_id",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -153,24 +54,14 @@
           "autoincrement": false
         }
       },
-      "indexes": {
-        "delivery_receipts_event_target_idx": {
-          "name": "delivery_receipts_event_target_idx",
-          "columns": [
-            "event_id",
-            "platform",
-            "target_id"
-          ],
-          "isUnique": true
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "delivery_receipts_event_id_events_id_fk": {
-          "name": "delivery_receipts_event_id_events_id_fk",
-          "tableFrom": "delivery_receipts",
-          "tableTo": "events",
+        "notification_cursors_subscription_id_notification_subscriptions_id_fk": {
+          "name": "notification_cursors_subscription_id_notification_subscriptions_id_fk",
+          "tableFrom": "notification_cursors",
+          "tableTo": "notification_subscriptions",
           "columnsFrom": [
-            "event_id"
+            "subscription_id"
           ],
           "columnsTo": [
             "id"
@@ -183,21 +74,14 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "events": {
-      "name": "events",
+    "notification_subscriptions": {
+      "name": "notification_subscriptions",
       "columns": {
-        "id": {
-          "name": "id",
+        "auto_resume": {
+          "name": "auto_resume",
           "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "created_at": {
@@ -207,22 +91,177 @@
           "notNull": true,
           "autoincrement": false
         },
-        "dedupe_key": {
-          "name": "dedupe_key",
+        "id": {
+          "name": "id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
+          "primaryKey": true,
+          "notNull": true,
           "autoincrement": false
         },
-        "payload_json": {
-          "name": "payload_json",
+        "observed_workspace_id": {
+          "name": "observed_workspace_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "session_id": {
-          "name": "session_id",
+        "subscriber_id": {
+          "name": "subscriber_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subscriber_kind": {
+          "name": "subscriber_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "notification_subscriptions_workspace_subscriber_idx": {
+          "name": "notification_subscriptions_workspace_subscriber_idx",
+          "columns": [
+            "observed_workspace_id",
+            "subscriber_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "notification_subscriptions_observed_workspace_id_observed_workspaces_id_fk": {
+          "name": "notification_subscriptions_observed_workspace_id_observed_workspaces_id_fk",
+          "tableFrom": "notification_subscriptions",
+          "tableTo": "observed_workspaces",
+          "columnsFrom": [
+            "observed_workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "observed_workspaces": {
+      "name": "observed_workspaces",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "herdr_session_name": {
+          "name": "herdr_session_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_resolved_at": {
+          "name": "last_resolved_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "live_workspace_id": {
+          "name": "live_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metadata_json": {
+          "name": "metadata_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "socket_path": {
+          "name": "socket_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "worker_events": {
+      "name": "worker_events",
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_workspace_id": {
+          "name": "observed_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -234,229 +273,32 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
-        }
-      },
-      "indexes": {
-        "events_session_idempotency_key_idx": {
-          "name": "events_session_idempotency_key_idx",
-          "columns": [
-            "session_id",
-            "dedupe_key"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "events_actor_id_actors_id_fk": {
-          "name": "events_actor_id_actors_id_fk",
-          "tableFrom": "events",
-          "tableTo": "actors",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         },
-        "events_session_id_sessions_id_fk": {
-          "name": "events_session_id_sessions_id_fk",
-          "tableFrom": "events",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "herdr_bindings": {
-      "name": "herdr_bindings",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "herdr_session_name": {
-          "name": "herdr_session_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "metadata_json": {
-          "name": "metadata_json",
+        "worker_id": {
+          "name": "worker_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
         }
       },
       "indexes": {
-        "herdr_bindings_session_idx": {
-          "name": "herdr_bindings_session_idx",
+        "worker_events_observed_workspace_idempotency_idx": {
+          "name": "worker_events_observed_workspace_idempotency_idx",
           "columns": [
-            "session_id"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "herdr_bindings_session_id_sessions_id_fk": {
-          "name": "herdr_bindings_session_id_sessions_id_fk",
-          "tableFrom": "herdr_bindings",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "logical_tool_calls": {
-      "name": "logical_tool_calls",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "input_json": {
-          "name": "input_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "pi_turn_id": {
-          "name": "pi_turn_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "result_json": {
-          "name": "result_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "tool_name": {
-          "name": "tool_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "logical_tool_calls_pi_turn_idempotency_idx": {
-          "name": "logical_tool_calls_pi_turn_idempotency_idx",
-          "columns": [
-            "pi_turn_id",
+            "observed_workspace_id",
             "idempotency_key"
           ],
           "isUnique": true
         }
       },
       "foreignKeys": {
-        "logical_tool_calls_pi_turn_id_pi_turns_id_fk": {
-          "name": "logical_tool_calls_pi_turn_id_pi_turns_id_fk",
-          "tableFrom": "logical_tool_calls",
-          "tableTo": "pi_turns",
+        "worker_events_observed_workspace_id_observed_workspaces_id_fk": {
+          "name": "worker_events_observed_workspace_id_observed_workspaces_id_fk",
+          "tableFrom": "worker_events",
+          "tableTo": "observed_workspaces",
           "columnsFrom": [
-            "pi_turn_id"
+            "observed_workspace_id"
           ],
           "columnsTo": [
             "id"
@@ -464,154 +306,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "logical_tool_calls_session_id_sessions_id_fk": {
-          "name": "logical_tool_calls_session_id_sessions_id_fk",
-          "tableFrom": "logical_tool_calls",
-          "tableTo": "sessions",
+        "worker_events_worker_id_workers_id_fk": {
+          "name": "worker_events_worker_id_workers_id_fk",
+          "tableFrom": "worker_events",
+          "tableTo": "workers",
           "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "pi_turns": {
-      "name": "pi_turns",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "input_event_ids_json": {
-          "name": "input_event_ids_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "owner_kind": {
-          "name": "owner_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "pi_session_file": {
-          "name": "pi_session_file",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "pi_session_id": {
-          "name": "pi_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "recovery_json": {
-          "name": "recovery_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "triggering_event_id": {
-          "name": "triggering_event_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "pi_turns_session_id_sessions_id_fk": {
-          "name": "pi_turns_session_id_sessions_id_fk",
-          "tableFrom": "pi_turns",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pi_turns_triggering_event_id_events_id_fk": {
-          "name": "pi_turns_triggering_event_id_events_id_fk",
-          "tableFrom": "pi_turns",
-          "tableTo": "events",
-          "columnsFrom": [
-            "triggering_event_id"
+            "worker_id"
           ],
           "columnsTo": [
             "id"
@@ -624,16 +324,9 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "session_bindings": {
-      "name": "session_bindings",
+    "worker_snapshots": {
+      "name": "worker_snapshots",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -641,74 +334,56 @@
           "notNull": true,
           "autoincrement": false
         },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "metadata_json": {
-          "name": "metadata_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "platform": {
-          "name": "platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "space_id": {
-          "name": "space_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
+        "id": {
+          "name": "id",
           "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "observed_workspace_id": {
+          "name": "observed_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_json": {
+          "name": "snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         }
       },
-      "indexes": {
-        "session_bindings_platform_thread_idx": {
-          "name": "session_bindings_platform_thread_idx",
-          "columns": [
-            "platform",
-            "space_id",
-            "thread_id"
-          ],
-          "isUnique": true
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "session_bindings_session_id_sessions_id_fk": {
-          "name": "session_bindings_session_id_sessions_id_fk",
-          "tableFrom": "session_bindings",
-          "tableTo": "sessions",
+        "worker_snapshots_observed_workspace_id_observed_workspaces_id_fk": {
+          "name": "worker_snapshots_observed_workspace_id_observed_workspaces_id_fk",
+          "tableFrom": "worker_snapshots",
+          "tableTo": "observed_workspaces",
           "columnsFrom": [
-            "session_id"
+            "observed_workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "worker_snapshots_worker_id_workers_id_fk": {
+          "name": "worker_snapshots_worker_id_workers_id_fk",
+          "tableFrom": "worker_snapshots",
+          "tableTo": "workers",
+          "columnsFrom": [
+            "worker_id"
           ],
           "columnsTo": [
             "id"
@@ -721,194 +396,60 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "session_summaries": {
-      "name": "session_summaries",
+    "workers": {
+      "name": "workers",
       "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "summarized_through_event_id": {
-          "name": "summarized_through_event_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "session_summaries_session_id_sessions_id_fk": {
-          "name": "session_summaries_session_id_sessions_id_fk",
-          "tableFrom": "session_summaries",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "sessions": {
-      "name": "sessions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "metadata_json": {
-          "name": "metadata_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'active'"
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "working_context_id": {
-          "name": "working_context_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "sessions_working_context_id_working_contexts_id_fk": {
-          "name": "sessions_working_context_id_working_contexts_id_fk",
-          "tableFrom": "sessions",
-          "tableTo": "working_contexts",
-          "columnsFrom": [
-            "working_context_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "worker_agent_bindings": {
-      "name": "worker_agent_bindings",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
         "agent_name": {
           "name": "agent_name",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
-        "agent_profile": {
-          "name": "agent_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "agent_status": {
-          "name": "agent_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "binding_health": {
-          "name": "binding_health",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
+        "agent_session_json": {
+          "name": "agent_session_json",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "herdr_session_name": {
-          "name": "herdr_session_name",
+        "current_pane_id": {
+          "name": "current_pane_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "current_tab_id": {
+          "name": "current_tab_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "current_workspace_id": {
+          "name": "current_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "identity_kind": {
+          "name": "identity_kind",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -918,49 +459,35 @@
           "name": "last_seen_at",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_task": {
-          "name": "last_task",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "metadata_json": {
           "name": "metadata_json",
           "type": "text",
           "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observed_workspace_id": {
+          "name": "observed_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runtime": {
+          "name": "runtime",
+          "type": "text",
+          "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "pane_id": {
-          "name": "pane_id",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "tab_id": {
-          "name": "tab_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "updated_at": {
@@ -970,8 +497,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "workspace_id": {
-          "name": "workspace_id",
+        "worker_key": {
+          "name": "worker_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -979,23 +506,22 @@
         }
       },
       "indexes": {
-        "worker_agent_bindings_identity_idx": {
-          "name": "worker_agent_bindings_identity_idx",
+        "workers_observed_workspace_key_idx": {
+          "name": "workers_observed_workspace_key_idx",
           "columns": [
-            "session_id",
-            "workspace_id",
-            "agent_name"
+            "observed_workspace_id",
+            "worker_key"
           ],
           "isUnique": true
         }
       },
       "foreignKeys": {
-        "worker_agent_bindings_session_id_sessions_id_fk": {
-          "name": "worker_agent_bindings_session_id_sessions_id_fk",
-          "tableFrom": "worker_agent_bindings",
-          "tableTo": "sessions",
+        "workers_observed_workspace_id_observed_workspaces_id_fk": {
+          "name": "workers_observed_workspace_id_observed_workspaces_id_fk",
+          "tableFrom": "workers",
+          "tableTo": "observed_workspaces",
           "columnsFrom": [
-            "session_id"
+            "observed_workspace_id"
           ],
           "columnsTo": [
             "id"
@@ -1004,87 +530,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "working_contexts": {
-      "name": "working_contexts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "detection_metadata_json": {
-          "name": "detection_metadata_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "herdr_session_name": {
-          "name": "herdr_session_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "working_contexts_slug_idx": {
-          "name": "working_contexts_slug_idx",
-          "columns": [
-            "slug"
-          ],
-          "isUnique": true
-        },
-        "working_contexts_path_idx": {
-          "name": "working_contexts_path_idx",
-          "columns": [
-            "path"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

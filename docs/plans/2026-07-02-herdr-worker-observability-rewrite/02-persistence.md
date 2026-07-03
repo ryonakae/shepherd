@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 2.
+- Done — Task 2.
 
 ## Next steps
 
-- Execute after [01-contracts-and-rpc.md](01-contracts-and-rpc.md) is complete.
+- Done. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -44,7 +44,7 @@ Task 2.
 - Consumes: `src/observability/contracts.ts`.
 - Produces: persistence APIs for pipeline, RPC server, notification service, and CLI.
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 Create tests that assert:
 
@@ -57,13 +57,13 @@ Create tests that assert:
 7. `WorkerEventStore.listAfter()` returns ascending ids after cursor.
 8. `NotificationCursorStore.ack()` advances cursor monotonically and never moves backward.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm test test/integration/observed-workspaces-store.test.ts test/integration/workers-store.test.ts test/integration/worker-events-store.test.ts test/integration/notification-service.test.ts`
 
 Expected: tests fail because stores and tables do not exist.
 
-- [ ] **Step 3: Replace schema with MVP observability baseline**
+- [x] **Step 3: Replace schema with MVP observability baseline**
 
 Modify `src/db/schema.ts` to keep only tables needed for the rewrite MVP:
 
@@ -144,7 +144,7 @@ notification_cursors:
   updated_at integer not null
 ```
 
-- [ ] **Step 4: Implement stores**
+- [x] **Step 4: Implement stores**
 
 Store method names must be exactly:
 
@@ -184,19 +184,19 @@ class NotificationCursorStore {
 }
 ```
 
-- [ ] **Step 5: Generate migration baseline**
+- [x] **Step 5: Generate migration baseline**
 
 Run: `pnpm db:generate`
 
 Expected: Drizzle creates a migration reflecting the new observability tables. Inspect generated SQL and confirm no old Gateway/session tables remain.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `pnpm test test/integration/observed-workspaces-store.test.ts test/integration/workers-store.test.ts test/integration/worker-events-store.test.ts test/integration/notification-service.test.ts test/integration/sqlite-migrations.test.ts`
 
 Expected: all listed tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/db/schema.ts src/db/observed-workspaces.ts src/db/workers.ts src/db/worker-events.ts src/db/worker-snapshots.ts src/db/notification-cursors.ts drizzle test/integration/observed-workspaces-store.test.ts test/integration/workers-store.test.ts test/integration/worker-events-store.test.ts test/integration/notification-service.test.ts test/integration/sqlite-migrations.test.ts

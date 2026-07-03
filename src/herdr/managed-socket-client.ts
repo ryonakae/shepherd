@@ -1,4 +1,3 @@
-import type { HerdrControlClient } from "./orchestrator.js";
 import { HerdrSessionLifecycle } from "./session-lifecycle.js";
 import { HerdrSocketClient } from "./socket-client.js";
 
@@ -7,7 +6,7 @@ export type ManagedHerdrSocketClientOptions = {
   lifecycle?: HerdrSessionLifecycle;
 };
 
-export class ManagedHerdrSocketClient implements HerdrControlClient {
+export class ManagedHerdrSocketClient {
   readonly #herdrSessionName: string;
   readonly #lifecycle: HerdrSessionLifecycle;
   #client: HerdrSocketClient | undefined;
@@ -66,6 +65,10 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).getPane(params);
   }
 
+  async sendPaneInput(params: Parameters<HerdrSocketClient["sendPaneInput"]>[0]): Promise<unknown> {
+    return (await this.#getClient()).sendPaneInput(params);
+  }
+
   async sendPaneText(params: Parameters<HerdrSocketClient["sendPaneText"]>[0]): Promise<unknown> {
     return (await this.#getClient()).sendPaneText(params);
   }
@@ -118,11 +121,18 @@ export class ManagedHerdrSocketClient implements HerdrControlClient {
     return (await this.#getClient()).waitForEvent(params);
   }
 
+  async sessionSnapshot(): Promise<unknown> {
+    return (await this.#getClient()).sessionSnapshot();
+  }
+
   async *subscribeEvents(
     params?: Parameters<HerdrSocketClient["subscribeEvents"]>[0],
     options?: Parameters<HerdrSocketClient["subscribeEvents"]>[1],
   ): AsyncIterable<unknown> {
-    yield* (await this.#getClient()).subscribeEvents(params, options);
+    yield* (await this.#getClient()).subscribeEvents(
+      params ?? { paneIds: [], workspaceId: "" },
+      options,
+    );
   }
 
   async #getClient(): Promise<HerdrSocketClient> {

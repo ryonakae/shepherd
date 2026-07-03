@@ -46,11 +46,11 @@ export function resolveRuntimePaths(
     dbPath: resolveRuntimePath(homeDir, runtime?.db_path ?? "state.db"),
     envPath: resolve(homeDir, ".env"),
     homeDir,
-    logPath: resolveRuntimePath(homeDir, runtime?.log_path ?? "logs/gateway.log"),
-    pidPath: resolveRuntimePath(homeDir, runtime?.pid_path ?? "gateway.pid"),
+    logPath: resolveRuntimePath(homeDir, runtime?.log_path ?? "logs/shepherd.log"),
+    pidPath: resolveRuntimePath(homeDir, runtime?.pid_path ?? "shepherd.pid"),
     piSessionDir: resolve(homeDir, "pi-sessions"),
     runtimeRecordPath: resolve(homeDir, "runtime.json"),
-    socketPath: resolveRuntimePath(homeDir, runtime?.socket_path ?? "gateway.sock"),
+    socketPath: resolveRuntimePath(homeDir, runtime?.socket_path ?? "shepherd.sock"),
   };
 }
 

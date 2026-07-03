@@ -80,16 +80,15 @@ describe("HerdrSocketClient", () => {
     });
   });
 
-  test("uses pane and wait socket methods for terminal control", async () => {
+  test("uses current pane and wait socket methods for terminal control", async () => {
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
       socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));
     });
 
     const client = new HerdrSocketClient({ socketPath });
     await client.splitPane({ direction: "right", pane_id: "w1:p1", ratio: 0.5 });
-    await client.runPaneCommand({ command: "pnpm test", pane_id: "w1:p2" });
+    await client.sendPaneInput({ pane_id: "w1:p2", text: "pnpm test" });
     await client.readPane({ lines: 20, pane_id: "w1:p2", source: "recent" });
-    await client.waitForAgent({ status: "idle", target: "claude-impl", timeout_ms: 1000 });
     await client.waitForOutput({
       match: "done",
       pane_id: "w1:p2",
@@ -99,14 +98,37 @@ describe("HerdrSocketClient", () => {
     await client.waitForEvent({ timeout_ms: 1000, workspace_id: "w1" });
     client.close();
 
-    expect(requests.map((request) => request.method)).toEqual([
-      "pane.split",
-      "pane.run",
-      "pane.read",
-      "agent.wait",
-      "wait.output",
-      "events.wait",
+    expect(requests).toMatchObject([
+      { method: "pane.split" },
+      { method: "pane.send_input", params: { pane_id: "w1:p2", text: "pnpm test" } },
+      { method: "pane.read" },
+      {
+        method: "pane.wait_for_output",
+        params: {
+          match: { type: "substring", value: "done" },
+          pane_id: "w1:p2",
+          source: "recent",
+          timeout_ms: 1000,
+        },
+      },
+      { method: "events.wait" },
     ]);
+  });
+
+  test("requests session snapshots", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.write(
+        encodeJsonLine({ id: request.id, result: { snapshot: { workspaces: [{ id: "w1" }] } } }),
+      );
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    await expect(client.sessionSnapshot()).resolves.toEqual({
+      snapshot: { workspaces: [{ id: "w1" }] },
+    });
+    client.close();
+
+    expect(requests[0]).toMatchObject({ method: "session.snapshot", params: {} });
   });
 
   test("subscribes to Herdr events and yields socket notifications", async () => {
@@ -123,10 +145,7 @@ describe("HerdrSocketClient", () => {
     const client = new HerdrSocketClient({ socketPath });
     const controller = new AbortController();
     const iterator = client
-      .subscribeEvents(
-        { events: ["pane.agent_status_changed"], workspace_id: "w1" },
-        { signal: controller.signal },
-      )
+      .subscribeEvents({ paneIds: ["w1:p1"], workspaceId: "w1" }, { signal: controller.signal })
       [Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
@@ -137,7 +156,12 @@ describe("HerdrSocketClient", () => {
 
     expect(requests[0]).toMatchObject({
       method: "events.subscribe",
-      params: { events: ["pane.agent_status_changed"], workspace_id: "w1" },
+      params: {
+        subscriptions: expect.arrayContaining([
+          { type: "workspace.updated" },
+          { type: "pane.agent_status_changed", pane_id: "w1:p1" },
+        ]),
+      },
     });
   });
 
@@ -154,7 +178,7 @@ describe("HerdrSocketClient", () => {
     await client.getTab({ tab_id: "w1:t1" });
     await client.listPanes({ tab_id: "w1:t1" });
     await client.getPane({ pane_id: "w1:p1" });
-    await client.sendPaneText({ pane_id: "w1:p1", text: "hello" });
+    await client.sendPaneInput({ pane_id: "w1:p1", text: "hello" });
     await client.listAgents({ workspace_id: "w1" });
     await client.getAgent({ target: "claude-impl" });
     await client.focusAgent({ target: "claude-impl" });
@@ -168,7 +192,7 @@ describe("HerdrSocketClient", () => {
       "tab.get",
       "pane.list",
       "pane.get",
-      "pane.send_text",
+      "pane.send_input",
       "agent.list",
       "agent.get",
       "agent.focus",

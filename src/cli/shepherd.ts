@@ -1,105 +1,163 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
-import { argv, env, exit } from "node:process";
+import { argv, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolveRuntime, runtimePathsFromRecordOrDefault } from "@/config/runtime.js";
-import { applyMigrations } from "@/db/apply-migrations.js";
-import { openSqlite } from "@/db/client.js";
-import { EventStore } from "@/db/event-store.js";
-import { readOrCreateGatewayId } from "@/gateway/identity.js";
+import { ObservabilityRpcClient } from "@/daemon/client.js";
 import {
   getGatewayStatus,
   startGatewayProcess,
   stopGatewayProcess,
 } from "@/gateway/process-manager.js";
-import { ShepherdSessionClient } from "@/tui/client.js";
 
-type GatewayAction = "restart" | "start" | "status" | "stop";
+type DaemonAction = "restart" | "start" | "status" | "stop";
 
 export type CliCommand =
-  | { action: GatewayAction; command: "gateway" }
-  | { command: "start-local"; workingContextPath: string }
-  | { command: "send"; sessionId: string; text: string }
-  | { command: "rename"; sessionId: string; title: string | null }
-  | { command: "open"; sessionId: string }
-  | { command: "watch"; sessionId: string }
-  | { command: "audit"; sessionId: string }
+  | { action: DaemonAction; command: "daemon" }
+  | {
+      command: "observe";
+      herdrSessionName?: string;
+      json: boolean;
+      socketPath?: string;
+      workspaceId: string;
+    }
+  | { command: "observe-current"; json: boolean; socketPath: string; workspaceId: string }
+  | { command: "snapshot"; json: boolean; observedWorkspaceId: string }
+  | { afterEventId?: number; command: "events"; json: boolean; observedWorkspaceId: string }
+  | {
+      autoResume: boolean;
+      command: "notifications";
+      json: boolean;
+      observedWorkspaceId: string;
+      subscriberId: string;
+    }
+  | { command: "ack"; eventId: number; json: boolean; subscriptionId: string }
+  | { command: "message-worker"; text: string; workerId: string }
+  | { command: "wait-worker"; state: string; timeoutMs?: number; workerId: string }
   | { command: "help" };
 
-type RuntimePathInput = {
-  dbPath: string;
+type RpcClientLike = Pick<ObservabilityRpcClient, "close" | "request">;
+
+type RunCliDeps = {
+  connect(socketPath: string): Promise<RpcClientLike>;
+  output(line: string): void;
   socketPath: string;
 };
 
-type LocalPiStartupCommand = Extract<CliCommand, { command: "start-local" }> & RuntimePathInput;
-type OpenPiSessionCommand = Extract<CliCommand, { command: "open" }> & RuntimePathInput;
-
-export function parseCliArgs(args: string[]): CliCommand {
+export function parseCliArgs(
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): CliCommand {
   const [command, ...rest] = args;
-
-  if (!command) {
-    return { command: "start-local", workingContextPath: process.cwd() };
-  }
-
-  if (command === "--help" || command === "-h" || command === "help") {
-    if (rest.length > 0) {
-      throw new Error(`Invalid argument: ${rest[0]}`);
-    }
+  if (!command || command === "--help" || command === "-h" || command === "help") {
     return { command: "help" };
   }
 
-  if (command === "gateway") {
+  if (command === "daemon") {
     const [action = "status", ...extra] = rest;
-    if (!isGatewayAction(action)) {
-      throw new Error(`Unknown gateway action: ${action}`);
-    }
+    if (!isDaemonAction(action)) throw new Error(`Unknown daemon action: ${action}`);
     rejectExtra(extra);
-    return { action, command: "gateway" };
+    return { action, command: "daemon" };
   }
 
-  if (command === "open") {
-    const [sessionId, ...extra] = rest;
-    if (!sessionId) {
-      throw new Error("open requires <session-id>");
+  if (command === "observe") {
+    const json = takeFlag(rest, "--json");
+    const herdrSessionName = takeOption(rest, "--herdr-session");
+    const socketPath = takeOption(rest, "--socket");
+    const workspaceId = takeOption(rest, "--workspace");
+    if (!workspaceId || (!herdrSessionName && !socketPath)) {
+      throw new Error("observe requires a Herdr selector and --workspace <workspace-id>");
     }
+    rejectExtra(rest);
+    return {
+      command: "observe",
+      ...(herdrSessionName ? { herdrSessionName } : {}),
+      json,
+      ...(socketPath ? { socketPath } : {}),
+      workspaceId,
+    };
+  }
+
+  if (command === "observe-current") {
+    const json = takeFlag(rest, "--json");
+    rejectExtra(rest);
+    if (
+      environment.HERDR_ENV !== "1" ||
+      !environment.HERDR_SOCKET_PATH ||
+      !environment.HERDR_WORKSPACE_ID
+    ) {
+      throw new Error("observe-current requires a Herdr-managed pane");
+    }
+    return {
+      command: "observe-current",
+      json,
+      socketPath: environment.HERDR_SOCKET_PATH,
+      workspaceId: environment.HERDR_WORKSPACE_ID,
+    };
+  }
+
+  if (command === "snapshot") {
+    const json = takeFlag(rest, "--json");
+    const [observedWorkspaceId, ...extra] = rest;
+    if (!observedWorkspaceId) throw new Error("snapshot requires <observed-workspace-id>");
     rejectExtra(extra);
-    return { command: "open", sessionId };
+    return { command: "snapshot", json, observedWorkspaceId };
   }
 
-  if (command === "send") {
-    const [sessionId, ...textParts] = rest;
-    if (!sessionId || textParts.length === 0) {
-      throw new Error("send requires <session-id> and <text>");
-    }
-    return { command: "send", sessionId, text: textParts.join(" ") };
-  }
-
-  if (command === "watch") {
-    const [sessionId, ...extra] = rest;
-    if (!sessionId) {
-      throw new Error("watch requires <session-id>");
-    }
+  if (command === "events") {
+    const json = takeFlag(rest, "--json");
+    const after = takeOption(rest, "--after");
+    const [observedWorkspaceId, ...extra] = rest;
+    if (!observedWorkspaceId) throw new Error("events requires <observed-workspace-id>");
     rejectExtra(extra);
-    return { command: "watch", sessionId };
+    return {
+      command: "events",
+      ...(after ? { afterEventId: Number(after) } : {}),
+      json,
+      observedWorkspaceId,
+    };
   }
 
-  if (command === "rename") {
-    const [sessionId, ...titleParts] = rest;
-    if (!sessionId || titleParts.length === 0) {
-      throw new Error("rename requires <session-id> and <title>");
-    }
-    const title = titleParts.join(" ");
-    return { command: "rename", sessionId, title: title.length === 0 ? null : title };
-  }
-
-  if (command === "audit") {
-    const [sessionId, ...extra] = rest;
-    if (!sessionId) {
-      throw new Error("audit requires <session-id>");
-    }
+  if (command === "notifications") {
+    const json = takeFlag(rest, "--json");
+    const autoResume = takeFlag(rest, "--auto-resume");
+    const subscriberId = takeOption(rest, "--subscriber");
+    const [observedWorkspaceId, ...extra] = rest;
+    if (!observedWorkspaceId || !subscriberId)
+      throw new Error("notifications requires <observed-workspace-id> --subscriber <id>");
     rejectExtra(extra);
-    return { command: "audit", sessionId };
+    return { autoResume, command: "notifications", json, observedWorkspaceId, subscriberId };
+  }
+
+  if (command === "ack") {
+    const json = takeFlag(rest, "--json");
+    const subscriptionId = takeOption(rest, "--subscription");
+    const eventId = takeOption(rest, "--event");
+    if (!subscriptionId || !eventId)
+      throw new Error("ack requires --subscription <id> --event <event-id>");
+    rejectExtra(rest);
+    return { command: "ack", eventId: Number(eventId), json, subscriptionId };
+  }
+
+  if (command === "message-worker") {
+    const [workerId, ...textParts] = rest;
+    if (!workerId || textParts.length === 0)
+      throw new Error("message-worker requires <worker-id> <text>");
+    return { command: "message-worker", text: textParts.join(" "), workerId };
+  }
+
+  if (command === "wait-worker") {
+    const timeout = takeOption(rest, "--timeout-ms");
+    const state = takeOption(rest, "--state");
+    const [workerId, ...extra] = rest;
+    if (!workerId || !state) throw new Error("wait-worker requires <worker-id> --state <state>");
+    rejectExtra(extra);
+    return {
+      command: "wait-worker",
+      state,
+      ...(timeout ? { timeoutMs: Number(timeout) } : {}),
+      workerId,
+    };
   }
 
   throw new Error(`Unknown command: ${command}`);
@@ -107,356 +165,207 @@ export function parseCliArgs(args: string[]): CliCommand {
 
 export function helpText(): string {
   return `Usage:
-  shepherd
-  shepherd gateway [start|stop|restart|status]
-  shepherd open <session-id>
-  shepherd send <session-id> <text>
-  shepherd watch <session-id>
-  shepherd rename <session-id> <title>
-  shepherd audit <session-id>
+  shepherd daemon [start|stop|restart|status]
+  shepherd observe --herdr-session <name> --workspace <workspace-id> [--json]
+  shepherd observe-current [--json]
+  shepherd snapshot <observed-workspace-id> [--json]
+  shepherd events <observed-workspace-id> [--after EVENT_ID] [--json]
+  shepherd notifications <observed-workspace-id> --subscriber <id> [--auto-resume] [--json]
+  shepherd ack --subscription <id> --event <event-id> [--json]
+  shepherd message-worker <worker-id> <text>
+  shepherd wait-worker <worker-id> --state <blocked|done|idle|unknown|working> [--timeout-ms N]
   shepherd help
-
-Commands:
-  shepherd  Create a local Shepherd session for the current directory and open Pi
-  gateway   Manage the local Shepherd Gateway
-  send      Send a user message into a Shepherd session
-  open      Open the matching Pi session in the Pi TUI
-  watch     Print session events as JSON Lines
-  rename    Rename a Shepherd session
-  audit     Print stored session events from the SQLite audit log
-  help      Show this help
 `;
 }
 
-export function formatAuditEvent(event: ReturnType<EventStore["listEvents"]>[number]): string {
-  const createdAt = event.createdAt.toISOString();
-  const actor = event.actorId ?? "system";
-  return `${event.id}\t${createdAt}\t${event.sessionId}\t${actor}\t${event.type}\t${JSON.stringify(
-    event.payload,
-  )}`;
-}
-
-export function gatewayStartHint(): string {
-  return "Shepherd Gateway is not reachable. Start it with:\n  shepherd gateway start";
-}
-
-export class GatewayConnectionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GatewayConnectionError";
-  }
-}
-
-type ShepherdClientLike = Pick<
-  ShepherdSessionClient,
-  "close" | "createSession" | "ensurePiSession"
->;
-
-type LocalPiStartupDeps = {
-  connect(socketPath: string): Promise<ShepherdClientLike>;
-  readGatewayId(stateDir: string): string;
-  runPi(input: {
-    gatewayId: string;
-    piSessionFile: string;
-    sessionId: string;
-    socketPath: string;
-  }): Promise<number>;
-};
-
-const defaultLocalPiStartupDeps: LocalPiStartupDeps = {
-  async connect(socketPath) {
-    try {
-      return await ShepherdSessionClient.connect(socketPath);
-    } catch (error) {
-      throw new GatewayConnectionError(error instanceof Error ? error.message : String(error));
-    }
-  },
-  readGatewayId: (stateDir) => readOrCreateGatewayId(stateDir),
-  runPi: (input) => runPiSession(input),
-};
-
-export async function runLocalPiStartup(
-  command: LocalPiStartupCommand,
-  deps: LocalPiStartupDeps = defaultLocalPiStartupDeps,
-): Promise<number> {
-  const stateDir = dirname(resolve(command.dbPath));
-  const client = await deps.connect(command.socketPath);
-  try {
-    const { session } = await client.createSession({
-      title: null,
-      workingContextPath: command.workingContextPath,
-    });
-    const { pi } = await client.ensurePiSession({ sessionId: session.id });
-    return await deps.runPi({
-      gatewayId: deps.readGatewayId(stateDir),
-      piSessionFile: pi.sessionFile,
-      sessionId: session.id,
-      socketPath: command.socketPath,
-    });
-  } finally {
-    await client.close();
-  }
-}
-
-export async function runOpenPiSession(
-  command: OpenPiSessionCommand,
-  deps: LocalPiStartupDeps = defaultLocalPiStartupDeps,
-): Promise<number> {
-  const stateDir = dirname(resolve(command.dbPath));
-  const client = await deps.connect(command.socketPath);
-  try {
-    const { pi } = await client.ensurePiSession({ sessionId: command.sessionId });
-    return await deps.runPi({
-      gatewayId: deps.readGatewayId(stateDir),
-      piSessionFile: pi.sessionFile,
-      sessionId: command.sessionId,
-      socketPath: command.socketPath,
-    });
-  } finally {
-    await client.close();
-  }
-}
-
-function printLocalStartupError(error: unknown): void {
-  if (error instanceof GatewayConnectionError) {
-    console.error(gatewayStartHint());
+export async function runCliCommand(command: CliCommand, deps: RunCliDeps): Promise<void> {
+  if (command.command === "help") {
+    deps.output(helpText());
     return;
   }
+  if (command.command === "daemon") {
+    throw new Error("daemon command is handled by main");
+  }
 
-  console.error(error instanceof Error ? error.message : String(error));
+  const client = await deps.connect(deps.socketPath);
+  try {
+    const result = await dispatchRpcCommand(command, client);
+    printResult(command, result, deps.output);
+  } finally {
+    client.close();
+  }
+}
+
+async function dispatchRpcCommand(
+  command: Exclude<CliCommand, { command: "daemon" | "help" }>,
+  client: RpcClientLike,
+) {
+  switch (command.command) {
+    case "observe":
+      return client.request("workspace.observe", {
+        ...(command.herdrSessionName ? { herdrSessionName: command.herdrSessionName } : {}),
+        ...(command.socketPath ? { socketPath: command.socketPath } : {}),
+        workspaceId: command.workspaceId,
+      });
+    case "observe-current":
+      return client.request("workspace.observe", {
+        socketPath: command.socketPath,
+        workspaceId: command.workspaceId,
+      });
+    case "snapshot":
+      return client.request("workspace.snapshot", {
+        observedWorkspaceId: command.observedWorkspaceId,
+      });
+    case "events":
+      return client.request("worker.events", {
+        ...(command.afterEventId !== undefined ? { afterEventId: command.afterEventId } : {}),
+        observedWorkspaceId: command.observedWorkspaceId,
+      });
+    case "notifications":
+      return client.request("notification.subscribe", {
+        autoResume: command.autoResume,
+        observedWorkspaceId: command.observedWorkspaceId,
+        subscriberId: command.subscriberId,
+        subscriberKind: "cli",
+      });
+    case "ack":
+      return client.request("notification.ack", {
+        eventId: command.eventId,
+        subscriptionId: command.subscriptionId,
+      });
+    case "message-worker":
+      return client.request("worker.message", { text: command.text, workerId: command.workerId });
+    case "wait-worker":
+      return client.request("worker.wait_state", {
+        state: command.state,
+        ...(command.timeoutMs !== undefined ? { timeoutMs: command.timeoutMs } : {}),
+        workerId: command.workerId,
+      });
+  }
+}
+
+function printResult(command: CliCommand, result: unknown, output: (line: string) => void): void {
+  if ("json" in command && command.json) {
+    output(JSON.stringify(result));
+    return;
+  }
+  output(formatHumanResult(command, result));
+}
+
+function formatHumanResult(command: CliCommand, result: unknown): string {
+  if (command.command === "observe" || command.command === "observe-current") {
+    const observedWorkspace = (
+      result as { observedWorkspace?: { id?: string; liveWorkspaceId?: string; status?: string } }
+    ).observedWorkspace;
+    return `Observed workspace ${observedWorkspace?.id ?? "unknown"} (${observedWorkspace?.status ?? "unknown"}) -> Herdr workspace ${observedWorkspace?.liveWorkspaceId ?? "unknown"}`;
+  }
+  return JSON.stringify(result);
 }
 
 async function main(): Promise<void> {
   const command = parseCliArgs(argv.slice(2));
-
-  if (command.command === "help") {
-    console.log(helpText());
+  const runtime = resolveRuntimeForCommand();
+  if (command.command === "daemon") {
+    await runDaemonCommand(command, runtime);
     return;
   }
+  await runCliCommand(command, {
+    connect: (socketPath) => Promise.resolve(new ObservabilityRpcClient({ socketPath })),
+    output: (line) => console.log(line),
+    socketPath: runtime.paths.socketPath,
+  });
+}
 
-  const runtime = resolveRuntimeForCommand(command);
-
-  if (command.command === "start-local") {
-    try {
-      exit(
-        await runLocalPiStartup({
-          ...command,
-          dbPath: runtime.paths.dbPath,
+async function runDaemonCommand(
+  command: Extract<CliCommand, { command: "daemon" }>,
+  runtime: ReturnType<typeof resolveRuntimeForCommand>,
+): Promise<void> {
+  if (command.action === "status") {
+    console.log(
+      JSON.stringify(
+        await getGatewayStatus({
+          pidPath: runtime.paths.pidPath,
           socketPath: runtime.paths.socketPath,
         }),
-      );
-    } catch (error) {
-      printLocalStartupError(error);
-      exit(1);
-    }
-  }
-
-  if (command.command === "gateway") {
-    if (command.action === "status") {
-      const status = await getGatewayStatus({
-        pidPath: runtime.paths.pidPath,
-        socketPath: runtime.paths.socketPath,
-      });
-      console.log(JSON.stringify(status));
-      return;
-    }
-
-    if (command.action === "stop") {
-      const result = await stopGatewayProcess({
-        pidPath: runtime.paths.pidPath,
-        socketPath: runtime.paths.socketPath,
-        timeoutMs: 10_000,
-      });
-      console.log(JSON.stringify(result));
-      return;
-    }
-
-    if (command.action === "restart") {
-      await stopGatewayProcess({
-        pidPath: runtime.paths.pidPath,
-        socketPath: runtime.paths.socketPath,
-        timeoutMs: 10_000,
-      });
-    }
-
-    const result = await startGatewayProcess({
-      entrypointPath: resolve(dirname(fileURLToPath(import.meta.url)), "shepherd-gateway.js"),
-      env: runtime.environment,
-      logPath: runtime.paths.logPath,
-      nodePath: process.execPath,
-      pidPath: runtime.paths.pidPath,
-      runtimeRecord: {
-        dbPath: runtime.paths.dbPath,
-        homeDir: runtime.homeDir,
-        logPath: runtime.paths.logPath,
-        pidPath: runtime.paths.pidPath,
-        socketPath: runtime.paths.socketPath,
-      },
-      runtimeRecordPath: runtime.paths.runtimeRecordPath,
-      socketPath: runtime.paths.socketPath,
-    });
-    console.log(
-      JSON.stringify({
-        ...result,
-        logPath: runtime.paths.logPath,
-        pidPath: runtime.paths.pidPath,
-        socketPath: runtime.paths.socketPath,
-      }),
+      ),
     );
     return;
   }
-
-  if (command.command === "send") {
-    const client = await ShepherdSessionClient.connect(runtime.paths.socketPath);
-    try {
-      const result = await client.sendUserMessage({
-        actorId: "tui:user",
-        presentation: {
-          displayName: "TUI User",
-          sourcePlatform: "tui",
-        },
-        sessionId: command.sessionId,
-        text: command.text,
-      });
-      console.log(JSON.stringify(result.event));
-    } finally {
-      await client.close();
-    }
-    return;
-  }
-
-  if (command.command === "open") {
-    try {
-      exit(
-        await runOpenPiSession({
-          ...command,
-          dbPath: runtime.paths.dbPath,
+  if (command.action === "stop") {
+    console.log(
+      JSON.stringify(
+        await stopGatewayProcess({
+          pidPath: runtime.paths.pidPath,
           socketPath: runtime.paths.socketPath,
+          timeoutMs: 10_000,
         }),
-      );
-    } catch (error) {
-      printLocalStartupError(error);
-      exit(1);
-    }
+      ),
+    );
+    return;
   }
-
-  if (command.command === "watch") {
-    const client = await ShepherdSessionClient.connect(runtime.paths.socketPath);
-    await client.subscribe({
-      afterEventId: 0,
-      onEvent(event) {
-        console.log(JSON.stringify(event));
-      },
-      sessionId: command.sessionId,
+  if (command.action === "restart") {
+    await stopGatewayProcess({
+      pidPath: runtime.paths.pidPath,
+      socketPath: runtime.paths.socketPath,
+      timeoutMs: 10_000,
     });
-
-    const stop = async () => {
-      await client.close();
-      exit(0);
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-    return;
   }
+  const result = await startGatewayProcess({
+    entrypointPath: resolve(dirname(fileURLToPath(import.meta.url)), "shepherd-gateway.js"),
+    env: runtime.environment,
+    logPath: runtime.paths.logPath,
+    nodePath: process.execPath,
+    pidPath: runtime.paths.pidPath,
+    runtimeRecord: {
+      dbPath: runtime.paths.dbPath,
+      homeDir: runtime.homeDir,
+      logPath: runtime.paths.logPath,
+      pidPath: runtime.paths.pidPath,
+      socketPath: runtime.paths.socketPath,
+    },
+    runtimeRecordPath: runtime.paths.runtimeRecordPath,
+    socketPath: runtime.paths.socketPath,
+  });
+  console.log(JSON.stringify({ ...result, socketPath: runtime.paths.socketPath }));
+}
 
-  if (command.command === "rename") {
-    const client = await ShepherdSessionClient.connect(runtime.paths.socketPath);
-    try {
-      const result = await client.renameSession({
-        sessionId: command.sessionId,
-        title: command.title,
-      });
-      console.log(JSON.stringify(result.session));
-    } finally {
-      await client.close();
-    }
-    return;
-  }
-
-  if (command.command === "audit") {
-    const { sqlite } = openSqlite(runtime.paths.dbPath);
-    try {
-      applyMigrations(sqlite, { migrationsFolder: "drizzle" });
-      const events = new EventStore(sqlite);
-      for (const event of events.listEvents(command.sessionId, 0, 100)) {
-        console.log(formatAuditEvent(event));
+function resolveRuntimeForCommand() {
+  return runtimePathsFromRecordOrDefault({ environment: process.env })
+    ? {
+        environment: process.env,
+        homeDir: resolveRuntime({ environment: process.env }).homeDir,
+        paths: runtimePathsFromRecordOrDefault({ environment: process.env }),
       }
-    } finally {
-      sqlite.close();
-    }
-  }
+    : resolveRuntime({ environment: process.env });
 }
 
-export function piOpenArgs(piSessionFile: string): string[] {
-  return ["--session", piSessionFile];
+function takeFlag(args: string[], name: string): boolean {
+  const index = args.indexOf(name);
+  if (index < 0) return false;
+  args.splice(index, 1);
+  return true;
 }
 
-export function piOpenEnvironment(input: {
-  gatewayId?: string;
-  environment?: NodeJS.ProcessEnv;
-  sessionId: string;
-  socketPath: string;
-}): NodeJS.ProcessEnv {
-  return {
-    ...(input.environment ?? process.env),
-    SHEPHERD_GATEWAY_ID: input.gatewayId ?? "default",
-    SHEPHERD_SESSION_ID: input.sessionId,
-    SHEPHERD_GATEWAY_SOCKET_PATH: input.socketPath,
-  };
-}
-
-async function runPiSession(input: {
-  gatewayId: string;
-  piSessionFile: string;
-  sessionId: string;
-  socketPath: string;
-}): Promise<number> {
-  const child = spawn("pi", piOpenArgs(input.piSessionFile), {
-    env: piOpenEnvironment({
-      gatewayId: input.gatewayId,
-      sessionId: input.sessionId,
-      socketPath: input.socketPath,
-    }),
-    stdio: "inherit",
-  });
-
-  return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => resolve(code ?? 0));
-  });
-}
-
-function resolveRuntimeForCommand(command: CliCommand) {
-  if (command.command === "gateway" && (command.action === "status" || command.action === "stop")) {
-    const runtime = resolveRuntime({ allowInvalidConfig: true, environment: env });
-    if (runtime.configErrors !== undefined) {
-      console.error(
-        "Warning: Invalid Shepherd config; using last runtime record or home defaults for gateway status/stop.",
-      );
-      return {
-        ...runtime,
-        paths: runtimePathsFromRecordOrDefault({ environment: runtime.environment }),
-      };
-    }
-    return runtime;
-  }
-
-  return resolveRuntime({ environment: env });
-}
-
-function isGatewayAction(value: string): value is GatewayAction {
-  return ["restart", "start", "status", "stop"].includes(value);
+function takeOption(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value) throw new Error(`${name} requires a value`);
+  args.splice(index, 2);
+  return value;
 }
 
 function rejectExtra(args: string[]): void {
-  if (args.length > 0) {
-    throw new Error(`Invalid argument: ${args[0]}`);
-  }
+  if (args.length > 0) throw new Error(`Invalid argument: ${args[0]}`);
 }
 
-if (fileURLToPath(import.meta.url) === resolve(argv[1] ?? "")) {
+function isDaemonAction(value: string): value is DaemonAction {
+  return value === "restart" || value === "start" || value === "status" || value === "stop";
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(error instanceof Error ? error.message : String(error));
     exit(1);
   });
 }

@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 14 through Task 16 plus final validation and risk review.
+- Done — Task 14 through Task 16 plus final validation and risk review.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- No remaining implementation steps. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -47,7 +47,7 @@ Task 14 through Task 16 plus final validation and risk review.
 - Consumes: replacement daemon API from prior tasks.
 - Produces: smaller codebase centered on worker observability.
 
-- [ ] **Step 1: Write failing deletion guard tests**
+- [x] **Step 1: Write failing deletion guard tests**
 
 Add tests that assert:
 
@@ -56,13 +56,13 @@ Add tests that assert:
 - old CLI commands `send`, `open`, `watch`, `audit` are invalid
 - public tool list does not contain `herdr_read`, `herdr_read_pane`, `herdr_open_pane`, `herdr_send_pane_text`, `session_read`
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm test test/unit/config-schema.test.ts test/unit/cli.test.ts`
 
 Expected: old config/CLI/tool paths still exist.
 
-- [ ] **Step 3: Remove obsolete files and exports**
+- [x] **Step 3: Remove obsolete files and exports**
 
 Remove code paths that are no longer part of the architecture. Keep only reusable low-level utilities:
 
@@ -72,7 +72,7 @@ Remove code paths that are no longer part of the architecture. Keep only reusabl
 - config runtime path loading
 - SQLite migration helpers
 
-- [ ] **Step 4: Update config schema**
+- [x] **Step 4: Update config schema**
 
 MVP config should include only:
 
@@ -89,13 +89,13 @@ observability:
 
 `observability.telemetry.max_excerpt_bytes` defaults to `4096`. Retention settings are not active in MVP.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `pnpm test test/unit/config-schema.test.ts test/unit/cli.test.ts test/integration/observability-rpc.test.ts`
 
 Expected: focused tests pass and no imports refer to deleted modules.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src test package.json
@@ -118,7 +118,7 @@ git commit -m "refactor: remove legacy gateway surfaces"
 - Consumes: final CLI and package names from implementation.
 - Produces: user-facing and agent-facing instructions aligned with new architecture.
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 README must state:
 
@@ -138,11 +138,11 @@ README must state:
   - `herdr plugin link ./packages/shepherd-herdr-plugin`
 - CLI examples for `observe`, `snapshot`, `events`, `notifications`, and `ack`.
 
-- [ ] **Step 2: Update AGENTS.md if needed**
+- [x] **Step 2: Update AGENTS.md if needed**
 
 If commands, important paths, or validation steps changed, update root `AGENTS.md` with concise bullets. Do not duplicate README examples.
 
-- [ ] **Step 3: Add Herdr plugin package checks**
+- [x] **Step 3: Add Herdr plugin package checks**
 
 Update root `package.json` scripts so `pnpm check` validates the Herdr plugin package:
 
@@ -155,13 +155,13 @@ Update root `package.json` scripts so `pnpm check` validates the Herdr plugin pa
 }
 ```
 
-- [ ] **Step 4: Run documentation and package checks**
+- [x] **Step 4: Run documentation and package checks**
 
 Run: `pnpm format:check && pnpm herdr-plugin:check`
 
 Expected: formatting check passes for files covered by Biome, and the Herdr plugin package typechecks and packs in dry-run mode. Markdown is reviewed manually for links and command accuracy.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md AGENTS.md package.json packages/shepherd-pi/package.json packages/shepherd-herdr-plugin/package.json
@@ -179,7 +179,7 @@ git commit -m "docs: describe worker observability rewrite"
 - Consumes: all prior tasks.
 - Produces: final confidence that the rewrite builds and tests pass.
 
-- [ ] **Step 1: Run full validation**
+- [x] **Step 1: Run full validation**
 
 Run:
 
@@ -193,7 +193,7 @@ Expected:
 - `pnpm check` passes typecheck, tests, Biome, format check, Drizzle check, Pi package check, Herdr plugin package check, and package dry-runs.
 - `pnpm build` emits `dist` without TypeScript or alias resolution errors.
 
-- [ ] **Step 2: Manual smoke test with Herdr and Pi**
+- [x] **Step 2: Manual smoke test with Herdr and Pi**
 
 In a Herdr pane with Pi and the Shepherd Pi extension installed:
 
@@ -211,7 +211,7 @@ Expected:
 - A worker completion emits `worker.completed` and appears as an unread notification.
 - Next Pi turn receives hidden Shepherd worker notification context.
 
-- [ ] **Step 3: Manual smoke test with Herdr plugin**
+- [x] **Step 3: Manual smoke test with Herdr plugin**
 
 ```bash
 herdr plugin link ./packages/shepherd-herdr-plugin
@@ -224,7 +224,7 @@ Expected:
 - observe action prints an observed workspace id.
 - dashboard pane renders worker rows and refreshes.
 
-- [ ] **Step 4: Commit any validation-only fixes**
+- [x] **Step 4: Commit any validation-only fixes**
 
 If validation required fixes, commit them as:
 

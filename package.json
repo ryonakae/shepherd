@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "shepherd": "./dist/src/cli/shepherd.js",
-    "shepherd-tools": "./dist/src/cli/shepherd-tools.js"
+    "shepherd": "./dist/src/cli/shepherd.js"
   },
   "packageManager": "pnpm@11.9.0",
   "engines": {
@@ -14,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
-    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm pi-package:check",
+    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm pi-package:check && pnpm herdr-plugin:check",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -23,6 +22,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
+    "herdr-plugin:check": "pnpm --dir packages/shepherd-herdr-plugin typecheck && (cd packages/shepherd-herdr-plugin && npm pack --dry-run --json > /dev/null)",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",

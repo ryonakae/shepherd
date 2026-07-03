@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 3 and Task 4.
+- Done — Task 3 and Task 4.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- No remaining implementation steps. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -37,7 +37,7 @@ Task 3 and Task 4.
 - Consumes: Herdr socket API.
 - Produces: `sessionSnapshot()`, corrected `subscribeEvents()`, corrected pane methods for downstream resolver and pipeline.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Update `test/integration/herdr-socket-client.test.ts` to assert raw requests use current Herdr method names:
 
@@ -50,13 +50,13 @@ events.subscribe with params { subscriptions: [...] }
 
 Add a test that `sessionSnapshot()` returns the raw `snapshot` result.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/herdr-socket-client.test.ts test/integration/managed-herdr-socket-client.test.ts`
 
 Expected: existing client sends stale method names such as `pane.run`, `agent.wait`, or `wait.output`, or lacks `sessionSnapshot()`.
 
-- [ ] **Step 3: Implement current Herdr methods**
+- [x] **Step 3: Implement current Herdr methods**
 
 Update client methods:
 
@@ -111,7 +111,7 @@ await this.request("events.subscribe", {
 
 `WorkerStatePipeline.refreshWorkspace()` must call `agent.list`, collect pane ids for the observed workspace, and restart the subscription when the pane id set changes.
 
-- [ ] **Step 4: Add snapshot types**
+- [x] **Step 4: Add snapshot types**
 
 Create `src/herdr/session-snapshot.ts` with narrow runtime guards:
 
@@ -139,13 +139,13 @@ export function normalizeHerdrSessionSnapshot(value: unknown): HerdrSessionSnaps
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pnpm test test/integration/herdr-socket-client.test.ts test/integration/managed-herdr-socket-client.test.ts`
 
 Expected: tests pass and captured raw method names match current Herdr API.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/herdr/socket-client.ts src/herdr/managed-socket-client.ts src/herdr/session-snapshot.ts test/integration/herdr-socket-client.test.ts test/integration/managed-herdr-socket-client.test.ts
@@ -164,7 +164,7 @@ git commit -m "fix(herdr): align socket client with current API"
 - Consumes: `ObservedWorkspaceStore`, `WorkerStore`, Herdr event envelopes, normalized session snapshots.
 - Produces: resolver functions used by `WorkerStatePipeline` and daemon startup.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create tests for:
 
@@ -175,13 +175,13 @@ Create tests for:
 5. Startup re-resolution returns `ambiguous` when multiple labels match.
 6. Startup re-resolution returns `missing` when no workspace matches.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/herdr-workspace-resolver.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 3: Implement resolver**
+- [x] **Step 3: Implement resolver**
 
 Create functions:
 
@@ -207,13 +207,13 @@ Resolution order must be:
 4. exact `metadata.label` match only when a single workspace has that label
 5. ambiguous/missing
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test test/unit/herdr-workspace-resolver.test.ts`
 
 Expected: all resolver tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/herdr/workspace-resolver.ts test/unit/herdr-workspace-resolver.test.ts

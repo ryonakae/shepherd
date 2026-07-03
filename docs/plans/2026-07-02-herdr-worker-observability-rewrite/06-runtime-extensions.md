@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 12 and Task 13.
+- Done — Task 12 and Task 13.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- No remaining implementation steps. Final validation passed with `pnpm check` and `pnpm build`.
 
 ## Objective
 
@@ -35,7 +35,7 @@ Task 12 and Task 13.
 - Consumes: daemon RPC methods `runtime.telemetry`, `notification.subscribe`, `notification.ack`, `workspace.observe`, `workspace.snapshot`.
 - Produces: Pi runtime telemetry and orchestrator notification UX.
 
-- [ ] **Step 1: Write failing extension tests**
+- [x] **Step 1: Write failing extension tests**
 
 Test with fake Pi API:
 
@@ -47,13 +47,13 @@ Test with fake Pi API:
 6. After injection, extension calls `notification.ack` only after successful hidden-context handoff.
 7. With `autoResume: true`, extension calls `pi.sendUserMessage` with extension-origin content when idle.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: old session/Gateway extension behavior fails.
 
-- [ ] **Step 3: Rewrite extension state**
+- [x] **Step 3: Rewrite extension state**
 
 Use state fields:
 
@@ -74,7 +74,7 @@ type ShepherdState = {
 
 Remove old session attach, Pi turn queue, user message mirroring, and old tool registry logic.
 
-- [ ] **Step 4: Implement telemetry hooks**
+- [x] **Step 4: Implement telemetry hooks**
 
 Use Pi extension events:
 
@@ -85,7 +85,7 @@ Use Pi extension events:
 
 Always send bounded telemetry through `runtime.telemetry`.
 
-- [ ] **Step 5: Implement notification behavior**
+- [x] **Step 5: Implement notification behavior**
 
 Default mode:
 
@@ -105,13 +105,13 @@ Optional autoResume mode:
 - when idle and event type is `worker.completed`, `worker.blocked`, or `worker.needs_input`, call `pi.sendUserMessage` with concise extension-origin message
 - do not autoResume for `worker.summary.updated` or `worker.status.changed`
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: extension tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts packages/shepherd-pi/package.json test/unit/shepherd-pi-extension.test.ts
@@ -133,7 +133,7 @@ git commit -m "feat(pi): bridge worker telemetry and notifications"
 - Consumes: CLI JSON commands and Herdr plugin env vars.
 - Produces: installable Herdr plugin package.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Assert:
 
@@ -143,13 +143,13 @@ Assert:
 4. plugin command runs inside Herdr context and calls `shepherd observe-current --json`, which forwards `HERDR_SOCKET_PATH` and `HERDR_WORKSPACE_ID` to the daemon.
 5. dashboard command calls `shepherd snapshot <observedWorkspaceId> --json` and renders worker rows.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/herdr-plugin-package.test.ts`
 
 Expected: package missing.
 
-- [ ] **Step 3: Create manifest**
+- [x] **Step 3: Create manifest**
 
 `packages/shepherd-herdr-plugin/herdr-plugin.toml`:
 
@@ -174,7 +174,7 @@ placement = "split"
 command = ["node", "dist/index.js", "dashboard"]
 ```
 
-- [ ] **Step 4: Implement plugin command**
+- [x] **Step 4: Implement plugin command**
 
 `observe-workspace` behavior:
 
@@ -190,13 +190,13 @@ command = ["node", "dist/index.js", "dashboard"]
 - render compact rows: `status agent summary recommendedAction`
 - refresh every 5 seconds until process exits
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `pnpm test test/unit/herdr-plugin-package.test.ts`
 
 Expected: plugin package tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/shepherd-herdr-plugin test/unit/herdr-plugin-package.test.ts
