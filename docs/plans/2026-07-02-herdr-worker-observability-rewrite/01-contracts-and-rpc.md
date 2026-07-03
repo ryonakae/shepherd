@@ -4,15 +4,15 @@ Parent: [2026-07-02-herdr-worker-observability-rewrite.md](../2026-07-02-herdr-w
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — Task 1.
+- Done — Task 1 implemented `src/observability/contracts.ts`, `src/observability/schemas.ts`, and `test/unit/observability-contracts.test.ts`; focused test passes.
 
 ## Next steps
 
-- Execute the first unchecked step in this child plan after all earlier child plans are complete.
+- Continue with [02-persistence.md](02-persistence.md).
 
 ## Objective
 
@@ -239,7 +239,7 @@ The command `shepherd observe-current` requires `HERDR_ENV=1`, `HERDR_SOCKET_PAT
 - Consumes: no new code.
 - Produces: shared types and TypeBox schemas used by DB stores, pipeline, RPC server, CLI, and Pi extension.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `test/unit/observability-contracts.test.ts` with tests for:
 
@@ -301,13 +301,13 @@ describe("observability contracts", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: TypeScript/Vitest fails because `@/observability/contracts.js` and `@/observability/schemas.js` do not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `src/observability/contracts.ts` with the Core Interfaces types above and add:
 
@@ -512,7 +512,7 @@ export const notificationAckInputSchema = Type.Object(
 );
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 

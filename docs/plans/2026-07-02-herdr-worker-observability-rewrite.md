@@ -40,7 +40,7 @@ Not started.
 
 | Order | Child plan | Status | Scope |
 |---:|---|---|---|
-| 1 | [Contracts and RPC Schemas](2026-07-02-herdr-worker-observability-rewrite/01-contracts-and-rpc.md) | Not started | Shared types, public RPC methods, TypeBox schemas |
+| 1 | [Contracts and RPC Schemas](2026-07-02-herdr-worker-observability-rewrite/01-contracts-and-rpc.md) | Done | Shared types, public RPC methods, TypeBox schemas |
 | 2 | [Persistence Baseline](2026-07-02-herdr-worker-observability-rewrite/02-persistence.md) | Not started | DB schema, stores, migrations |
 | 3 | [Herdr Observation and Resolution](2026-07-02-herdr-worker-observability-rewrite/03-herdr-observation.md) | Not started | Herdr socket API alignment, `session.snapshot`, workspace/worker re-resolution |
 | 4 | [Runtime Telemetry Pipeline](2026-07-02-herdr-worker-observability-rewrite/04-runtime-telemetry-pipeline.md) | Not started | Runtime adapters, Pi transcript/telemetry, deterministic rules, `WorkerStatePipeline` |
