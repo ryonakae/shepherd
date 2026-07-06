@@ -9,6 +9,7 @@ type Module = {
     autoResume?: boolean;
     clientFactory: () => FakeClient;
   }) => (pi: FakePi) => void;
+  defaultSocketPath: () => string;
   formatHiddenNotifications: (
     events: Array<{ id: number; type: string; payload: unknown }>,
   ) => string;
@@ -23,6 +24,18 @@ type FakeClient = {
 type FakePi = ReturnType<typeof createFakePi>;
 
 describe("shepherd-pi observability bridge", () => {
+  test("defaults to the Shepherd daemon socket", async () => {
+    const { defaultSocketPath } = (await import(extensionModuleUrl)) as Module;
+    const previousHome = process.env.SHEPHERD_HOME;
+    process.env.SHEPHERD_HOME = "/tmp/shepherd-home";
+
+    try {
+      expect(defaultSocketPath()).toBe("/tmp/shepherd-home/shepherd.sock");
+    } finally {
+      process.env.SHEPHERD_HOME = previousHome;
+    }
+  });
+
   test("observes Herdr workspace on session_start and sends telemetry", async () => {
     const client = createFakeClient();
     const pi = createFakePi();

@@ -1,20 +1,20 @@
 ---
 name: shepherd
-description: Guidance for using Shepherd as a Herdr orchestration control-plane from an attached Pi session. Use explicitly when you need Shepherd/Herdr role boundaries, orchestration principles, or package-level bridge behavior.
+description: Guidance for Shepherd worker observability notifications and telemetry in an attached Pi session. Use when you need Shepherd/Herdr/Pi role boundaries or package-level bridge behavior.
 disable-model-invocation: true
 ---
 
-# Shepherd Bridge
+# Shepherd Worker Observability Bridge
 
-Shepherd is a Herdr orchestration control-plane. Pi owns the model conversation and provider runtime; Herdr owns terminal execution surfaces; Shepherd Gateway owns session, delivery, queue, policy, and audit.
+Shepherd watches Herdr-managed coding agents and provides worker snapshots, enriched `worker.*` events, and orchestrator notifications. Pi owns the model conversation and provider runtime. Herdr owns terminal workspaces, panes, and low-level agent control.
 
-When attached to Shepherd:
+When the `shepherd-pi` extension is active:
 
-- Choose the execution surface that fits the work. Use Pi directly for quick reasoning, small edits, and short checks. Use Shepherd/Herdr when a visible terminal surface, parallel worker agents, long-running commands, resumable execution, or inspection by the user or another Pi owner would help.
-- Prefer `shepherd_*` tools for Shepherd session inspection and Herdr orchestration.
-- Use Shepherd logical tools instead of raw Herdr mutation unless the user explicitly asks for direct Herdr work.
-- Treat Shepherd session ids, Pi turn ids, socket paths, and owner ids as internal metadata. Do not show them unless the user asks.
-- Inspect current Shepherd/Herdr state before creating new workspaces, panes, or agents when the user asks for coordination.
-- Non-Shepherd Herdr resources are user-owned. Attach to them only when the user explicitly asks.
+- It observes the current Herdr workspace when Pi runs inside Herdr.
+- It sends bounded, redacted runtime telemetry to Shepherd, including tool result excerpts, final message excerpts, `sessionRef`, and `artifactRefs`.
+- It receives Shepherd worker notifications and surfaces them through Pi status, widgets, session entries, and next-turn hidden context.
+- It may auto-resume only when configured by the extension and Pi is idle.
+- It does not send hidden thinking, full tool results, or full transcripts to Shepherd.
+- It does not replace Herdr commands for workspace, tab, pane, or agent control.
 
-The `shepherd-pi` extension injects current attached-session context and registers dynamic `shepherd_*` tools. This skill is a reference for role boundaries; normal attached sessions should rely on the extension and tool descriptions.
+Use Shepherd data as observability context. Use Herdr directly for low-level terminal or workspace operations when the user asks for those operations.

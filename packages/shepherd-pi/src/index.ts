@@ -51,8 +51,8 @@ function defaultShepherdHome() {
   return process.env.SHEPHERD_HOME || `${process.env.HOME || ""}/${DEFAULT_HOME_NAME}`;
 }
 
-function defaultSocketPath() {
-  return `${defaultShepherdHome().replace(/\/$/, "")}/gateway.sock`;
+export function defaultSocketPath() {
+  return `${defaultShepherdHome().replace(/\/$/, "")}/shepherd.sock`;
 }
 
 export function createShepherdPiExtension(options: ExtensionOptions = {}) {
