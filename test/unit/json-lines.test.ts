@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 
 describe("JSON Lines framing", () => {
   test("encodes one JSON value per newline-delimited frame", () => {
-    expect(encodeJsonLine({ id: 1, method: "session.subscribe" })).toBe(
-      '{"id":1,"method":"session.subscribe"}\n',
+    expect(encodeJsonLine({ id: 1, method: "worker.events" })).toBe(
+      '{"id":1,"method":"worker.events"}\n',
     );
   });
 

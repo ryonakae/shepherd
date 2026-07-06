@@ -5,7 +5,6 @@ import type { ObservedWorkspaceStore } from "@/db/observed-workspaces.js";
 import type { WorkerEventStore } from "@/db/worker-events.js";
 import type { WorkerSnapshotStore } from "@/db/worker-snapshots.js";
 import type { WorkerStore } from "@/db/workers.js";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import type { NotificationService } from "@/observability/notification-service.js";
 import {
   notificationAckInputSchema,
@@ -19,6 +18,7 @@ import {
   workspaceSnapshotInputSchema,
 } from "@/observability/schemas.js";
 import type { WorkerStatePipeline } from "@/observability/worker-state-pipeline.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 
 type RpcRequest = { id?: number | string; method?: string; params?: unknown };
 

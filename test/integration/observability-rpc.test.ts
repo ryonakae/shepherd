@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { ObservabilityRpcClient } from "@/daemon/client.js";
 import { ObservabilityRpcServer } from "@/daemon/observability-server.js";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { NotificationService } from "@/observability/notification-service.js";
 import { WorkerStatePipeline } from "@/observability/worker-state-pipeline.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 import {
   cleanupTempDirs,
   openObservabilityDbHarness,

@@ -3,9 +3,9 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { encodeJsonLine, JsonLineDecoder } from "@/gateway/json-lines.js";
 import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
 import type { HerdrSessionLifecycle } from "@/herdr/session-lifecycle.js";
+import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 
 const tempDirs: string[] = [];
 const servers: Server[] = [];
