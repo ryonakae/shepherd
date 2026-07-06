@@ -10,15 +10,15 @@
 
 ## Status
 
-Not started.
+Done.
 
 ## Progress
 
-- Not started — plan created for implementation.
+- Done — legacy remnants removed from current implementation, docs, tests, package metadata, and lockfile.
 
 ## Next steps
 
-- Start Task 1 and keep each cleanup slice independently validated and committed.
+- No remaining implementation steps. Historical references remain only under `docs/plans/archived/`.
 
 ## Global Constraints
 
