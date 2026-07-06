@@ -2,7 +2,7 @@
 
 Shepherd is a Herdr worker observability and orchestration layer. It watches Herdr-managed coding agents, stores worker-level state, and pushes useful signals back to orchestrator runtimes such as Pi.
 
-Shepherd is not an LLM gateway and is not a thin Herdr wrapper. Herdr owns low-level workspace, tab, pane, and agent control. Shepherd adds value above that layer:
+Shepherd is not an LLM runtime and is not a thin Herdr wrapper. Herdr owns low-level workspace, tab, pane, and agent control. Shepherd adds value above that layer:
 
 - structured worker snapshots
 - enriched `worker.*` events

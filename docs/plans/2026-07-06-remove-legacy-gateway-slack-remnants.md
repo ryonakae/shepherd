@@ -688,7 +688,7 @@ Then run a docs-scoped check excluding archived plans:
 
 ```bash
 rg 'gateway|Gateway|slack|Slack|SLACK|shepherd-tools|session_bindings|pi_turns|worker_agent_bindings|logical tools|logical-tool' \
-  docs/plans -g '!archived/**'
+  docs/plans -g '!**/archived/**'
 ```
 
 Expected: matches only in this active cleanup plan before Task 8. If other current plan files match, archive completed plans or rewrite current docs according to their status.
@@ -768,7 +768,7 @@ Run:
 
 ```bash
 rg 'gateway|Gateway|slack|Slack|SLACK|shepherd-tools|session_bindings|pi_turns|worker_agent_bindings|logical tools|logical-tool' \
-  docs/plans -g '!archived/**'
+  docs/plans -g '!**/archived/**'
 ```
 
 Expected: matches only in this cleanup plan before it is archived in Task 8.
@@ -829,7 +829,7 @@ Run:
 
 ```bash
 rg 'gateway|Gateway|slack|Slack|SLACK|shepherd-tools|session_bindings|pi_turns|worker_agent_bindings|logical tools|logical-tool' \
-  docs/plans -g '!archived/**'
+  docs/plans -g '!**/archived/**'
 ```
 
 Expected: no matches.
