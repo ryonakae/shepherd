@@ -24,12 +24,11 @@ describe("Shepherd config schema", () => {
     });
   });
 
-  test("rejects legacy Slack, gateway queue, agents, and provider config surfaces", () => {
+  test("rejects unknown top-level config surfaces", () => {
     for (const config of [
-      { platforms: { slack: {} } },
-      { gateway: { pi: { idle_timeout_ms: 1 } } },
-      { agents: { implementer: { command: "codex" } }, default_agent: "implementer" },
-      { providers: { openai: { api_key_env: "OPENAI_API_KEY" } } },
+      { workers: { enabled: true } },
+      { providers: { example: {} } },
+      { orchestration: { queue: {} } },
     ]) {
       const result = parseShepherdConfig(config);
       expect(result.ok).toBe(false);

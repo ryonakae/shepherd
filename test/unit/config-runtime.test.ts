@@ -91,10 +91,10 @@ describe("Shepherd runtime resolver", () => {
     const envPath = join(homeDir, "dotenv-test");
     writeFileSync(
       envPath,
-      `SLACK_BOT_TOKEN=file-token
+      `EXAMPLE_SERVICE_TOKEN=file-token
 OPENAI_API_KEY="file-key"
 SHEPHERD_HOME=/tmp/ignored
-SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
+SHEPHERD_INTERNAL_SOCKET_PATH=/tmp/ignored.sock
 `,
     );
 
@@ -107,16 +107,16 @@ SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
       envPath,
     });
 
-    expect(environment.SLACK_BOT_TOKEN).toBe("file-token");
+    expect(environment.EXAMPLE_SERVICE_TOKEN).toBe("file-token");
     expect(environment.OPENAI_API_KEY).toBe("file-key");
     expect(environment.EXISTING).toBe("kept");
     expect(environment.SHEPHERD_HOME).toBe(homeDir);
-    expect(environment.SHEPHERD_GATEWAY_SOCKET_PATH).toBeUndefined();
+    expect(environment.SHEPHERD_INTERNAL_SOCKET_PATH).toBeUndefined();
   });
 
   test("throws on invalid config unless invalid config is allowed", () => {
     const homeDir = tempHome();
-    writeFileSync(join(homeDir, "config.yaml"), "gateway: [");
+    writeFileSync(join(homeDir, "config.yaml"), "runtime: [");
 
     expect(() => resolveRuntime({ environment: { SHEPHERD_HOME: homeDir } })).toThrow(
       "Invalid Shepherd config",
@@ -132,7 +132,7 @@ SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
 
   test("falls back to runtime record paths for management commands", () => {
     const homeDir = tempHome();
-    writeFileSync(join(homeDir, "config.yaml"), "gateway: [");
+    writeFileSync(join(homeDir, "config.yaml"), "runtime: [");
     writeFileSync(
       join(homeDir, "runtime.json"),
       JSON.stringify({
@@ -162,7 +162,7 @@ SHEPHERD_GATEWAY_SOCKET_PATH=/tmp/ignored.sock
 
   test("falls back to home defaults when runtime record is missing", () => {
     const homeDir = tempHome();
-    writeFileSync(join(homeDir, "config.yaml"), "gateway: [");
+    writeFileSync(join(homeDir, "config.yaml"), "runtime: [");
 
     const runtime = resolveRuntime({
       allowInvalidConfig: true,

@@ -73,8 +73,8 @@ describe("NotificationService", () => {
     const subscription = service.subscribe({
       autoResume: false,
       observedWorkspaceId: workspace.id,
-      subscriberId: "tui",
-      subscriberKind: "tui",
+      subscriberId: "cli",
+      subscriberKind: "cli",
     });
     workerEvents.append({
       observedWorkspaceId: workspace.id,

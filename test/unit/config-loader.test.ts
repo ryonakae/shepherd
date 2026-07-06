@@ -36,8 +36,8 @@ observability:
     }
   });
 
-  test("rejects legacy provider and gateway config fields", () => {
-    const result = parseShepherdConfig({ gateway: { pi: {} }, providers: { openai: {} } });
+  test("rejects unknown config fields", () => {
+    const result = parseShepherdConfig({ providers: { example: {} }, workers: { enabled: true } });
 
     expect(result.ok).toBe(false);
     if (!result.ok)

@@ -30,8 +30,6 @@
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
-    "@slack/bolt": "^4.7.3",
-    "@slack/web-api": "^7.17.0",
     "ajv": "^8.20.0",
     "drizzle-orm": "^0.45.2",
     "yaml": "^2.9.0"
