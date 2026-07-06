@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { resolveRuntime, runtimePathsFromRecordOrDefault } from "@/config/runtime.js";
 import { ObservabilityRpcClient } from "@/daemon/client.js";
 import {
-  getGatewayStatus,
-  startGatewayProcess,
-  stopGatewayProcess,
-} from "@/gateway/process-manager.js";
+  getDaemonStatus,
+  startDaemonProcess,
+  stopDaemonProcess,
+} from "@/daemon/process-manager.js";
 
 type DaemonAction = "restart" | "start" | "status" | "stop";
 
@@ -283,7 +283,7 @@ async function runDaemonCommand(
   if (command.action === "status") {
     console.log(
       JSON.stringify(
-        await getGatewayStatus({
+        await getDaemonStatus({
           pidPath: runtime.paths.pidPath,
           socketPath: runtime.paths.socketPath,
         }),
@@ -294,7 +294,7 @@ async function runDaemonCommand(
   if (command.action === "stop") {
     console.log(
       JSON.stringify(
-        await stopGatewayProcess({
+        await stopDaemonProcess({
           pidPath: runtime.paths.pidPath,
           socketPath: runtime.paths.socketPath,
           timeoutMs: 10_000,
@@ -304,14 +304,14 @@ async function runDaemonCommand(
     return;
   }
   if (command.action === "restart") {
-    await stopGatewayProcess({
+    await stopDaemonProcess({
       pidPath: runtime.paths.pidPath,
       socketPath: runtime.paths.socketPath,
       timeoutMs: 10_000,
     });
   }
-  const result = await startGatewayProcess({
-    entrypointPath: resolve(dirname(fileURLToPath(import.meta.url)), "shepherd-gateway.js"),
+  const result = await startDaemonProcess({
+    entrypointPath: resolve(dirname(fileURLToPath(import.meta.url)), "shepherd-daemon.js"),
     env: runtime.environment,
     logPath: runtime.paths.logPath,
     nodePath: process.execPath,

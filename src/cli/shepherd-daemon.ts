@@ -2,13 +2,13 @@
 import { resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { fileURLToPath } from "node:url";
-import { runGatewayService } from "@/gateway/service.js";
+import { runObservabilityDaemonService } from "@/daemon/service.js";
 
 async function main(): Promise<void> {
   if (argv.length > 2) {
-    throw new Error("shepherd-gateway does not accept CLI arguments");
+    throw new Error("shepherd-daemon does not accept CLI arguments");
   }
-  await runGatewayService();
+  await runObservabilityDaemonService();
 }
 
 if (fileURLToPath(import.meta.url) === resolve(argv[1] ?? "")) {

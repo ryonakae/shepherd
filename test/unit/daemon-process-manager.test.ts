@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  type GatewayRuntimeRecord,
-  getGatewayStatus,
-  prepareGatewaySocketPath,
-  readGatewayRuntimeRecord,
-  startGatewayProcess,
-  stopGatewayProcess,
-  writeGatewayRuntimeRecord,
-} from "@/gateway/process-manager.js";
+  type DaemonRuntimeRecord,
+  getDaemonStatus,
+  prepareDaemonSocketPath,
+  readDaemonRuntimeRecord,
+  startDaemonProcess,
+  stopDaemonProcess,
+  writeDaemonRuntimeRecord,
+} from "@/daemon/process-manager.js";
 
 const tempDirs: string[] = [];
 
@@ -21,16 +21,16 @@ afterEach(() => {
 });
 
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "shepherd-gateway-process-"));
+  const dir = mkdtempSync(join(tmpdir(), "shepherd-daemon-process-"));
   tempDirs.push(dir);
   return dir;
 }
 
-describe("gateway process manager", () => {
+describe("daemon process manager", () => {
   test("reports stopped when the pid file does not exist", async () => {
     const dir = tempDir();
     await expect(
-      getGatewayStatus({ pidPath: join(dir, "missing.pid"), socketPath: "/tmp/shepherd.sock" }),
+      getDaemonStatus({ pidPath: join(dir, "missing.pid"), socketPath: "/tmp/shepherd.sock" }),
     ).resolves.toEqual({
       pidPath: join(dir, "missing.pid"),
       socketPath: "/tmp/shepherd.sock",
@@ -44,7 +44,7 @@ describe("gateway process manager", () => {
     writeFileSync(pidPath, "1234\n");
 
     await expect(
-      getGatewayStatus({
+      getDaemonStatus({
         deps: {
           connectSocket: async () => true,
           isProcessRunning: (pid) => pid === 1234,
@@ -61,46 +61,46 @@ describe("gateway process manager", () => {
     });
   });
 
-  test("writes and reads a gateway runtime record", () => {
+  test("writes and reads a daemon runtime record", () => {
     const dir = tempDir();
     const recordPath = join(dir, "runtime.json");
     const record = runtimeRecord(dir);
 
-    writeGatewayRuntimeRecord(recordPath, record);
+    writeDaemonRuntimeRecord(recordPath, record);
 
-    expect(readGatewayRuntimeRecord(recordPath)).toEqual(record);
+    expect(readDaemonRuntimeRecord(recordPath)).toEqual(record);
     expect(statSync(recordPath).mode & 0o777).toBe(0o600);
   });
 
   test("returns undefined for missing or invalid runtime records", () => {
     const dir = tempDir();
-    expect(readGatewayRuntimeRecord(join(dir, "missing.json"))).toBeUndefined();
+    expect(readDaemonRuntimeRecord(join(dir, "missing.json"))).toBeUndefined();
 
     const invalidPath = join(dir, "runtime.json");
     writeFileSync(invalidPath, "not-json");
-    expect(readGatewayRuntimeRecord(invalidPath)).toBeUndefined();
+    expect(readDaemonRuntimeRecord(invalidPath)).toBeUndefined();
   });
 
-  test("refuses to remove a reachable gateway socket", async () => {
+  test("refuses to remove a reachable daemon socket", async () => {
     const dir = tempDir();
-    const socketPath = join(dir, "gateway.sock");
+    const socketPath = join(dir, "shepherd.sock");
     writeFileSync(socketPath, "socket-placeholder");
 
     await expect(
-      prepareGatewaySocketPath({
+      prepareDaemonSocketPath({
         deps: { connectSocket: async () => true },
         socketPath,
       }),
-    ).rejects.toThrow("Shepherd Gateway socket is already reachable");
+    ).rejects.toThrow("Shepherd daemon socket is already reachable");
     expect(existsSync(socketPath)).toBe(true);
   });
 
-  test("removes an unreachable stale gateway socket", async () => {
+  test("removes an unreachable stale daemon socket", async () => {
     const dir = tempDir();
-    const socketPath = join(dir, "gateway.sock");
+    const socketPath = join(dir, "shepherd.sock");
     writeFileSync(socketPath, "socket-placeholder");
 
-    await prepareGatewaySocketPath({
+    await prepareDaemonSocketPath({
       deps: { connectSocket: async () => false },
       socketPath,
     });
@@ -108,19 +108,19 @@ describe("gateway process manager", () => {
     expect(existsSync(socketPath)).toBe(false);
   });
 
-  test("refuses to start when the gateway is already running", async () => {
+  test("refuses to start when the daemon is already running", async () => {
     const dir = tempDir();
     const pidPath = join(dir, "shepherd.pid");
     writeFileSync(pidPath, "1234\n");
 
     await expect(
-      startGatewayProcess({
+      startDaemonProcess({
         deps: {
           connectSocket: async () => true,
           isProcessRunning: (pid) => pid === 1234,
           spawnProcess: () => ({ pid: 5678, unref() {} }),
         },
-        entrypointPath: "/repo/dist/src/cli/shepherd-gateway.js",
+        entrypointPath: "/repo/dist/src/cli/shepherd-daemon.js",
         env: {},
         logPath: join(dir, "shepherd.log"),
         nodePath: "/usr/bin/node",
@@ -129,24 +129,24 @@ describe("gateway process manager", () => {
         runtimeRecordPath: join(dir, "runtime.json"),
         socketPath: "/tmp/shepherd.sock",
       }),
-    ).rejects.toThrow("Shepherd Gateway is already running with pid 1234");
+    ).rejects.toThrow("Shepherd daemon is already running with pid 1234");
   });
 
-  test("starts a detached gateway process and writes its pid and runtime record", async () => {
+  test("starts a detached daemon process and writes its pid and runtime record", async () => {
     const dir = tempDir();
     const pidPath = join(dir, "shepherd.pid");
     const logPath = join(dir, "shepherd.log");
     const runtimeRecordPath = join(dir, "runtime.json");
     const spawned: unknown[] = [];
 
-    const result = await startGatewayProcess({
+    const result = await startDaemonProcess({
       deps: {
         spawnProcess: (command, args, options) => {
           spawned.push({ args, command, options });
           return { pid: 5678, unref() {} };
         },
       },
-      entrypointPath: "/repo/dist/src/cli/shepherd-gateway.js",
+      entrypointPath: "/repo/dist/src/cli/shepherd-daemon.js",
       env: { PATH: "/bin" },
       logPath,
       nodePath: "/usr/bin/node",
@@ -158,7 +158,7 @@ describe("gateway process manager", () => {
 
     expect(result).toEqual({ pid: 5678 });
     expect(readFileSync(pidPath, "utf8")).toBe("5678\n");
-    expect(readGatewayRuntimeRecord(runtimeRecordPath)).toMatchObject({
+    expect(readDaemonRuntimeRecord(runtimeRecordPath)).toMatchObject({
       dbPath: join(dir, "state.db"),
       homeDir: dir,
       logPath,
@@ -169,12 +169,12 @@ describe("gateway process manager", () => {
     });
     expect(spawned).toMatchObject([
       {
-        args: ["/repo/dist/src/cli/shepherd-gateway.js"],
+        args: ["/repo/dist/src/cli/shepherd-daemon.js"],
         command: "/usr/bin/node",
         options: { detached: true, env: { PATH: "/bin" } },
       },
     ]);
-    expect(JSON.stringify(spawned)).not.toContain('gateway","run');
+    expect(JSON.stringify(spawned)).not.toContain("--daemon-run");
     expect(JSON.stringify(spawned)).not.toContain("--db");
     expect(JSON.stringify(spawned)).not.toContain("--socket");
     expect(JSON.stringify(spawned)).not.toContain("--config");
@@ -188,7 +188,7 @@ describe("gateway process manager", () => {
     const signals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
     let running = true;
 
-    const result = await stopGatewayProcess({
+    const result = await stopDaemonProcess({
       deps: {
         connectSocket: async () => true,
         isProcessRunning: (pid) => pid === 1234 && running,
@@ -209,7 +209,7 @@ describe("gateway process manager", () => {
   });
 });
 
-function runtimeRecord(dir: string): GatewayRuntimeRecord {
+function runtimeRecord(dir: string): DaemonRuntimeRecord {
   return {
     dbPath: join(dir, "state.db"),
     homeDir: dir,

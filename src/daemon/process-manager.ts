@@ -11,7 +11,7 @@ import {
 import { createConnection } from "node:net";
 import { dirname } from "node:path";
 
-export type GatewayRuntimeRecord = {
+export type DaemonRuntimeRecord = {
   dbPath: string;
   homeDir: string;
   logPath: string;
@@ -22,7 +22,7 @@ export type GatewayRuntimeRecord = {
   version: 1;
 };
 
-export type GatewayStatus =
+export type DaemonStatus =
   | { pidPath: string; socketPath: string; state: "stopped"; stalePid?: number }
   | {
       pid: number;
@@ -32,7 +32,7 @@ export type GatewayStatus =
       state: "running";
     };
 
-type GatewaySpawnProcess = (
+type DaemonSpawnProcess = (
   command: string,
   args: string[],
   options: {
@@ -42,21 +42,21 @@ type GatewaySpawnProcess = (
   },
 ) => { pid: number | undefined; unref(): void };
 
-export type GatewayProcessDependencies = {
+export type DaemonProcessDependencies = {
   connectSocket?: (socketPath: string) => Promise<boolean>;
   isProcessRunning?: (pid: number) => boolean;
   killProcess?: (pid: number, signal: NodeJS.Signals) => void;
-  spawnProcess?: GatewaySpawnProcess;
+  spawnProcess?: DaemonSpawnProcess;
   waitMs?: (ms: number) => Promise<void>;
 };
 
-export function readGatewayRuntimeRecord(path: string): GatewayRuntimeRecord | undefined {
+export function readDaemonRuntimeRecord(path: string): DaemonRuntimeRecord | undefined {
   if (!existsSync(path)) {
     return undefined;
   }
 
   try {
-    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<GatewayRuntimeRecord>;
+    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<DaemonRuntimeRecord>;
     if (
       value.version !== 1 ||
       typeof value.dbPath !== "string" ||
@@ -70,19 +70,19 @@ export function readGatewayRuntimeRecord(path: string): GatewayRuntimeRecord | u
       return undefined;
     }
 
-    return value as GatewayRuntimeRecord;
+    return value as DaemonRuntimeRecord;
   } catch {
     return undefined;
   }
 }
 
-export function writeGatewayRuntimeRecord(path: string, record: GatewayRuntimeRecord): void {
+export function writeDaemonRuntimeRecord(path: string, record: DaemonRuntimeRecord): void {
   mkdirSync(dirname(path), { mode: 0o700, recursive: true });
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
 }
 
-export async function prepareGatewaySocketPath(input: {
-  deps?: GatewayProcessDependencies;
+export async function prepareDaemonSocketPath(input: {
+  deps?: DaemonProcessDependencies;
   socketPath: string;
 }): Promise<void> {
   mkdirSync(dirname(input.socketPath), { mode: 0o700, recursive: true });
@@ -92,17 +92,17 @@ export async function prepareGatewaySocketPath(input: {
 
   const connectSocket = input.deps?.connectSocket ?? defaultConnectSocket;
   if (await connectSocket(input.socketPath)) {
-    throw new Error(`Shepherd Gateway socket is already reachable: ${input.socketPath}`);
+    throw new Error(`Shepherd daemon socket is already reachable: ${input.socketPath}`);
   }
 
   rmSync(input.socketPath, { force: true });
 }
 
-export async function getGatewayStatus(input: {
-  deps?: GatewayProcessDependencies;
+export async function getDaemonStatus(input: {
+  deps?: DaemonProcessDependencies;
   pidPath: string;
   socketPath: string;
-}): Promise<GatewayStatus> {
+}): Promise<DaemonStatus> {
   const isProcessRunning = input.deps?.isProcessRunning ?? defaultIsProcessRunning;
   const connectSocket = input.deps?.connectSocket ?? defaultConnectSocket;
 
@@ -129,24 +129,24 @@ export async function getGatewayStatus(input: {
   };
 }
 
-export async function startGatewayProcess(input: {
-  deps?: GatewayProcessDependencies;
+export async function startDaemonProcess(input: {
+  deps?: DaemonProcessDependencies;
   entrypointPath: string;
   env: NodeJS.ProcessEnv;
   logPath: string;
   nodePath: string;
   pidPath: string;
-  runtimeRecord: Omit<GatewayRuntimeRecord, "pid" | "startedAt" | "version">;
+  runtimeRecord: Omit<DaemonRuntimeRecord, "pid" | "startedAt" | "version">;
   runtimeRecordPath: string;
   socketPath: string;
 }): Promise<{ pid: number }> {
-  const status = await getGatewayStatus({
+  const status = await getDaemonStatus({
     ...(input.deps !== undefined ? { deps: input.deps } : {}),
     pidPath: input.pidPath,
     socketPath: input.socketPath,
   });
   if (status.state === "running") {
-    throw new Error(`Shepherd Gateway is already running with pid ${status.pid}`);
+    throw new Error(`Shepherd daemon is already running with pid ${status.pid}`);
   }
 
   mkdirSync(dirname(input.pidPath), { mode: 0o700, recursive: true });
@@ -158,7 +158,7 @@ export async function startGatewayProcess(input: {
   const logFd = openSync(input.logPath, "a", 0o600);
   let child: { pid: number | undefined; unref(): void };
   try {
-    child = (input.deps?.spawnProcess ?? spawnGatewayProcess)(
+    child = (input.deps?.spawnProcess ?? spawnDaemonProcess)(
       input.nodePath,
       [input.entrypointPath],
       {
@@ -172,12 +172,12 @@ export async function startGatewayProcess(input: {
   }
 
   if (!child.pid) {
-    throw new Error("Failed to start Shepherd Gateway: child pid was not assigned");
+    throw new Error("Failed to start Shepherd daemon: child pid was not assigned");
   }
 
   child.unref();
   writeFileSync(input.pidPath, `${child.pid}\n`, { mode: 0o600 });
-  writeGatewayRuntimeRecord(input.runtimeRecordPath, {
+  writeDaemonRuntimeRecord(input.runtimeRecordPath, {
     ...input.runtimeRecord,
     pid: child.pid,
     startedAt: new Date().toISOString(),
@@ -186,14 +186,14 @@ export async function startGatewayProcess(input: {
   return { pid: child.pid };
 }
 
-export async function stopGatewayProcess(input: {
-  deps?: GatewayProcessDependencies;
+export async function stopDaemonProcess(input: {
+  deps?: DaemonProcessDependencies;
   pidPath: string;
   socketPath: string;
   timeoutMs: number;
 }): Promise<{ alreadyStopped: boolean; pid?: number }> {
   const deps = input.deps ?? {};
-  const status = await getGatewayStatus({
+  const status = await getDaemonStatus({
     deps,
     pidPath: input.pidPath,
     socketPath: input.socketPath,
@@ -217,13 +217,13 @@ export async function stopGatewayProcess(input: {
     await waitMs(50);
   }
 
-  throw new Error(`Timed out waiting for Shepherd Gateway pid ${status.pid} to stop`);
+  throw new Error(`Timed out waiting for Shepherd daemon pid ${status.pid} to stop`);
 }
 
-function spawnGatewayProcess(
+function spawnDaemonProcess(
   command: string,
   args: string[],
-  options: Parameters<GatewaySpawnProcess>[2],
+  options: Parameters<DaemonSpawnProcess>[2],
 ): { pid: number | undefined; unref(): void } {
   const child = spawn(command, args, options);
   return { pid: child.pid, unref: () => child.unref() };

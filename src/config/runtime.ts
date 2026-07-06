@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { type ConfigLoadError, loadShepherdConfig } from "@/config/load.js";
 import type { ShepherdConfig } from "@/config/schema.js";
-import { readGatewayRuntimeRecord } from "@/gateway/process-manager.js";
+import { readDaemonRuntimeRecord } from "@/daemon/process-manager.js";
 
 export type RuntimePaths = {
   configPath: string;
@@ -93,7 +93,7 @@ export function runtimePathsFromRecordOrDefault(input: {
   recordPath?: string | undefined;
 }): RuntimePaths {
   const defaultPaths = resolveRuntimePaths({ environment: input.environment });
-  const record = readGatewayRuntimeRecord(input.recordPath ?? defaultPaths.runtimeRecordPath);
+  const record = readDaemonRuntimeRecord(input.recordPath ?? defaultPaths.runtimeRecordPath);
   if (!record) {
     return defaultPaths;
   }
