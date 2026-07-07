@@ -9,11 +9,8 @@
   "keywords": [
     "herdr",
     "pi-coding-agent",
-    "coding-agents",
-    "observability",
-    "typescript",
-    "sqlite",
-    "cli"
+    "herdr-plugin",
+    "pi-extension"
   ],
   "license": "MIT",
   "repository": {
