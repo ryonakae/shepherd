@@ -10,18 +10,29 @@ import {
   stopDaemonProcess,
 } from "@/daemon/process-manager.js";
 
+const CURRENT_HERDR_CONTEXT_ERROR =
+  "--current requires HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_WORKSPACE_ID. Run it inside a Herdr-managed pane or plugin command.";
+
 type DaemonAction = "restart" | "start" | "status" | "stop";
 
 export type CliCommand =
   | { action: DaemonAction; command: "daemon" }
   | {
+      command: "context";
+      json: boolean;
+      observedWorkspaceId?: string;
+      socketPath?: string;
+      subscriberId?: string;
+      workspaceId?: string;
+    }
+  | {
       command: "observe";
+      current: boolean;
       herdrSessionName?: string;
       json: boolean;
       socketPath?: string;
       workspaceId: string;
     }
-  | { command: "observe-current"; json: boolean; socketPath: string; workspaceId: string }
   | { command: "snapshot"; json: boolean; observedWorkspaceId: string }
   | { afterEventId?: number; command: "events"; json: boolean; observedWorkspaceId: string }
   | {
@@ -35,6 +46,26 @@ export type CliCommand =
   | { command: "message-worker"; text: string; workerId: string }
   | { command: "wait-worker"; state: string; timeoutMs?: number; workerId: string }
   | { command: "help" };
+
+type ContextResult = {
+  notifications: {
+    subscription: unknown | null;
+    events: unknown[];
+  };
+  observedWorkspace: {
+    id?: string;
+    liveWorkspaceId?: string | null;
+    status?: string;
+  };
+  workers: Array<{
+    agent?: string | null;
+    id?: string;
+    recommendedAction?: string | null;
+    status?: string;
+    summary?: string | null;
+    workerId?: string | null;
+  }>;
+};
 
 type RpcClientLike = Pick<ObservabilityRpcClient, "close" | "request">;
 
@@ -62,15 +93,34 @@ export function parseCliArgs(
 
   if (command === "observe") {
     const json = takeFlag(rest, "--json");
+    const current = takeFlag(rest, "--current");
     const herdrSessionName = takeOption(rest, "--herdr-session");
     const socketPath = takeOption(rest, "--socket");
     const workspaceId = takeOption(rest, "--workspace");
+    rejectExtra(rest);
+
+    if (current) {
+      if (herdrSessionName || socketPath || workspaceId) {
+        throw new Error(
+          "observe --current cannot be combined with --herdr-session, --socket, or --workspace",
+        );
+      }
+      const currentContext = currentHerdrContext(environment);
+      return {
+        command: "observe",
+        current: true,
+        json,
+        socketPath: currentContext.socketPath,
+        workspaceId: currentContext.workspaceId,
+      };
+    }
+
     if (!workspaceId || (!herdrSessionName && !socketPath)) {
       throw new Error("observe requires a Herdr selector and --workspace <workspace-id>");
     }
-    rejectExtra(rest);
     return {
       command: "observe",
+      current: false,
       ...(herdrSessionName ? { herdrSessionName } : {}),
       json,
       ...(socketPath ? { socketPath } : {}),
@@ -78,21 +128,20 @@ export function parseCliArgs(
     };
   }
 
-  if (command === "observe-current") {
+  if (command === "context") {
     const json = takeFlag(rest, "--json");
+    const observedWorkspaceId = takeOption(rest, "--observed-workspace");
+    const subscriberId = takeOption(rest, "--subscriber");
     rejectExtra(rest);
-    if (
-      environment.HERDR_ENV !== "1" ||
-      !environment.HERDR_SOCKET_PATH ||
-      !environment.HERDR_WORKSPACE_ID
-    ) {
-      throw new Error("observe-current requires a Herdr-managed pane");
-    }
+    const currentContext = observedWorkspaceId ? undefined : currentHerdrContext(environment);
     return {
-      command: "observe-current",
+      command: "context",
       json,
-      socketPath: environment.HERDR_SOCKET_PATH,
-      workspaceId: environment.HERDR_WORKSPACE_ID,
+      ...(observedWorkspaceId ? { observedWorkspaceId } : {}),
+      ...(currentContext
+        ? { socketPath: currentContext.socketPath, workspaceId: currentContext.workspaceId }
+        : {}),
+      ...(subscriberId ? { subscriberId } : {}),
     };
   }
 
@@ -166,8 +215,9 @@ export function parseCliArgs(
 export function helpText(): string {
   return `Usage:
   shepherd daemon [start|stop|restart|status]
+  shepherd context [--observed-workspace <id>] [--subscriber <id>] [--json]
   shepherd observe --herdr-session <name> --workspace <workspace-id> [--json]
-  shepherd observe-current [--json]
+  shepherd observe --current [--json]
   shepherd snapshot <observed-workspace-id> [--json]
   shepherd events <observed-workspace-id> [--after EVENT_ID] [--json]
   shepherd notifications <observed-workspace-id> --subscriber <id> [--auto-resume] [--json]
@@ -201,15 +251,12 @@ async function dispatchRpcCommand(
   client: RpcClientLike,
 ) {
   switch (command.command) {
+    case "context":
+      return buildContext(command, client);
     case "observe":
       return client.request("workspace.observe", {
         ...(command.herdrSessionName ? { herdrSessionName: command.herdrSessionName } : {}),
         ...(command.socketPath ? { socketPath: command.socketPath } : {}),
-        workspaceId: command.workspaceId,
-      });
-    case "observe-current":
-      return client.request("workspace.observe", {
-        socketPath: command.socketPath,
         workspaceId: command.workspaceId,
       });
     case "snapshot":
@@ -244,6 +291,53 @@ async function dispatchRpcCommand(
   }
 }
 
+async function buildContext(
+  command: Extract<CliCommand, { command: "context" }>,
+  client: RpcClientLike,
+): Promise<ContextResult> {
+  let observedWorkspace: ContextResult["observedWorkspace"];
+  if (command.observedWorkspaceId) {
+    observedWorkspace = { id: command.observedWorkspaceId };
+  } else {
+    if (!command.socketPath || !command.workspaceId) {
+      throw new Error(CURRENT_HERDR_CONTEXT_ERROR);
+    }
+    const observed = (await client.request("workspace.observe", {
+      socketPath: command.socketPath,
+      workspaceId: command.workspaceId,
+    })) as { observedWorkspace?: ContextResult["observedWorkspace"] };
+    observedWorkspace = observed.observedWorkspace ?? {};
+  }
+
+  if (!observedWorkspace.id) {
+    throw new Error("context requires an observed workspace id");
+  }
+
+  const snapshot = (await client.request("workspace.snapshot", {
+    observedWorkspaceId: observedWorkspace.id,
+  })) as { workers?: ContextResult["workers"] };
+
+  let notifications: ContextResult["notifications"] = { subscription: null, events: [] };
+  if (command.subscriberId) {
+    const subscribed = (await client.request("notification.subscribe", {
+      autoResume: false,
+      observedWorkspaceId: observedWorkspace.id,
+      subscriberId: command.subscriberId,
+      subscriberKind: "cli",
+    })) as ContextResult["notifications"];
+    notifications = {
+      subscription: subscribed.subscription ?? null,
+      events: subscribed.events ?? [],
+    };
+  }
+
+  return {
+    observedWorkspace,
+    workers: snapshot.workers ?? [],
+    notifications,
+  };
+}
+
 function printResult(command: CliCommand, result: unknown, output: (line: string) => void): void {
   if ("json" in command && command.json) {
     output(JSON.stringify(result));
@@ -253,13 +347,39 @@ function printResult(command: CliCommand, result: unknown, output: (line: string
 }
 
 function formatHumanResult(command: CliCommand, result: unknown): string {
-  if (command.command === "observe" || command.command === "observe-current") {
+  if (command.command === "context") {
+    return formatContextResult(result as ContextResult);
+  }
+  if (command.command === "observe") {
     const observedWorkspace = (
       result as { observedWorkspace?: { id?: string; liveWorkspaceId?: string; status?: string } }
     ).observedWorkspace;
     return `Observed workspace ${observedWorkspace?.id ?? "unknown"} (${observedWorkspace?.status ?? "unknown"}) -> Herdr workspace ${observedWorkspace?.liveWorkspaceId ?? "unknown"}`;
   }
   return JSON.stringify(result);
+}
+
+function formatContextResult(result: ContextResult): string {
+  const lines = [
+    `Observed workspace: ${result.observedWorkspace.id ?? "unknown"}`,
+    `Workers: ${result.workers.length}`,
+    `Notifications: ${result.notifications.events.length}`,
+  ];
+  if (result.workers.length === 0) return lines.join("\n");
+
+  lines.push("", ["status", "agent", "worker", "summary", "action"].join("\t"));
+  for (const worker of result.workers) {
+    lines.push(
+      [
+        worker.status ?? "unknown",
+        worker.agent ?? "unknown",
+        worker.id ?? worker.workerId ?? "workspace",
+        worker.summary ?? "",
+        worker.recommendedAction ?? "",
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
 }
 
 async function main(): Promise<void> {
@@ -339,6 +459,23 @@ function resolveRuntimeForCommand() {
     : resolveRuntime({ environment: process.env });
 }
 
+function currentHerdrContext(environment: NodeJS.ProcessEnv): {
+  socketPath: string;
+  workspaceId: string;
+} {
+  if (
+    environment.HERDR_ENV !== "1" ||
+    !environment.HERDR_SOCKET_PATH ||
+    !environment.HERDR_WORKSPACE_ID
+  ) {
+    throw new Error(CURRENT_HERDR_CONTEXT_ERROR);
+  }
+  return {
+    socketPath: environment.HERDR_SOCKET_PATH,
+    workspaceId: environment.HERDR_WORKSPACE_ID,
+  };
+}
+
 function takeFlag(args: string[], name: string): boolean {
   const index = args.indexOf(name);
   if (index < 0) return false;
@@ -363,9 +500,21 @@ function isDaemonAction(value: string): value is DaemonAction {
   return value === "restart" || value === "start" || value === "status" || value === "stop";
 }
 
+function formatCliError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message.includes("ENOENT") ||
+    message.includes("ECONNREFUSED") ||
+    message.includes("Observability RPC socket closed")
+  ) {
+    return `${message}\nRun \`shepherd daemon start\` before using Shepherd commands.`;
+  }
+  return message;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(formatCliError(error));
     exit(1);
   });
 }

@@ -19,6 +19,7 @@ type PluginModule = {
   renderDashboard: (input: {
     workers?: Array<{
       agent?: string | null;
+      id?: string;
       recommendedAction?: string | null;
       status?: string;
       summary?: string | null;
@@ -34,6 +35,9 @@ type PluginModule = {
   ) => Promise<number>;
 };
 
+const CURRENT_HERDR_CONTEXT_ERROR =
+  "--current requires HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_WORKSPACE_ID. Run it inside a Herdr-managed pane or plugin command.";
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true });
@@ -48,7 +52,9 @@ describe("shepherd Herdr plugin package", () => {
   test("declares manifest actions and panes", () => {
     const manifest = readFileSync("packages/shepherd-herdr-plugin/herdr-plugin.toml", "utf8");
     expect(manifest).toContain('id = "shepherd.observability"');
-    expect(manifest).toContain('id = "observe-workspace"');
+    expect(manifest).toContain('id = "context"');
+    expect(manifest).toContain('command = ["node", "index.mjs", "context"]');
+    expect(manifest).not.toContain('id = "observe-workspace"');
     expect(manifest).toContain('contexts = ["workspace"]');
     expect(manifest).toContain('id = "dashboard"');
   });
@@ -63,20 +69,20 @@ describe("shepherd Herdr plugin package", () => {
     expect(defaultSocketPath({ SHEPHERD_HOME: dir })).toBe("/tmp/custom.sock");
   });
 
-  test("observes Herdr context over Shepherd daemon RPC", async () => {
+  test("renders Herdr context over Shepherd daemon RPC", async () => {
     const { runPluginCommand } = await importPlugin();
     const client = createFakeClient();
     const output: string[] = [];
 
     await expect(
-      runPluginCommand(["observe-workspace"], {
+      runPluginCommand(["context"], {
         clientFactory: () => client,
         env: {},
         output: (line) => output.push(line),
       }),
     ).resolves.toBe(2);
     await expect(
-      runPluginCommand(["observe-workspace"], {
+      runPluginCommand(["context"], {
         clientFactory: () => client,
         env: { HERDR_ENV: "1", HERDR_SOCKET_PATH: "/tmp/herdr.sock", HERDR_WORKSPACE_ID: "w1" },
         output: (line) => output.push(line),
@@ -86,10 +92,58 @@ describe("shepherd Herdr plugin package", () => {
     expect(client.calls).toEqual([
       ["close"],
       ["workspace.observe", { socketPath: "/tmp/herdr.sock", workspaceId: "w1" }],
+      ["workspace.snapshot", { observedWorkspaceId: "ow_1" }],
       ["close"],
     ]);
-    expect(output).toContain("observe-workspace requires a Herdr-managed pane");
-    expect(output).toContain("Observed workspace ow_1");
+    expect(output).toContain(CURRENT_HERDR_CONTEXT_ERROR);
+    expect(output.join("\n")).toContain("Observed workspace: ow_1");
+    expect(output.join("\n")).toContain("done\tpi\twk_1\tcompleted\treview");
+  });
+
+  test("renders Herdr context with notification subscriber", async () => {
+    const { runPluginCommand } = await importPlugin();
+    const client = createFakeClient();
+    const output: string[] = [];
+
+    await expect(
+      runPluginCommand(["context", "--subscriber", "shepherd-agent"], {
+        clientFactory: () => client,
+        env: { HERDR_ENV: "1", HERDR_SOCKET_PATH: "/tmp/herdr.sock", HERDR_WORKSPACE_ID: "w1" },
+        output: (line) => output.push(line),
+      }),
+    ).resolves.toBe(0);
+
+    expect(client.calls).toEqual([
+      ["workspace.observe", { socketPath: "/tmp/herdr.sock", workspaceId: "w1" }],
+      ["workspace.snapshot", { observedWorkspaceId: "ow_1" }],
+      [
+        "notification.subscribe",
+        {
+          autoResume: false,
+          observedWorkspaceId: "ow_1",
+          subscriberId: "shepherd-agent",
+          subscriberKind: "cli",
+        },
+      ],
+      ["close"],
+    ]);
+    expect(output.join("\n")).toContain("Notifications: 1");
+  });
+
+  test("rejects invalid context args", async () => {
+    const { runPluginCommand } = await importPlugin();
+    const client = createFakeClient();
+    const output: string[] = [];
+
+    await expect(
+      runPluginCommand(["context", "--json"], {
+        clientFactory: () => client,
+        env: { HERDR_ENV: "1", HERDR_SOCKET_PATH: "/tmp/herdr.sock", HERDR_WORKSPACE_ID: "w1" },
+        output: (line) => output.push(line),
+      }),
+    ).resolves.toBe(2);
+
+    expect(output).toContain("context accepts only --subscriber <id>");
   });
 
   test("dashboard renders worker rows from Shepherd daemon RPC", async () => {
@@ -143,9 +197,18 @@ function createFakeClient(): FakeClient {
       if (method === "workspace.snapshot") {
         return {
           workers: [
-            { agent: "pi", recommendedAction: "review", status: "done", summary: "completed" },
+            {
+              agent: "pi",
+              id: "wk_1",
+              recommendedAction: "review",
+              status: "done",
+              summary: "completed",
+            },
           ],
         };
+      }
+      if (method === "notification.subscribe") {
+        return { events: [{ id: 7, type: "worker.completed" }], subscription: { id: "ns_1" } };
       }
       return {};
     },

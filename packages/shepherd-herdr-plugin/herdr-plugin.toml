@@ -6,10 +6,10 @@ description = "Observe Herdr workers through Shepherd snapshots and notification
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
-id = "observe-workspace"
-title = "Observe workspace with Shepherd"
+id = "context"
+title = "Show Shepherd context"
 contexts = ["workspace"]
-command = ["node", "index.mjs", "observe-workspace"]
+command = ["node", "index.mjs", "context"]
 
 [[panes]]
 id = "dashboard"

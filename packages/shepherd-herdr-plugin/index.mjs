@@ -6,6 +6,8 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 const DEFAULT_HOME_NAME = ".shepherd";
+const CURRENT_HERDR_CONTEXT_ERROR =
+  "--current requires HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_WORKSPACE_ID. Run it inside a Herdr-managed pane or plugin command.";
 
 /**
  * @typedef {object} DaemonClient
@@ -23,9 +25,18 @@ const DEFAULT_HOME_NAME = ".shepherd";
 /**
  * @typedef {object} WorkerRow
  * @property {string | null} [agent]
+ * @property {string} [id]
  * @property {string | null} [recommendedAction]
  * @property {string} [status]
  * @property {string | null} [summary]
+ * @property {string | null} [workerId]
+ */
+
+/**
+ * @typedef {object} ContextResult
+ * @property {{ id?: string, liveWorkspaceId?: string | null, status?: string }} observedWorkspace
+ * @property {WorkerRow[]} workers
+ * @property {{ subscription: unknown | null, events: unknown[] }} notifications
  */
 
 /**
@@ -34,9 +45,14 @@ const DEFAULT_HOME_NAME = ".shepherd";
  * @returns {Promise<number>}
  */
 export async function runPluginCommand(args, deps = defaultDeps()) {
-  const [command] = args;
-  if (command === "observe-workspace") {
-    return withClient(deps, (client) => observeWorkspace(deps, client));
+  const [command, ...rest] = args;
+  if (command === "context") {
+    const parsed = parseContextArgs(rest);
+    if (parsed.error) {
+      deps.output(parsed.error);
+      return 2;
+    }
+    return withClient(deps, (client) => context(deps, client, parsed.subscriberId));
   }
   if (command === "dashboard") {
     return withClient(deps, (client) => dashboard(deps, client));
@@ -55,8 +71,32 @@ export function renderDashboard(input) {
     return "No Shepherd workers observed.";
   }
   return workers
-    .map((worker) => [worker.status ?? "unknown", worker.agent ?? "unknown", worker.summary ?? "", worker.recommendedAction ?? ""].join("\t"))
+    .map((worker) =>
+      [
+        worker.status ?? "unknown",
+        worker.agent ?? "unknown",
+        worker.summary ?? "",
+        worker.recommendedAction ?? "",
+      ].join("\t"),
+    )
     .join("\n");
+}
+
+/**
+ * @param {string[]} args
+ * @returns {{ error?: string, subscriberId?: string }}
+ */
+function parseContextArgs(args) {
+  const rest = [...args];
+  let subscriberId;
+  const subscriberIndex = rest.indexOf("--subscriber");
+  if (subscriberIndex >= 0) {
+    subscriberId = rest[subscriberIndex + 1];
+    if (!subscriberId) return { error: "context accepts only --subscriber <id>" };
+    rest.splice(subscriberIndex, 2);
+  }
+  if (rest.length > 0) return { error: "context accepts only --subscriber <id>" };
+  return subscriberId ? { subscriberId } : {};
 }
 
 /**
@@ -76,21 +116,86 @@ async function withClient(deps, fn) {
 /**
  * @param {PluginDeps} deps
  * @param {DaemonClient} client
+ * @param {string | undefined} subscriberId
  * @returns {Promise<number>}
  */
-async function observeWorkspace(deps, client) {
-  if (deps.env.HERDR_ENV !== "1" || !deps.env.HERDR_SOCKET_PATH || !deps.env.HERDR_WORKSPACE_ID) {
-    deps.output("observe-workspace requires a Herdr-managed pane");
-    return 2;
+async function context(deps, client, subscriberId) {
+  const observedWorkspace = await observeCurrentWorkspace(deps, client);
+  if (!observedWorkspace?.id) return 2;
+
+  const snapshot = /** @type {{ workers?: WorkerRow[] }} */ (
+    await client.request("workspace.snapshot", { observedWorkspaceId: observedWorkspace.id })
+  );
+  let notifications = /** @type {ContextResult["notifications"]} */ ({ subscription: null, events: [] });
+  if (subscriberId) {
+    const subscribed = /** @type {{ subscription?: unknown, events?: unknown[] }} */ (
+      await client.request("notification.subscribe", {
+        autoResume: false,
+        observedWorkspaceId: observedWorkspace.id,
+        subscriberId,
+        subscriberKind: "cli",
+      })
+    );
+    notifications = {
+      subscription: subscribed.subscription ?? null,
+      events: subscribed.events ?? [],
+    };
   }
-  const observed = /** @type {{ observedWorkspace?: { id?: string } }} */ (
+
+  deps.output(
+    renderContext({
+      observedWorkspace,
+      workers: snapshot.workers ?? [],
+      notifications,
+    }),
+  );
+  return 0;
+}
+
+/**
+ * @param {PluginDeps} deps
+ * @param {DaemonClient} client
+ * @returns {Promise<{ id?: string, liveWorkspaceId?: string | null, status?: string } | undefined>}
+ */
+async function observeCurrentWorkspace(deps, client) {
+  if (deps.env.HERDR_ENV !== "1" || !deps.env.HERDR_SOCKET_PATH || !deps.env.HERDR_WORKSPACE_ID) {
+    deps.output(CURRENT_HERDR_CONTEXT_ERROR);
+    return undefined;
+  }
+  const observed = /** @type {{ observedWorkspace?: { id?: string, liveWorkspaceId?: string | null, status?: string } }} */ (
     await client.request("workspace.observe", {
       socketPath: deps.env.HERDR_SOCKET_PATH,
       workspaceId: deps.env.HERDR_WORKSPACE_ID,
     })
   );
-  deps.output(`Observed workspace ${observed.observedWorkspace?.id ?? "unknown"}`);
-  return 0;
+  return observed.observedWorkspace;
+}
+
+/**
+ * @param {ContextResult} result
+ * @returns {string}
+ */
+function renderContext(result) {
+  const lines = [
+    `Observed workspace: ${result.observedWorkspace.id ?? "unknown"}`,
+    `Workers: ${result.workers.length}`,
+    `Notifications: ${result.notifications.events.length}`,
+  ];
+  if (result.workers.length === 0) return lines.join("\n");
+
+  lines.push("", ["status", "agent", "worker", "summary", "action"].join("\t"));
+  for (const worker of result.workers) {
+    lines.push(
+      [
+        worker.status ?? "unknown",
+        worker.agent ?? "unknown",
+        worker.id ?? worker.workerId ?? "workspace",
+        worker.summary ?? "",
+        worker.recommendedAction ?? "",
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -101,11 +206,7 @@ async function observeWorkspace(deps, client) {
 async function dashboard(deps, client) {
   let observedWorkspaceId = deps.env.SHEPHERD_OBSERVED_WORKSPACE_ID;
   if (!observedWorkspaceId) {
-    /** @type {string[]} */
-    const lines = [];
-    const code = await observeWorkspace({ ...deps, output: (line) => lines.push(line) }, client);
-    if (code !== 0) return code;
-    observedWorkspaceId = /Observed workspace (\S+)/.exec(lines.at(-1) ?? "")?.[1];
+    observedWorkspaceId = (await observeCurrentWorkspace(deps, client))?.id;
   }
   if (!observedWorkspaceId) return 2;
   const snapshot = /** @type {{ workers?: WorkerRow[] }} */ (
@@ -134,7 +235,9 @@ export function defaultSocketPath(env = process.env) {
   const home = resolve(env.SHEPHERD_HOME?.trim() || resolve(homedir(), DEFAULT_HOME_NAME));
   const recordPath = resolve(home, "runtime.json");
   if (existsSync(recordPath)) {
-    const record = /** @type {{ socketPath?: unknown }} */ (JSON.parse(readFileSync(recordPath, "utf8")));
+    const record = /** @type {{ socketPath?: unknown }} */ (
+      JSON.parse(readFileSync(recordPath, "utf8"))
+    );
     if (typeof record.socketPath === "string" && record.socketPath.length > 0) {
       return record.socketPath;
     }
