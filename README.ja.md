@@ -42,7 +42,7 @@ node dist/src/cli/shepherd.js daemon start
 pi install ./packages/shepherd-pi
 
 # 公開 GitHub repository から release install する場合:
-herdr plugin install <owner>/<repo>/packages/shepherd-herdr-plugin --ref <tag>
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1.0
 
 # ローカル checkout を開発用に使う場合:
 herdr plugin link ./packages/shepherd-herdr-plugin

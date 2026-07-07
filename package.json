@@ -1,11 +1,29 @@
 {
   "name": "shepherd",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Worker observability daemon and runtime bridges for Herdr-managed coding agents.",
   "type": "module",
   "bin": {
     "shepherd": "./dist/src/cli/shepherd.js"
   },
+  "keywords": [
+    "herdr",
+    "pi-coding-agent",
+    "coding-agents",
+    "observability",
+    "typescript",
+    "sqlite",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryonakae/shepherd.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ryonakae/shepherd/issues"
+  },
+  "homepage": "https://github.com/ryonakae/shepherd#readme",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=24.18.0",

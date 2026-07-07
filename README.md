@@ -42,7 +42,7 @@ node dist/src/cli/shepherd.js daemon start
 pi install ./packages/shepherd-pi
 
 # Release install from a public GitHub repository:
-herdr plugin install <owner>/<repo>/packages/shepherd-herdr-plugin --ref <tag>
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1.0
 
 # Local checkout for development:
 herdr plugin link ./packages/shepherd-herdr-plugin
