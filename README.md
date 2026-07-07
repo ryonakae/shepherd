@@ -1,6 +1,6 @@
 # Shepherd
 
-Shepherd watches coding-agent runs inside Herdr and keeps their worker state available to Pi, Herdr panes, and shell commands.
+Shepherd keeps worker state for coding agents that run in Herdr, then exposes that state to humans, Herdr plugin actions, Pi, and shell commands.
 
 <!-- README-I18N:START -->
 
@@ -8,17 +8,17 @@ Shepherd watches coding-agent runs inside Herdr and keeps their worker state ava
 
 <!-- README-I18N:END -->
 
-- **Worker state that survives pane changes:** Shepherd maps Herdr workspaces, panes, and runtime telemetry into stable worker records.
-- **Readable snapshots:** Shepherd stores summaries, status, blocked reasons, recommended actions, confidence, and evidence in SQLite.
+- **Durable worker state:** Shepherd maps Herdr workspaces, panes, and runtime telemetry into stable worker records.
+- **Readable snapshots:** Shepherd stores status, summaries, blocked reasons, recommended actions, confidence, and evidence in SQLite.
 - **Worker events:** Shepherd records `worker.*` events for completion, blocked work, input requests, tool failures, summary updates, and status changes.
-- **Orchestrator notifications:** Shepherd delivers unread worker events to CLI subscribers and the Pi extension.
-- **Runtime bridges:** The Pi extension sends redacted telemetry and injects worker notifications into the next turn. The Herdr plugin adds an observe action and a worker dashboard pane.
+- **Notifications for orchestrators:** Shepherd delivers unread worker events to CLI subscribers and the Pi extension.
+- **Runtime bridges:** The Pi extension sends redacted telemetry. The Herdr plugin adds a `context` action and a worker dashboard pane.
 
 ## How it fits
 
-Run Shepherd as a daemon before you use the bridges. The daemon owns the SQLite database and JSON Lines socket under `$SHEPHERD_HOME` (`~/.shepherd` by default). The CLI, Pi extension, and Herdr plugin connect to that daemon.
+Run the Shepherd daemon before using the bridges. The daemon owns the SQLite database and JSON Lines socket under `$SHEPHERD_HOME` (`~/.shepherd` by default). The CLI, Pi extension, and Herdr plugin connect to that daemon.
 
-Herdr controls workspaces, tabs, panes, and agents. Pi owns the model conversation. Shepherd stores the worker state and history between those live systems.
+Herdr controls workspaces, tabs, panes, and agents. Pi owns the model conversation. Shepherd stores worker state and notification history between those systems.
 
 ## Requirements
 
@@ -37,7 +37,7 @@ node dist/src/cli/shepherd.js daemon start
 node dist/src/cli/shepherd.js daemon status
 ```
 
-The daemon must keep running while Pi or Herdr reads Shepherd data.
+Keep the daemon running while Pi or Herdr reads Shepherd data.
 
 ## Add the runtime bridges
 
@@ -48,17 +48,27 @@ herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1
 
 During development, use `herdr plugin link ./packages/shepherd-herdr-plugin` instead of installing the tagged release.
 
-## Observe a Herdr workspace
+## Read worker context
 
-Run these commands inside a Herdr-managed pane after the daemon starts:
+Agents should read [`SKILL.md`](SKILL.md). Inside a Herdr-managed pane, agents start with one command:
 
 ```bash
-OBSERVED_WORKSPACE_ID=$(node dist/src/cli/shepherd.js observe-current --json | node -e 'let s=""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => console.log(JSON.parse(s).observedWorkspace.id));')
-node dist/src/cli/shepherd.js snapshot "$OBSERVED_WORKSPACE_ID" --json
-node dist/src/cli/shepherd.js notifications "$OBSERVED_WORKSPACE_ID" --subscriber pi-session --json
+shepherd context --json
 ```
 
-The Pi extension uses the same daemon socket. It sends bounded, redacted tool and message excerpts to Shepherd, then adds unread worker notifications to the next Pi turn as hidden context.
+From a source checkout, run the same command through the built CLI:
+
+```bash
+node dist/src/cli/shepherd.js context --json
+```
+
+Humans can use the Herdr plugin action for the same current workspace context:
+
+```bash
+herdr plugin action invoke context --plugin shepherd.observability
+```
+
+Use `--subscriber shepherd-agent` only when you need unread worker notifications. Without `--subscriber`, `context` returns the current snapshot and `notifications: { "subscription": null, "events": [] }`.
 
 ## Configuration
 
@@ -75,25 +85,14 @@ observability:
     max_excerpt_bytes: 4096
 ```
 
-Run `node dist/src/cli/shepherd.js help` to see daemon, observe, snapshot, event, notification, ack, and worker commands.
+Run `node dist/src/cli/shepherd.js help` to see daemon, context, observe, snapshot, event, notification, ack, and worker commands.
 
 ## Packages
 
 | Package | Purpose |
 |---------|---------|
 | [`packages/shepherd-pi`](packages/shepherd-pi) | Pi extension for telemetry and worker notifications. |
-| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | Herdr plugin with an observe action and dashboard pane. |
-
-## Development
-
-```bash
-pnpm check                # typecheck, tests, Biome, Drizzle, Pi package, Herdr plugin
-pnpm build                # emit dist and rewrite TS path aliases
-pnpm test                 # run Vitest once
-pnpm db:generate          # generate Drizzle migrations
-pnpm pi-package:check     # check the Pi extension package
-pnpm herdr-plugin:check   # check the Herdr plugin package
-```
+| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | Herdr plugin with a `context` action and dashboard pane. |
 
 ## License
 

@@ -80,9 +80,3 @@ Add `--subscriber shepherd-agent` only when you need pending notifications for t
 - do not send hidden thinking, full transcripts, or full tool outputs to Shepherd
 - do not ack notifications unless the user asks you to ack a specific event
 - do not assume worker ids or observed workspace ids; read them from Shepherd output
-
-## pi extension notes
-
-When the `shepherd-pi` extension is active, Pi sends bounded, redacted tool and final message excerpts to Shepherd. Pi also receives worker notifications and may inject them into the next turn as hidden context.
-
-This skill does not grant access to hidden thinking, full tool results, or full transcripts.

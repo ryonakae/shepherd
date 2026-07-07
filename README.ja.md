@@ -1,6 +1,6 @@
 # Shepherd
 
-Shepherd は Herdr 内で動く coding agent を監視し、worker の状態を Pi、Herdr pane、shell command から読める形で保存します。
+Shepherd は Herdr 内で動く coding agent の worker 状態を保存し、人間、Herdr plugin、Pi、shell command から読めるようにします。
 
 <!-- README-I18N:START -->
 
@@ -8,17 +8,17 @@ Shepherd は Herdr 内で動く coding agent を監視し、worker の状態を 
 
 <!-- README-I18N:END -->
 
-- **pane 移動に強い worker 記録:** pane が変わっても、同じ coding agent run を同じ worker として扱います。
-- **読みやすい snapshot:** 要約、状態、停止理由、推奨アクション、信頼度、根拠を SQLite に保存します。
+- **長く使える worker 記録:** Herdr workspace、pane、runtime telemetry を安定した worker record にまとめます。
+- **読みやすい snapshot:** 状態、要約、停止理由、推奨アクション、信頼度、根拠を SQLite に保存します。
 - **worker event:** 完了、停止、入力待ち、tool 失敗、要約更新、状態変化を `worker.*` event として記録します。
-- **オーケストレーター通知:** 未読の worker event を CLI subscriber と Pi extension に届けます。
-- **runtime bridge:** Pi extension はサニタイズ済み telemetry を送り、worker 通知を次の turn に渡します。Herdr plugin は observe action と worker dashboard pane を追加します。
+- **orchestrator notification:** 未読の worker event を CLI subscriber と Pi extension に届けます。
+- **runtime bridge:** Pi extension はサニタイズ済み telemetry を送ります。Herdr plugin は `context` action と worker dashboard pane を追加します。
 
 ## 役割
 
 bridge を使う前に Shepherd daemon を起動します。daemon は `$SHEPHERD_HOME` 配下の SQLite database と JSON Lines socket を管理します。`SHEPHERD_HOME` が未設定なら `~/.shepherd` を使います。CLI、Pi extension、Herdr plugin はこの daemon に接続します。
 
-Herdr は workspace、tab、pane、agent を操作します。Pi は model conversation を扱います。Shepherd は worker の状態と履歴を保存します。
+Herdr は workspace、tab、pane、agent を操作します。Pi は model conversation を扱います。Shepherd は worker の状態と notification 履歴を保存します。
 
 ## 要件
 
@@ -48,17 +48,27 @@ herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1
 
 開発中の local checkout を使う場合は、tag 版を install せずに `herdr plugin link ./packages/shepherd-herdr-plugin` を使います。
 
-## Herdr workspace を観測する
+## worker context を読む
 
-daemon 起動後、Herdr 管理下の pane で実行します。
+agent は [`SKILL.md`](SKILL.md) を読んでください。Herdr 管理下の pane では、最初にこの 1 コマンドを使います。
 
 ```bash
-OBSERVED_WORKSPACE_ID=$(node dist/src/cli/shepherd.js observe-current --json | node -e 'let s=""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => console.log(JSON.parse(s).observedWorkspace.id));')
-node dist/src/cli/shepherd.js snapshot "$OBSERVED_WORKSPACE_ID" --json
-node dist/src/cli/shepherd.js notifications "$OBSERVED_WORKSPACE_ID" --subscriber pi-session --json
+shepherd context --json
 ```
 
-Pi extension も同じ daemon socket を使います。tool result と最終 message の短い抜粋を Shepherd に送り、未読の worker 通知を次の Pi turn の hidden context に追加します。
+source checkout では built CLI から同じ command を実行します。
+
+```bash
+node dist/src/cli/shepherd.js context --json
+```
+
+人間が同じ current workspace context を見る場合は、Herdr plugin action を使えます。
+
+```bash
+herdr plugin action invoke context --plugin shepherd.observability
+```
+
+未読の worker notification が必要なときだけ `--subscriber shepherd-agent` を付けます。`--subscriber` を付けない場合、`context` は current snapshot と `notifications: { "subscription": null, "events": [] }` を返します。
 
 ## 設定
 
@@ -75,25 +85,14 @@ observability:
     max_excerpt_bytes: 4096
 ```
 
-`node dist/src/cli/shepherd.js help` で daemon、observe、snapshot、event、notification、ack、worker command を確認できます。
+`node dist/src/cli/shepherd.js help` で daemon、context、observe、snapshot、event、notification、ack、worker command を確認できます。
 
 ## パッケージ
 
 | Package | 役割 |
 |---------|------|
 | [`packages/shepherd-pi`](packages/shepherd-pi) | telemetry と worker 通知を扱う Pi extension。 |
-| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | observe action と dashboard pane を提供する Herdr plugin。 |
-
-## 開発
-
-```bash
-pnpm check                # typecheck、test、Biome、Drizzle、Pi package、Herdr plugin を確認
-pnpm build                # dist を生成し、TS path alias を書き換える
-pnpm test                 # Vitest を 1 回実行
-pnpm db:generate          # Drizzle migration を生成
-pnpm pi-package:check     # Pi extension package を確認
-pnpm herdr-plugin:check   # Herdr plugin package を確認
-```
+| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | `context` action と dashboard pane を提供する Herdr plugin。 |
 
 ## ライセンス
 
