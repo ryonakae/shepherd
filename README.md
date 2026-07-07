@@ -1,12 +1,14 @@
 # Shepherd
 
-Shepherd keeps worker state for coding agents that run in Herdr, then exposes that state to humans, Herdr plugin actions, Pi, and shell commands.
-
 <!-- README-I18N:START -->
 
 **English** | [日本語](./README.ja.md)
 
 <!-- README-I18N:END -->
+
+Shepherd keeps worker state for coding agents that run in Herdr, then exposes that state to humans, Herdr plugin actions, Pi, and shell commands.
+
+In Shepherd, a **worker** is one coding-agent run that Shepherd can track across a Herdr workspace or pane. A worker record keeps the agent's status, summary, blocked reason, recommended action, and evidence.
 
 - **Durable worker state:** Shepherd maps Herdr workspaces, panes, and runtime telemetry into stable worker records.
 - **Readable snapshots:** Shepherd stores status, summaries, blocked reasons, recommended actions, confidence, and evidence in SQLite.
@@ -19,6 +21,12 @@ Shepherd keeps worker state for coding agents that run in Herdr, then exposes th
 Run the Shepherd daemon before using the bridges. The daemon owns the SQLite database and JSON Lines socket under `$SHEPHERD_HOME` (`~/.shepherd` by default). The CLI, Pi extension, and Herdr plugin connect to that daemon.
 
 Herdr controls workspaces, tabs, panes, and agents. Pi owns the model conversation. Shepherd stores worker state and notification history between those systems.
+
+## Why use Shepherd?
+
+Herdr gives humans and agents the control surface: workspaces, tabs, panes, agent status, and command execution. Shepherd gives those agent runs a shared memory layer: worker snapshots, summaries, blocked reasons, recommended actions, evidence, events, and unread notifications.
+
+With the Shepherd Agent Skill installed, an agent can start with `shepherd context --json`, read what other workers are doing, and decide its next step without scraping panes. Herdr still controls panes and agents; Shepherd reads durable worker context.
 
 ## Requirements
 
@@ -45,8 +53,6 @@ Keep the daemon running while Pi or Herdr reads Shepherd data.
 pi install ./packages/shepherd-pi
 herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1.0
 ```
-
-During development, use `herdr plugin link ./packages/shepherd-herdr-plugin` instead of installing the tagged release.
 
 ## Read worker context
 
@@ -84,9 +90,6 @@ observability:
   telemetry:
     max_excerpt_bytes: 4096
 ```
-
-Run `node dist/src/cli/shepherd.js help` to see daemon, context, observe, snapshot, event, notification, ack, and worker commands.
-
 ## Packages
 
 | Package | Purpose |
