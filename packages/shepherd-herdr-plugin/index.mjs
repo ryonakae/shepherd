@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 // @ts-check
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { existsSync, readFileSync } from "node:fs";
+import { createConnection } from "node:net";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
-const execFileAsync = promisify(execFile);
+const DEFAULT_HOME_NAME = ".shepherd";
 
 /**
- * @typedef {(command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => Promise<string>} ExecFn
+ * @typedef {object} DaemonClient
+ * @property {() => void} close
+ * @property {(method: string, params: unknown) => Promise<unknown>} request
  */
 
 /**
  * @typedef {object} PluginDeps
  * @property {NodeJS.ProcessEnv} env
- * @property {ExecFn} exec
+ * @property {() => DaemonClient} clientFactory
  * @property {(line: string) => void} output
  */
 
@@ -32,10 +36,10 @@ const execFileAsync = promisify(execFile);
 export async function runPluginCommand(args, deps = defaultDeps()) {
   const [command] = args;
   if (command === "observe-workspace") {
-    return observeWorkspace(deps);
+    return withClient(deps, (client) => observeWorkspace(deps, client));
   }
   if (command === "dashboard") {
-    return dashboard(deps);
+    return withClient(deps, (client) => dashboard(deps, client));
   }
   deps.output(`Unknown command: ${command ?? ""}`);
   return 1;
@@ -57,36 +61,57 @@ export function renderDashboard(input) {
 
 /**
  * @param {PluginDeps} deps
+ * @param {(client: DaemonClient) => Promise<number>} fn
  * @returns {Promise<number>}
  */
-async function observeWorkspace(deps) {
+async function withClient(deps, fn) {
+  const client = deps.clientFactory();
+  try {
+    return await fn(client);
+  } finally {
+    client.close();
+  }
+}
+
+/**
+ * @param {PluginDeps} deps
+ * @param {DaemonClient} client
+ * @returns {Promise<number>}
+ */
+async function observeWorkspace(deps, client) {
   if (deps.env.HERDR_ENV !== "1" || !deps.env.HERDR_SOCKET_PATH || !deps.env.HERDR_WORKSPACE_ID) {
     deps.output("observe-workspace requires a Herdr-managed pane");
     return 2;
   }
-  const raw = await deps.exec("shepherd", ["observe-current", "--json"], { env: deps.env });
-  const parsed = /** @type {{ observedWorkspace?: { id?: string } }} */ (JSON.parse(raw));
-  deps.output(`Observed workspace ${parsed.observedWorkspace?.id ?? "unknown"}`);
+  const observed = /** @type {{ observedWorkspace?: { id?: string } }} */ (
+    await client.request("workspace.observe", {
+      socketPath: deps.env.HERDR_SOCKET_PATH,
+      workspaceId: deps.env.HERDR_WORKSPACE_ID,
+    })
+  );
+  deps.output(`Observed workspace ${observed.observedWorkspace?.id ?? "unknown"}`);
   return 0;
 }
 
 /**
  * @param {PluginDeps} deps
+ * @param {DaemonClient} client
  * @returns {Promise<number>}
  */
-async function dashboard(deps) {
+async function dashboard(deps, client) {
   let observedWorkspaceId = deps.env.SHEPHERD_OBSERVED_WORKSPACE_ID;
   if (!observedWorkspaceId) {
     /** @type {string[]} */
     const lines = [];
-    const code = await observeWorkspace({ ...deps, output: (line) => lines.push(line) });
+    const code = await observeWorkspace({ ...deps, output: (line) => lines.push(line) }, client);
     if (code !== 0) return code;
     observedWorkspaceId = /Observed workspace (\S+)/.exec(lines.at(-1) ?? "")?.[1];
   }
   if (!observedWorkspaceId) return 2;
-  const raw = await deps.exec("shepherd", ["snapshot", observedWorkspaceId, "--json"], { env: deps.env });
-  const parsed = /** @type {{ workers?: WorkerRow[] }} */ (JSON.parse(raw));
-  deps.output(renderDashboard(parsed));
+  const snapshot = /** @type {{ workers?: WorkerRow[] }} */ (
+    await client.request("workspace.snapshot", { observedWorkspaceId })
+  );
+  deps.output(renderDashboard(snapshot));
   return 0;
 }
 
@@ -95,13 +120,95 @@ async function dashboard(deps) {
  */
 function defaultDeps() {
   return {
+    clientFactory: () => new JsonLineDaemonClient(defaultSocketPath(process.env)),
     env: process.env,
-    async exec(command, args, options) {
-      const { stdout } = await execFileAsync(command, args, { env: options.env });
-      return stdout;
-    },
     output: (line) => console.log(line),
   };
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string}
+ */
+export function defaultSocketPath(env = process.env) {
+  const home = resolve(env.SHEPHERD_HOME?.trim() || resolve(homedir(), DEFAULT_HOME_NAME));
+  const recordPath = resolve(home, "runtime.json");
+  if (existsSync(recordPath)) {
+    const record = /** @type {{ socketPath?: unknown }} */ (JSON.parse(readFileSync(recordPath, "utf8")));
+    if (typeof record.socketPath === "string" && record.socketPath.length > 0) {
+      return record.socketPath;
+    }
+  }
+  return resolve(home, "shepherd.sock");
+}
+
+/** @typedef {{ reject(error: Error): void; resolve(value: unknown): void }} Pending */
+
+class JsonLineDaemonClient {
+  /** @type {Map<string, Pending>} */
+  #pending = new Map();
+  /** @type {import("node:net").Socket} */
+  #socket;
+  #buffer = "";
+  #nextId = 1;
+
+  /**
+   * @param {string} socketPath
+   */
+  constructor(socketPath) {
+    this.#socket = createConnection(socketPath);
+    this.#socket.on("data", (chunk) => this.#handleData(chunk.toString("utf8")));
+    this.#socket.on("error", (error) => this.#rejectAll(error));
+    this.#socket.on("close", () => this.#rejectAll(new Error("Shepherd daemon socket closed")));
+  }
+
+  close() {
+    this.#socket.destroy();
+  }
+
+  /**
+   * @param {string} method
+   * @param {unknown} params
+   * @returns {Promise<unknown>}
+   */
+  request(method, params) {
+    const id = String(this.#nextId++);
+    return new Promise((resolve, reject) => {
+      this.#pending.set(id, { reject, resolve });
+      this.#socket.write(`${JSON.stringify({ id, method, params })}\n`);
+    });
+  }
+
+  /**
+   * @param {string} chunk
+   */
+  #handleData(chunk) {
+    this.#buffer += chunk;
+    let newline = this.#buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = this.#buffer.slice(0, newline).trim();
+      this.#buffer = this.#buffer.slice(newline + 1);
+      newline = this.#buffer.indexOf("\n");
+      if (!line) continue;
+      const response = /** @type {{ error?: { message?: string }; id?: string; result?: unknown }} */ (
+        JSON.parse(line)
+      );
+      if (!response.id) continue;
+      const pending = this.#pending.get(response.id);
+      if (!pending) continue;
+      this.#pending.delete(response.id);
+      if (response.error) pending.reject(new Error(response.error.message ?? "Shepherd daemon error"));
+      else pending.resolve(response.result);
+    }
+  }
+
+  /**
+   * @param {Error} error
+   */
+  #rejectAll(error) {
+    for (const pending of this.#pending.values()) pending.reject(error);
+    this.#pending.clear();
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
