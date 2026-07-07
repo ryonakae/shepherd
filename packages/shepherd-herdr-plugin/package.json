@@ -5,14 +5,14 @@
   "type": "module",
   "license": "MIT",
   "files": [
-    "dist",
+    "index.mjs",
     "herdr-plugin.toml"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.json"
+    "package:check": "node check-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "bin": {
-    "shepherd-herdr-plugin": "./dist/index.js"
+    "shepherd-herdr-plugin": "./index.mjs"
   }
 }

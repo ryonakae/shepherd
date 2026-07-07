@@ -22,7 +22,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
-    "herdr-plugin:check": "pnpm --dir packages/shepherd-herdr-plugin typecheck && (cd packages/shepherd-herdr-plugin && npm pack --dry-run --json > /dev/null)",
+    "herdr-plugin:check": "pnpm --dir packages/shepherd-herdr-plugin typecheck && pnpm --dir packages/shepherd-herdr-plugin package:check",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",

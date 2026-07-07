@@ -1,25 +1,35 @@
 #!/usr/bin/env node
+// @ts-check
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-type ExecFn = (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => Promise<string>;
+/**
+ * @typedef {(command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => Promise<string>} ExecFn
+ */
 
-type PluginDeps = {
-  env: NodeJS.ProcessEnv;
-  exec: ExecFn;
-  output(line: string): void;
-};
+/**
+ * @typedef {object} PluginDeps
+ * @property {NodeJS.ProcessEnv} env
+ * @property {ExecFn} exec
+ * @property {(line: string) => void} output
+ */
 
-type WorkerRow = {
-  agent?: string | null;
-  recommendedAction?: string | null;
-  status?: string;
-  summary?: string | null;
-};
+/**
+ * @typedef {object} WorkerRow
+ * @property {string | null} [agent]
+ * @property {string | null} [recommendedAction]
+ * @property {string} [status]
+ * @property {string | null} [summary]
+ */
 
-export async function runPluginCommand(args: string[], deps: PluginDeps = defaultDeps()): Promise<number> {
+/**
+ * @param {string[]} args
+ * @param {PluginDeps} [deps]
+ * @returns {Promise<number>}
+ */
+export async function runPluginCommand(args, deps = defaultDeps()) {
   const [command] = args;
   if (command === "observe-workspace") {
     return observeWorkspace(deps);
@@ -31,7 +41,11 @@ export async function runPluginCommand(args: string[], deps: PluginDeps = defaul
   return 1;
 }
 
-export function renderDashboard(input: { workers?: WorkerRow[] }): string {
+/**
+ * @param {{ workers?: WorkerRow[] }} input
+ * @returns {string}
+ */
+export function renderDashboard(input) {
   const workers = input.workers ?? [];
   if (workers.length === 0) {
     return "No Shepherd workers observed.";
@@ -41,33 +55,45 @@ export function renderDashboard(input: { workers?: WorkerRow[] }): string {
     .join("\n");
 }
 
-async function observeWorkspace(deps: PluginDeps): Promise<number> {
+/**
+ * @param {PluginDeps} deps
+ * @returns {Promise<number>}
+ */
+async function observeWorkspace(deps) {
   if (deps.env.HERDR_ENV !== "1" || !deps.env.HERDR_SOCKET_PATH || !deps.env.HERDR_WORKSPACE_ID) {
     deps.output("observe-workspace requires a Herdr-managed pane");
     return 2;
   }
   const raw = await deps.exec("shepherd", ["observe-current", "--json"], { env: deps.env });
-  const parsed = JSON.parse(raw) as { observedWorkspace?: { id?: string } };
+  const parsed = /** @type {{ observedWorkspace?: { id?: string } }} */ (JSON.parse(raw));
   deps.output(`Observed workspace ${parsed.observedWorkspace?.id ?? "unknown"}`);
   return 0;
 }
 
-async function dashboard(deps: PluginDeps): Promise<number> {
+/**
+ * @param {PluginDeps} deps
+ * @returns {Promise<number>}
+ */
+async function dashboard(deps) {
   let observedWorkspaceId = deps.env.SHEPHERD_OBSERVED_WORKSPACE_ID;
   if (!observedWorkspaceId) {
-    const lines: string[] = [];
+    /** @type {string[]} */
+    const lines = [];
     const code = await observeWorkspace({ ...deps, output: (line) => lines.push(line) });
     if (code !== 0) return code;
     observedWorkspaceId = /Observed workspace (\S+)/.exec(lines.at(-1) ?? "")?.[1];
   }
   if (!observedWorkspaceId) return 2;
   const raw = await deps.exec("shepherd", ["snapshot", observedWorkspaceId, "--json"], { env: deps.env });
-  const parsed = JSON.parse(raw) as { workers?: WorkerRow[] };
+  const parsed = /** @type {{ workers?: WorkerRow[] }} */ (JSON.parse(raw));
   deps.output(renderDashboard(parsed));
   return 0;
 }
 
-function defaultDeps(): PluginDeps {
+/**
+ * @returns {PluginDeps}
+ */
+function defaultDeps() {
   return {
     env: process.env,
     async exec(command, args, options) {

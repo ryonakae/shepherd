@@ -9,10 +9,10 @@ platforms = ["linux", "macos", "windows"]
 id = "observe-workspace"
 title = "Observe workspace with Shepherd"
 contexts = ["workspace"]
-command = ["node", "dist/index.js", "observe-workspace"]
+command = ["node", "index.mjs", "observe-workspace"]
 
 [[panes]]
 id = "dashboard"
 title = "Shepherd Workers"
 placement = "split"
-command = ["node", "dist/index.js", "dashboard"]
+command = ["node", "index.mjs", "dashboard"]

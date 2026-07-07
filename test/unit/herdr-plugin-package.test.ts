@@ -1,9 +1,36 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import {
-  renderDashboard,
-  runPluginCommand,
-} from "../../packages/shepherd-herdr-plugin/src/index.js";
+
+const pluginModuleUrl = new URL("../../packages/shepherd-herdr-plugin/index.mjs", import.meta.url)
+  .href;
+
+type PluginModule = {
+  renderDashboard: (input: {
+    workers?: Array<{
+      agent?: string | null;
+      recommendedAction?: string | null;
+      status?: string;
+      summary?: string | null;
+    }>;
+  }) => string;
+  runPluginCommand: (
+    args: string[],
+    deps: {
+      env: NodeJS.ProcessEnv;
+      exec: (
+        command: string,
+        args: string[],
+        options: { env: NodeJS.ProcessEnv },
+      ) => Promise<string>;
+      output: (line: string) => void;
+    },
+  ) => Promise<number>;
+};
+
+async function importPlugin() {
+  return (await import(pluginModuleUrl)) as PluginModule;
+}
 
 describe("shepherd Herdr plugin package", () => {
   test("declares manifest actions and panes", () => {
@@ -15,6 +42,7 @@ describe("shepherd Herdr plugin package", () => {
   });
 
   test("observe command requires Herdr context and calls observe-current", async () => {
+    const { runPluginCommand } = await importPlugin();
     const calls: unknown[] = [];
     await expect(
       runPluginCommand(["observe-workspace"], {
@@ -44,7 +72,8 @@ describe("shepherd Herdr plugin package", () => {
     ]);
   });
 
-  test("dashboard renders worker rows", () => {
+  test("dashboard renders worker rows", async () => {
+    const { renderDashboard } = await importPlugin();
     expect(
       renderDashboard({
         workers: [
@@ -52,5 +81,19 @@ describe("shepherd Herdr plugin package", () => {
         ],
       }),
     ).toContain("done\tpi\tcompleted\treview");
+  });
+
+  test("packages the runtime entrypoint without build output", () => {
+    const pack = JSON.parse(
+      execFileSync("npm", ["pack", "--dry-run", "--json"], {
+        cwd: "packages/shepherd-herdr-plugin",
+        encoding: "utf8",
+      }),
+    ) as Array<{ files: Array<{ path: string }> }>;
+    const files = pack[0]?.files.map((file) => file.path) ?? [];
+
+    expect(files).toContain("index.mjs");
+    expect(files).toContain("herdr-plugin.toml");
+    expect(files.some((file) => file.startsWith("dist/"))).toBe(false);
   });
 });

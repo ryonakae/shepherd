@@ -40,6 +40,11 @@ pnpm build
 
 node dist/src/cli/shepherd.js daemon start
 pi install ./packages/shepherd-pi
+
+# Release install from a public GitHub repository:
+herdr plugin install <owner>/<repo>/packages/shepherd-herdr-plugin --ref <tag>
+
+# Local checkout for development:
 herdr plugin link ./packages/shepherd-herdr-plugin
 ```
 
