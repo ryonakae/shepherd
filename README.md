@@ -1,12 +1,33 @@
 # Shepherd
 
-Shepherd is a Herdr worker observability and orchestration layer. It watches Herdr-managed coding agents, stores worker-level state, and pushes useful signals back to orchestrator runtimes such as Pi.
+Watch Herdr-managed coding agents, store their work state, and send useful notifications to orchestrator runtimes such as Pi.
 
-Shepherd is not an LLM runtime and is not a thin Herdr wrapper. Herdr owns low-level workspace, tab, pane, and agent control. Shepherd adds value above that layer:
+<!-- README-I18N:START -->
 
-- structured worker snapshots
-- enriched `worker.*` events
-- orchestrator push notifications
+**English** | [日本語](./README.ja.md)
+
+<!-- README-I18N:END -->
+
+In Shepherd, a worker is one coding-agent run that Shepherd tracks inside an observed Herdr workspace. The worker may move between panes or tabs, but Shepherd keeps one record for its state, events, and notifications.
+
+- **Worker snapshots:** record summary, current work, completion state, blocked reason, recommended action, confidence, and evidence.
+- **Worker events:** store enriched `worker.*` events for completions, blocks, input requests, tool failures, summary updates, and status changes.
+- **Runtime notifications:** deliver unread worker events to CLI subscribers and the Pi extension.
+- **Herdr integration:** observe workspaces through Herdr socket/session APIs and resolve live workspace/worker state from Herdr snapshots.
+- **Runtime bridges:** use the Pi extension for telemetry and notification context, and the Herdr plugin for observe actions and a dashboard pane.
+
+## Herdr plus Shepherd
+
+Herdr controls workspaces, panes, and agents in real time. Shepherd adds durable worker context to that live control surface:
+
+- **Stable worker records:** map Herdr sessions, panes, and runtime telemetry into worker ids that survive tab movement and later inspection.
+- **Readable state:** convert terminal/session facts into snapshots an orchestrator can scan without reading pane buffers.
+- **Event history:** keep worker events and notification cursors so another process can resume from the last acknowledged event.
+- **Pi context:** deliver unread worker events to Pi status, widgets, session entries, and next-turn hidden context.
+
+## Requirements
+
+Node.js 24.18.0+, pnpm 11.9.0+, Herdr 0.7.0+, and Pi for `packages/shepherd-pi`.
 
 ## Quick start
 
@@ -17,17 +38,10 @@ pnpm install
 pnpm check
 pnpm build
 
-shepherd daemon start
+node dist/src/cli/shepherd.js daemon start
 pi install ./packages/shepherd-pi
 herdr plugin link ./packages/shepherd-herdr-plugin
 ```
-
-## Requirements
-
-- Node.js 24.18.0 or newer
-- pnpm 11.9.0 or newer
-- Herdr 0.7.0 or newer
-- Pi, when using the Pi runtime extension
 
 ## Configuration
 
@@ -44,93 +58,40 @@ observability:
     max_excerpt_bytes: 4096
 ```
 
-Retention settings are not active in the MVP. Shepherd stores sanitized worker events and snapshots indefinitely.
+Shepherd stores sanitized worker events and snapshots. Retention settings belong in a future schema change.
 
-## CLI examples
-
-Observe a Herdr workspace by session name:
+## CLI usage
 
 ```bash
-shepherd observe --herdr-session main --workspace w1 --json
+node dist/src/cli/shepherd.js observe --herdr-session main --workspace w1 --json
+node dist/src/cli/shepherd.js observe-current --json
+node dist/src/cli/shepherd.js snapshot ow_123 --json
+node dist/src/cli/shepherd.js events ow_123 --after 10 --json
+node dist/src/cli/shepherd.js notifications ow_123 --subscriber pi-session --auto-resume --json
+node dist/src/cli/shepherd.js ack --subscription ns_123 --event 42 --json
+node dist/src/cli/shepherd.js message-worker wk_123 "please continue"
+node dist/src/cli/shepherd.js wait-worker wk_123 --state done --timeout-ms 600000
 ```
 
-Observe the current Herdr-managed pane/workspace:
+Use ids returned by `observe`, `snapshot`, and `notifications` for later commands.
+
+## Packages
+
+| Package | Purpose |
+|---------|---------|
+| [`packages/shepherd-pi`](packages/shepherd-pi) | Pi extension that sends redacted telemetry and receives worker notifications. |
+| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | Herdr companion plugin with an observe action and dashboard pane. |
+
+## Common commands
 
 ```bash
-shepherd observe-current --json
+pnpm test                 # Run Vitest tests
+pnpm check                # Run the full quality gate
+pnpm build                # Emit dist and rewrite TS path aliases
+pnpm db:generate          # Generate Drizzle migrations
+pnpm pi-package:check     # Check the Pi extension package
+pnpm herdr-plugin:check   # Check the Herdr plugin package
 ```
-
-Read worker snapshots:
-
-```bash
-shepherd snapshot ow_123 --json
-```
-
-Read worker events after a cursor:
-
-```bash
-shepherd events ow_123 --after 10 --json
-```
-
-Subscribe for notifications and acknowledge delivery:
-
-```bash
-shepherd notifications ow_123 --subscriber pi-session --auto-resume --json
-shepherd ack --subscription ns_123 --event 42 --json
-```
-
-Send a semantic worker message or wait for worker state:
-
-```bash
-shepherd message-worker wk_123 "please continue"
-shepherd wait-worker wk_123 --state done --timeout-ms 600000
-```
-
-## Pi extension
-
-`packages/shepherd-pi` observes the current Herdr workspace when Pi runs inside Herdr, sends bounded runtime telemetry to Shepherd, receives worker notifications, and injects hidden context on the next Pi turn.
-
-```bash
-pi install ./packages/shepherd-pi
-```
-
-The extension sends excerpts, `sessionRef`, and `artifactRefs`. It does not send hidden thinking or full tool results.
-
-## Herdr plugin
-
-`packages/shepherd-herdr-plugin` is a companion plugin. It provides an observe action and dashboard pane, but it is not Shepherd's primary event stream.
-
-```bash
-herdr plugin link ./packages/shepherd-herdr-plugin
-herdr plugin action invoke observe-workspace --plugin shepherd.observability
-herdr plugin pane open --plugin shepherd.observability --entrypoint dashboard
-```
-
-## Development commands
-
-- `pnpm typecheck`: run TypeScript checks.
-- `pnpm test`: run Vitest unit and integration tests.
-- `pnpm lint`: run Biome checks.
-- `pnpm format:check`: check Biome formatting.
-- `pnpm db:generate`: generate Drizzle migrations from `src/db/schema.ts`.
-- `pnpm db:check`: verify Drizzle migrations match schema.
-- `pnpm pi-package:check`: typecheck and dry-pack the Pi extension.
-- `pnpm herdr-plugin:check`: typecheck and dry-pack the Herdr plugin.
-- `pnpm check`: run the full quality gate.
-- `pnpm build`: emit `dist` and rewrite TS path aliases.
-
-## Project layout
-
-- `src/observability`: worker contracts, telemetry normalization, rules, notification service, and `WorkerStatePipeline`.
-- `src/daemon`: JSON Lines RPC server/client and daemon service.
-- `src/db`: SQLite connection, migrations, Drizzle schema, and observability stores.
-- `src/herdr`: Herdr socket clients, session snapshots, and workspace resolution helpers.
-- `src/cli`: `shepherd` CLI.
-- `packages/shepherd-pi`: Pi extension package.
-- `packages/shepherd-herdr-plugin`: Herdr companion plugin package.
-- `test/unit`: pure logic and contract tests.
-- `test/integration`: SQLite and JSONL integration tests.
-- `docs/plans`: active implementation plans; completed plans live under `docs/plans/archived`.
 
 ## License
 

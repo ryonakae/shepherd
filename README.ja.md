@@ -1,6 +1,6 @@
 # Shepherd
 
-Shepherd は、Herdr 管理の coding agent を観測・操作する worker observability / orchestration layer です。Herdr 上の worker 状態を保存し、Pi などの orchestrator runtime に有用な signal を返します。
+Herdr 管理下のコーディングエージェントを観測し、作業状態を保存して、Pi などのオーケストレーターに通知を送ります。
 
 <!-- README-I18N:START -->
 
@@ -8,11 +8,26 @@ Shepherd は、Herdr 管理の coding agent を観測・操作する worker obse
 
 <!-- README-I18N:END -->
 
-Shepherd は LLM runtime ではなく、Herdr の薄いラッパーでもありません。Herdr は workspace、tab、pane、agent の低レベル操作を担当します。Shepherd はその上で次を提供します。
+Shepherd では、観測中の Herdr ワークスペース内で動く 1 つのコーディングエージェント実行を「ワーカー」と呼びます。エージェントがペインやタブを移動しても、Shepherd は状態、イベント、通知を同じワーカーの記録として扱います。
 
-- 構造化された worker snapshot
-- enriched `worker.*` event
-- orchestrator への push notification
+- **ワーカーのスナップショット:** 要約、現在の作業、完了状態、停止理由、推奨アクション、信頼度、根拠を記録します。
+- **ワーカーイベント:** 完了、停止、入力要求、ツール失敗、要約更新、状態変化を `worker.*` event として保存します。
+- **実行環境への通知:** 未読のワーカーイベントを CLI subscriber と Pi extension に届けます。
+- **Herdr 連携:** Herdr の socket/session API でワークスペースを観測し、Herdr snapshot から live workspace / worker state を解決します。
+- **実行環境ブリッジ:** Pi extension がテレメトリーと通知コンテキストを扱い、Herdr plugin が observe action と dashboard pane を提供します。
+
+## Herdr と Shepherd
+
+Herdr はワークスペース、ペイン、エージェントをリアルタイムに操作します。Shepherd は実行中のワーカー状態を、後から参照できるコンテキストとして保存します。
+
+- **ワーカー記録:** Herdr session、pane、runtime telemetry を worker id に結び、タブ移動後も同じワーカーとして扱います。
+- **状態スナップショット:** terminal/session の事実を snapshot に変換し、オーケストレーターが pane buffer を読まずに状態を確認できます。
+- **イベント履歴:** worker event と notification cursor を保存し、別プロセスは最後に ack した event から再開できます。
+- **Pi コンテキスト:** 未読のワーカーイベントを Pi status、widget、session entry、次 turn の hidden context に届けます。
+
+## 要件
+
+Node.js 24.18.0 以上、pnpm 11.9.0 以上、Herdr 0.7.0 以上。`packages/shepherd-pi` を使う場合は Pi も必要です。
 
 ## はじめに
 
@@ -23,17 +38,10 @@ pnpm install
 pnpm check
 pnpm build
 
-shepherd daemon start
+node dist/src/cli/shepherd.js daemon start
 pi install ./packages/shepherd-pi
 herdr plugin link ./packages/shepherd-herdr-plugin
 ```
-
-## 要件
-
-- Node.js 24.18.0 以上
-- pnpm 11.9.0 以上
-- Herdr 0.7.0 以上
-- Pi runtime extension を使う場合は Pi
 
 ## 設定
 
@@ -50,93 +58,40 @@ observability:
     max_excerpt_bytes: 4096
 ```
 
-MVP では retention 設定はありません。Shepherd は sanitized worker event と snapshot を保持します。
+Shepherd はサニタイズ済みのワーカーイベントとスナップショットを保存します。保持期間の設定は将来のスキーマ変更で追加します。
 
-## CLI 例
-
-Herdr named session の workspace を観測します。
+## CLI 使用例
 
 ```bash
-shepherd observe --herdr-session main --workspace w1 --json
+node dist/src/cli/shepherd.js observe --herdr-session main --workspace w1 --json
+node dist/src/cli/shepherd.js observe-current --json
+node dist/src/cli/shepherd.js snapshot ow_123 --json
+node dist/src/cli/shepherd.js events ow_123 --after 10 --json
+node dist/src/cli/shepherd.js notifications ow_123 --subscriber pi-session --auto-resume --json
+node dist/src/cli/shepherd.js ack --subscription ns_123 --event 42 --json
+node dist/src/cli/shepherd.js message-worker wk_123 "please continue"
+node dist/src/cli/shepherd.js wait-worker wk_123 --state done --timeout-ms 600000
 ```
 
-現在の Herdr 管理 pane / workspace を観測します。
+後続コマンドでは `observe`、`snapshot`、`notifications` が返す id を使います。
+
+## パッケージ
+
+| Package | 役割 |
+|---------|------|
+| [`packages/shepherd-pi`](packages/shepherd-pi) | サニタイズ済みテレメトリーを送り、ワーカー通知を受け取る Pi extension。 |
+| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | observe action と dashboard pane を提供する Herdr companion plugin。 |
+
+## よく使うコマンド
 
 ```bash
-shepherd observe-current --json
+pnpm test                 # Vitest test
+pnpm check                # full quality gate
+pnpm build                # dist 生成と TS path alias rewrite
+pnpm db:generate          # Drizzle migration を生成
+pnpm pi-package:check     # Pi extension package を確認
+pnpm herdr-plugin:check   # Herdr plugin package を確認
 ```
-
-worker snapshot を読みます。
-
-```bash
-shepherd snapshot ow_123 --json
-```
-
-cursor 以降の worker event を読みます。
-
-```bash
-shepherd events ow_123 --after 10 --json
-```
-
-notification を購読し、ack します。
-
-```bash
-shepherd notifications ow_123 --subscriber pi-session --auto-resume --json
-shepherd ack --subscription ns_123 --event 42 --json
-```
-
-worker に semantic message を送り、worker state を待ちます。
-
-```bash
-shepherd message-worker wk_123 "please continue"
-shepherd wait-worker wk_123 --state done --timeout-ms 600000
-```
-
-## Pi extension
-
-`packages/shepherd-pi` は、Pi が Herdr 内で動いているときに現在の Herdr workspace を観測し、bounded runtime telemetry を Shepherd に送ります。Shepherd からの worker notification は Pi の status、widget、session entry、次 turn の hidden context に反映されます。
-
-```bash
-pi install ./packages/shepherd-pi
-```
-
-extension は excerpt、`sessionRef`、`artifactRefs` を送ります。hidden thinking や full tool result は送りません。
-
-## Herdr plugin
-
-`packages/shepherd-herdr-plugin` は companion plugin です。observe action と dashboard pane を提供しますが、Shepherd の主要 event stream ではありません。
-
-```bash
-herdr plugin link ./packages/shepherd-herdr-plugin
-herdr plugin action invoke observe-workspace --plugin shepherd.observability
-herdr plugin pane open --plugin shepherd.observability --entrypoint dashboard
-```
-
-## 開発コマンド
-
-- `pnpm typecheck`: TypeScript check を実行します。
-- `pnpm test`: Vitest unit / integration test を実行します。
-- `pnpm lint`: Biome check を実行します。
-- `pnpm format:check`: Biome formatting を確認します。
-- `pnpm db:generate`: `src/db/schema.ts` から Drizzle migration を生成します。
-- `pnpm db:check`: Drizzle migration と schema の整合性を確認します。
-- `pnpm pi-package:check`: Pi extension を typecheck し、dry pack します。
-- `pnpm herdr-plugin:check`: Herdr plugin を typecheck し、dry pack します。
-- `pnpm check`: full quality gate を実行します。
-- `pnpm build`: `dist` を生成し、TS path alias を書き換えます。
-
-## プロジェクト構成
-
-- `src/observability`: worker contract、telemetry normalization、rules、notification service、`WorkerStatePipeline`。
-- `src/daemon`: JSON Lines RPC server/client と daemon service。
-- `src/db`: SQLite connection、migration、Drizzle schema、observability store。
-- `src/herdr`: Herdr socket client、session snapshot、workspace resolution helper。
-- `src/cli`: `shepherd` CLI。
-- `packages/shepherd-pi`: Pi extension package。
-- `packages/shepherd-herdr-plugin`: Herdr companion plugin package。
-- `test/unit`: pure logic / contract test。
-- `test/integration`: SQLite / JSONL integration test。
-- `docs/plans`: active implementation plan。完了済み plan は `docs/plans/archived` にあります。
 
 ## ライセンス
 
