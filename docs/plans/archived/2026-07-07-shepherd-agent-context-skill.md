@@ -2,11 +2,11 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step and run the listed validation. Do not commit, push, or move tags unless the user explicitly asks for that step.
 
-**Status:** Active
+**Status:** Archived
 
-**Progress:** Planned. No implementation has started for this plan.
+**Progress:** Completed. CLI context, Herdr plugin context action, Agent Skill, README updates, validation, release tag movement, and archive steps were completed.
 
-**Next steps:** Implement Task 1, then continue in order. Do not move the `v0.1.0` tag until every validation and smoke step in this plan passes.
+**Next steps:** None. This plan is archived after implementation.
 
 **Goal:** Add a simple agent-facing `shepherd context` command, align the Herdr plugin and Agent Skill around that command, update README guidance, and force-move `v0.1.0` only after validation.
 
