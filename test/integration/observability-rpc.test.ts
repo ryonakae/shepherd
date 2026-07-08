@@ -62,8 +62,7 @@ describe("ObservabilityRpcServer", () => {
       client.request("agent.notifications.ack", { eventId: event.id, subscriptionId }),
     ).resolves.toEqual({ acknowledged: true });
 
-    await expect(client.request("workspace.snapshot", {})).rejects.toThrow("Unknown method");
-    await expect(client.request("worker.events", {})).rejects.toThrow("Unknown method");
+    await expect(client.request("legacy.method", {})).rejects.toThrow("Unknown method");
     client.close();
     harness.sqlite.close();
   });

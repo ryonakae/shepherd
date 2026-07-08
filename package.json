@@ -1,7 +1,7 @@
 {
   "name": "shepherd",
   "version": "0.1.0",
-  "description": "Worker observability daemon and runtime bridges for Herdr-managed coding agents.",
+  "description": "Agent history daemon and runtime bridges for Herdr-managed coding agents.",
   "type": "module",
   "bin": {
     "shepherd": "./dist/src/cli/shepherd.js"

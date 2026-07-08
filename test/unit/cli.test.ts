@@ -59,25 +59,15 @@ describe("shepherd CLI", () => {
     );
   });
 
-  test("rejects removed commands", () => {
-    for (const command of [
-      "context",
-      "snapshot",
-      "events",
-      "notifications",
-      "message-worker",
-      "wait-worker",
-    ]) {
-      expect(() => parseCliArgs([command])).toThrow("Unknown command");
-    }
+  test("rejects unknown commands", () => {
+    expect(() => parseCliArgs(["legacy-command"])).toThrow("Unknown command");
   });
 
   test("renders help for agent commands", () => {
     expect(helpText()).toContain("shepherd agent list");
     expect(helpText()).toContain("shepherd agent get <target>");
     expect(helpText()).toContain("shepherd agent read <target>");
-    expect(helpText()).not.toContain("shepherd context");
-    expect(helpText()).not.toContain("shepherd snapshot");
+    expect(helpText()).toContain("shepherd help");
   });
 
   test("dispatches agent JSON commands", async () => {

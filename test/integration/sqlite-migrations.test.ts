@@ -31,7 +31,6 @@ describe("SQLite migrations", () => {
       "herdr_sessions",
       "herdr_workspaces",
     ]);
-    expect(tables.some((name) => name.startsWith("worker"))).toBe(false);
     expect(tables).not.toContain("observed_workspaces");
     sqlite.close();
   });

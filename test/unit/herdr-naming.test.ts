@@ -9,8 +9,8 @@ import {
 describe("Herdr naming", () => {
   test("creates Shepherd-managed Herdr names", () => {
     expect(herdrSessionNameForWorkingContext("My Project")).toBe("shepherd-my-project");
-    expect(herdrWorkspaceNameForTask("Review Worker Sync", "abc123")).toBe(
-      "shepherd-review-worker-sync-abc123",
+    expect(herdrWorkspaceNameForTask("Review Agent Sync", "abc123")).toBe(
+      "shepherd-review-agent-sync-abc123",
     );
   });
 
@@ -22,7 +22,7 @@ describe("Herdr naming", () => {
   });
 
   test("rejects names with unsupported characters", () => {
-    expect(slugifyHerdrName("Worker thread / deploy")).toBe("worker-thread-deploy");
-    expect(() => validateHerdrName("worker/thread")).toThrow("Invalid Herdr name");
+    expect(slugifyHerdrName("Agent thread / deploy")).toBe("agent-thread-deploy");
+    expect(() => validateHerdrName("agent/thread")).toThrow("Invalid Herdr name");
   });
 });

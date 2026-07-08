@@ -37,7 +37,10 @@ observability:
   });
 
   test("rejects unknown config fields", () => {
-    const result = parseShepherdConfig({ providers: { example: {} }, workers: { enabled: true } });
+    const result = parseShepherdConfig({
+      old_agents: { enabled: true },
+      providers: { example: {} },
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok)

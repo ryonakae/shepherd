@@ -1,104 +1,63 @@
-![Shepherd cover](./assets/shepherd-cover.png)
-
 # Shepherd
 
-<!-- README-I18N:START -->
+Shepherd は Herdr 上の agent と agent history を index し、coding agent が terminal pane を読まずに短い文脈を取得できるようにする daemon / CLI です。
 
-[English](./README.md) | **日本語**
+Herdr は workspace、tab、pane、terminal I/O の操作面です。Shepherd は running Herdr sessions を読み、agent history file を発見し、compact history を cache し、Pi などの integration へ agent update を届けます。
 
-<!-- README-I18N:END -->
+## daemon を起動する
 
-Shepherd は Herdr 内で動くコーディングエージェントの作業状態を保存し、人間、Herdr プラグイン、Pi、シェルコマンドから読めるようにします。
-
-Shepherd では、**ワーカー** は追跡対象になった 1 つのコーディングエージェント実行を指します。ワーカー記録には、そのエージェントの状態、要約、停止理由、推奨アクション、根拠が残ります。
-
-- **長く使えるワーカー記録:** Herdr のワークスペース、ペイン、実行時テレメトリを安定したワーカー記録にまとめます。
-- **読みやすいスナップショット:** 状態、要約、停止理由、推奨アクション、信頼度、根拠を SQLite に保存します。
-- **ワーカーイベント:** 完了、停止、入力待ち、ツール失敗、要約更新、状態変化を `worker.*` イベントとして記録します。
-- **オーケストレーター通知:** 未読のワーカーイベントを CLI の購読者と Pi 拡張に届けます。
-- **Runtime bridge:** Pi 拡張はサニタイズ済み telemetry を送ります。Herdr plugin は `context` action と worker dashboard pane を追加します。
-
-## 役割
-
-ブリッジを使う前に Shepherd デーモンを起動します。デーモンは `$SHEPHERD_HOME` 配下の SQLite データベースと JSON Lines ソケットを管理します。`SHEPHERD_HOME` が未設定なら `~/.shepherd` を使います。CLI、Pi 拡張、Herdr プラグインはこのデーモンに接続します。
-
-Herdr はワークスペース、タブ、ペイン、エージェントを操作します。Pi はモデルとの会話を扱います。Shepherd はワーカーの状態と通知履歴を保存します。
-
-## Shepherd を使う理由
-
-Herdr は人間とエージェントの操作面です。ワークスペース、タブ、ペイン、エージェント状態、コマンド実行を扱います。Shepherd はそれらのエージェント実行の共有メモリとして、ワーカーのスナップショット、要約、停止理由、推奨アクション、根拠、イベント、未読通知を保存します。
-
-Shepherd Agent Skill を入れると、エージェントは `shepherd context --json` から始められます。他のワーカーの状態を読んでから、自分が次に何をするべきか判断できます。ペインやエージェントを操作するのは Herdr、長く残る worker context を読むのは Shepherd です。
-
-## 要件
-
-Node.js 24.18.0 以上、pnpm 11.9.0 以上、Herdr プラグインを使う場合は Herdr 0.7.0 以上、Pi 拡張を使う場合は Pi が必要です。下の手順では mise で Node.js と pnpm を入れます。
-
-## ソースチェックアウトから起動する
+Shepherd の agent command は daemon が必要です。daemon は `herdr session list --json` に出る running session を監視し、60 秒ごとに再スキャンします。
 
 ```bash
-git clone https://github.com/ryonakae/shepherd.git
-cd shepherd
-mise trust
-mise install
+shepherd daemon start
+```
+
+stopped Herdr session は対象外です。
+
+## 主なコマンド
+
+Herdr workspace 内では current workspace が自動で使われます。
+
+```bash
+shepherd agent list --json
+shepherd agent get claude --json
+shepherd agent read claude --limit 20 --json
+```
+
+Herdr 外から読む場合は scope を明示します。
+
+```bash
+shepherd agent list --all --json
+shepherd agent list --workspace wB --json
+shepherd agent get claude --workspace wB --json
+shepherd agent read wB:p2 --workspace wB --limit 20 --json
+```
+
+同じ workspace id や agent name が複数の running Herdr session にある場合は `--session <name>` を付けます。
+
+## 返す内容
+
+- `shepherd agent list`: 選択 workspace の agent 一覧と、最後の user / assistant message。
+- `shepherd agent get <target>`: 1 agent の metadata と compact history。最新の compact tool result も含みます。
+- `shepherd agent read <target> --limit N`: 直近 N 件の user / assistant / compact `tool_result` messages。
+
+`<target>` は Herdr に合わせ、pane id、terminal id、または scope 内で一意な agent name を使えます。
+
+## Pi extension
+
+`shepherd-pi` extension は Pi の turn 前に current workspace の compact agent history を hidden context として注入できます。daemon から unread agent update も受け取り、compact history と一緒に次 turn へ渡します。
+
+## 開発
+
+```bash
 pnpm install
+pnpm check
 pnpm build
-node dist/src/cli/shepherd.js daemon start
-node dist/src/cli/shepherd.js daemon status
 ```
 
-Pi や Herdr が Shepherd の情報を読む間は、デーモンを起動したままにします。
-
-## Runtime bridge を追加する
+DB schema を変えたら次も実行します。
 
 ```bash
-pi install ./packages/shepherd-pi
-herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1.0
+pnpm db:generate
+pnpm db:check
 ```
-
-## ワーカーコンテキストを読む
-
-エージェントは [`SKILL.md`](SKILL.md) を読んでください。Herdr 管理下のペインでは、最初にこの 1 コマンドを使います。
-
-```bash
-shepherd context --json
-```
-
-ソースチェックアウトでは、ビルド済み CLI から同じコマンドを実行します。
-
-```bash
-node dist/src/cli/shepherd.js context --json
-```
-
-人間が同じ現在の workspace context を見る場合は、Herdr plugin action を使えます。
-
-```bash
-herdr plugin action invoke context --plugin shepherd.observability
-```
-
-未読のワーカー通知が必要なときだけ `--subscriber shepherd-agent` を付けます。`--subscriber` を付けない場合、`context` は現在のスナップショットと `notifications: { "subscription": null, "events": [] }` を返します。
-
-## 設定
-
-Shepherd は `$SHEPHERD_HOME/config.yaml` を読みます。`SHEPHERD_HOME` が未設定の場合は `~/.shepherd` を使います。
-
-```yaml
-runtime:
-  db_path: state.db
-  socket_path: shepherd.sock
-  pid_path: shepherd.pid
-  log_path: logs/shepherd.log
-observability:
-  telemetry:
-    max_excerpt_bytes: 4096
-```
-## パッケージ
-
-| パッケージ | 役割 |
-|------------|------|
-| [`packages/shepherd-pi`](packages/shepherd-pi) | テレメトリとワーカー通知を扱う Pi 拡張。 |
-| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | `context` action と dashboard pane を提供する Herdr plugin。 |
-
-## ライセンス
-
-[MIT](LICENSE)

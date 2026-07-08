@@ -1,7 +1,7 @@
 {
   "name": "shepherd-herdr-plugin",
   "version": "0.1.0",
-  "description": "Herdr companion plugin for Shepherd worker observability.",
+  "description": "Herdr companion plugin for Shepherd agent history.",
   "type": "module",
   "license": "MIT",
   "files": [

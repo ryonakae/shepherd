@@ -1,104 +1,76 @@
-![Shepherd cover](./assets/shepherd-cover.png)
-
 # Shepherd
 
-<!-- README-I18N:START -->
+Shepherd indexes Herdr agents and their agent history so coding agents can read compact agent history without scraping terminal panes.
 
-**English** | [日本語](./README.ja.md)
-
-<!-- README-I18N:END -->
-
-Shepherd keeps worker state for coding agents that run in Herdr, then exposes that state to humans, Herdr plugin actions, Pi, and shell commands.
-
-In Shepherd, a **worker** is one coding-agent run that Shepherd can track across a Herdr workspace or pane. A worker record keeps the agent's status, summary, blocked reason, recommended action, and evidence.
-
-- **Durable worker state:** Shepherd maps Herdr workspaces, panes, and runtime telemetry into stable worker records.
-- **Readable snapshots:** Shepherd stores status, summaries, blocked reasons, recommended actions, confidence, and evidence in SQLite.
-- **Worker events:** Shepherd records `worker.*` events for completion, blocked work, input requests, tool failures, summary updates, and status changes.
-- **Notifications for orchestrators:** Shepherd delivers unread worker events to CLI subscribers and the Pi extension.
-- **Runtime bridges:** The Pi extension sends redacted telemetry. The Herdr plugin adds a `context` action and a worker dashboard pane.
-
-## How it fits
-
-Run the Shepherd daemon before using the bridges. The daemon owns the SQLite database and JSON Lines socket under `$SHEPHERD_HOME` (`~/.shepherd` by default). The CLI, Pi extension, and Herdr plugin connect to that daemon.
-
-Herdr controls workspaces, tabs, panes, and agents. Pi owns the model conversation. Shepherd stores worker state and notification history between those systems.
-
-## Why use Shepherd?
-
-Herdr gives humans and agents the control surface: workspaces, tabs, panes, agent status, and command execution. Shepherd gives those agent runs a shared memory layer: worker snapshots, summaries, blocked reasons, recommended actions, evidence, events, and unread notifications.
-
-With the Shepherd Agent Skill installed, an agent can start with `shepherd context --json`, read what other workers are doing, and decide its next step without scraping panes. Herdr still controls panes and agents; Shepherd reads durable worker context.
+Herdr remains the control surface for workspaces, tabs, panes, and terminal I/O. Shepherd reads running Herdr sessions, discovers agent history files, caches compact history, and delivers agent updates to integrations such as Pi.
 
 ## Requirements
 
-Use Node.js 24.18.0+, pnpm 11.9.0+, Herdr 0.7.0+ for the Herdr plugin, and Pi for the Pi extension. The setup below uses mise to install Node.js and pnpm.
+- Node.js >= 24.18.0
+- pnpm >= 11.9.0
+- Herdr with socket API support
 
-## Quick start from source
+## Start the daemon
 
-```bash
-git clone https://github.com/ryonakae/shepherd.git
-cd shepherd
-mise trust
-mise install
-pnpm install
-pnpm build
-node dist/src/cli/shepherd.js daemon start
-node dist/src/cli/shepherd.js daemon status
-```
-
-Keep the daemon running while Pi or Herdr reads Shepherd data.
-
-## Add the runtime bridges
+Shepherd commands require the daemon. It watches all running Herdr sessions reported by `herdr session list --json` and rescans them every 60 seconds.
 
 ```bash
-pi install ./packages/shepherd-pi
-herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.1.0
+shepherd daemon start
 ```
 
-## Read worker context
+Stopped Herdr sessions are not indexed.
 
-Agents should read [`SKILL.md`](SKILL.md). Inside a Herdr-managed pane, agents start with one command:
+## Main commands
+
+Inside a Herdr workspace, the current workspace is selected automatically:
 
 ```bash
-shepherd context --json
+shepherd agent list --json
+shepherd agent get claude --json
+shepherd agent read claude --limit 20 --json
 ```
 
-From a source checkout, run the same command through the built CLI:
+From outside Herdr, pass a scope:
 
 ```bash
-node dist/src/cli/shepherd.js context --json
+shepherd agent list --all --json
+shepherd agent list --workspace wB --json
+shepherd agent get claude --workspace wB --json
+shepherd agent read wB:p2 --workspace wB --limit 20 --json
 ```
 
-Humans can use the Herdr plugin action for the same current workspace context:
+Use `--session <name>` when the same workspace id or agent name is ambiguous across running Herdr sessions.
 
-```bash
-herdr plugin action invoke context --plugin shepherd.observability
-```
+## Command behavior
 
-Use `--subscriber shepherd-agent` only when you need unread worker notifications. Without `--subscriber`, `context` returns the current snapshot and `notifications: { "subscription": null, "events": [] }`.
+- `shepherd agent list` returns agents in the selected workspace plus compact last user/assistant messages.
+- `shepherd agent get <target>` returns one agent's metadata and compact history, including the latest compact tool result.
+- `shepherd agent read <target> --limit N` returns recent structured user, assistant, and compact `tool_result` messages.
 
-## Configuration
+Targets follow Herdr conventions where possible: pane id, terminal id, or a unique agent name in the selected scope.
 
-Shepherd reads `$SHEPHERD_HOME/config.yaml`. If `SHEPHERD_HOME` is unset, Shepherd uses `~/.shepherd`.
+## Pi extension
 
-```yaml
-runtime:
-  db_path: state.db
-  socket_path: shepherd.sock
-  pid_path: shepherd.pid
-  log_path: logs/shepherd.log
-observability:
-  telemetry:
-    max_excerpt_bytes: 4096
-```
+The `shepherd-pi` extension can inject current-workspace compact agent history before a Pi turn. It also receives unread agent updates from the daemon and includes compact history in hidden context.
+
 ## Packages
 
-| Package | Purpose |
-|---------|---------|
-| [`packages/shepherd-pi`](packages/shepherd-pi) | Pi extension for telemetry and worker notifications. |
-| [`packages/shepherd-herdr-plugin`](packages/shepherd-herdr-plugin) | Herdr plugin with a `context` action and dashboard pane. |
+| Path | Purpose |
+| --- | --- |
+| `packages/shepherd-pi` | Pi extension for agent history and agent updates. |
+| `packages/shepherd-herdr-plugin` | Herdr plugin for showing compact Shepherd agent rows. |
 
-## License
+## Development
 
-[MIT](LICENSE)
+```bash
+pnpm install
+pnpm check
+pnpm build
+```
+
+DB schema changes require:
+
+```bash
+pnpm db:generate
+pnpm db:check
+```

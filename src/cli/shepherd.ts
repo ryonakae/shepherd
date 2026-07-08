@@ -9,12 +9,7 @@ import {
   startDaemonProcess,
   stopDaemonProcess,
 } from "@/daemon/process-manager.js";
-import type {
-  AgentEventRecord,
-  AgentGetResult,
-  AgentListItem,
-  AgentReadResult,
-} from "@/observability/contracts.js";
+import type { AgentGetResult, AgentListItem, AgentReadResult } from "@/observability/contracts.js";
 
 const CURRENT_HERDR_WORKSPACE_ERROR =
   "agent command requires HERDR_ENV=1 with HERDR_WORKSPACE_ID, --workspace <id>, --session <name>, or --all.";

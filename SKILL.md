@@ -1,82 +1,57 @@
 ---
 name: shepherd
-description: "Use Shepherd inside Herdr to read worker snapshots, worker events, and notifications for coding agents. Use when HERDR_ENV=1 or when the user gives you an observed workspace id."
+description: "Use Shepherd inside Herdr to read compact agent history for coding agents. Use when HERDR_ENV=1 or when the user gives a Herdr workspace/session scope."
 ---
 
-# shepherd - agent skill
+# shepherd - agent history skill
 
-before using this skill, check whether `HERDR_ENV=1`.
-
-if `HERDR_ENV=1`, run:
-
-```bash
-shepherd context --json
-```
-
-if `HERDR_ENV` is not `1`, only use Shepherd when the user gives you an observed workspace id. then run:
-
-```bash
-shepherd context --observed-workspace ow_123 --json
-```
-
-if you are not inside Herdr and the user did not give an observed workspace id, say Shepherd needs a Herdr-managed pane or an observed workspace id. stop there. do not guess a workspace.
-
-Shepherd stores worker state for coding agents that run in Herdr. It does not control panes, tabs, or agents. Use Herdr for terminal control. Use Shepherd for worker snapshots, worker events, and notification context.
-
-## daemon requirement
-
-Shepherd commands talk to the Shepherd daemon. if `shepherd context --json` cannot connect to the daemon, ask the user to start it:
+Before using Shepherd, check whether the Shepherd daemon is running. If a command cannot connect, ask the user to run:
 
 ```bash
 shepherd daemon start
 ```
 
-Do not start the daemon yourself unless the user asks.
-
-## read current worker context
+## Read current Herdr workspace agents
 
 Inside Herdr, start with:
 
 ```bash
-shepherd context --json
+shepherd agent list --json
 ```
 
-The result has this shape:
+Use this to see agents in the current workspace and their compact last user/assistant messages.
 
-```json
-{
-  "observedWorkspace": { "id": "ow_123" },
-  "workers": [],
-  "notifications": { "subscription": null, "events": [] }
-}
-```
-
-Use `workers` to see current worker status, summaries, blocked reasons, recommended actions, and evidence. Use notification events only when the user asks about unread worker notifications.
-
-## read unread notifications
-
-Do not create a notification subscription unless you need unread worker notifications. When you need them, use a separate subscriber id for agent reads:
+## Read one agent
 
 ```bash
-shepherd context --json --subscriber shepherd-agent
+shepherd agent get <target> --json
 ```
 
-This reads pending events. It does not ack them.
+Use this for one agent's metadata, compact history, and latest compact tool result.
 
-## read a known observed workspace
-
-Outside Herdr, use an id the user gave you:
+## Read recent messages
 
 ```bash
-shepherd context --observed-workspace ow_123 --json
+shepherd agent read <target> --limit 20 --json
 ```
 
-Add `--subscriber shepherd-agent` only when you need pending notifications for that workspace.
+This returns recent structured user, assistant, and compact `tool_result` messages. It does not return raw full tool output by default.
 
-## boundaries
+## Outside Herdr
 
-- use Shepherd for durable worker state, snapshots, worker events, and notifications
-- use Herdr for workspace, tab, pane, output, wait, and agent control
-- do not send hidden thinking, full transcripts, or full tool outputs to Shepherd
-- do not ack notifications unless the user asks you to ack a specific event
-- do not assume worker ids or observed workspace ids; read them from Shepherd output
+Use an explicit scope:
+
+```bash
+shepherd agent list --all --json
+shepherd agent list --workspace wB --json
+shepherd agent get claude --workspace wB --json
+```
+
+Use `--session <name>` when workspace ids or agent names are ambiguous across running Herdr sessions.
+
+## Boundaries
+
+- Use Herdr for workspace, tab, pane, terminal output, wait, send, focus, and attach operations.
+- Use Shepherd for compact agent history and agent updates.
+- Do not assume target names; read them from `shepherd agent list --json`.
+- Do not expect stopped Herdr sessions to be indexed.

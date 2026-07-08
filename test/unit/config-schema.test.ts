@@ -26,7 +26,7 @@ describe("Shepherd config schema", () => {
 
   test("rejects unknown top-level config surfaces", () => {
     for (const config of [
-      { workers: { enabled: true } },
+      { old_agents: { enabled: true } },
       { providers: { example: {} } },
       { orchestration: { queue: {} } },
     ]) {

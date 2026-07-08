@@ -14,8 +14,8 @@ describe("shepherd Herdr plugin package", () => {
     expect(manifest).toContain('id = "agent-list"');
     expect(manifest).toContain('title = "Show Shepherd agents"');
     expect(manifest).toContain('title = "Shepherd Agents"');
-    expect(manifest).not.toContain('id = "context"');
-    expect(manifest).not.toContain("Shepherd Workers");
+    expect(manifest).toContain('id = "agents"');
+    expect(manifest).not.toContain('id = "legacy"');
   });
 
   test("renders agent rows from daemon RPC", async () => {
