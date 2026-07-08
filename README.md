@@ -1,3 +1,5 @@
+![Shepherd cover](./assets/shepherd-cover.png)
+
 # Shepherd
 
 <!-- README-I18N:START -->
