@@ -222,7 +222,7 @@ export class HerdrSocketClient {
   }
 
   async *subscribeEvents(
-    params: { paneIds: string[]; workspaceId: string },
+    params: { paneIds?: string[]; workspaceId?: string } = {},
     options: { signal?: AbortSignal } = {},
   ): AsyncIterable<unknown> {
     const queue: unknown[] = [];
@@ -250,7 +250,7 @@ export class HerdrSocketClient {
           { type: "pane.moved" },
           { type: "pane.exited" },
           { type: "pane.agent_detected" },
-          ...params.paneIds.map((pane_id) => ({
+          ...(params.paneIds ?? []).map((pane_id) => ({
             pane_id,
             type: "pane.agent_status_changed" as const,
           })),

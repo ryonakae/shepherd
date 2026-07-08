@@ -1,18 +1,18 @@
-id = "shepherd.observability"
-name = "Shepherd Observability"
+id = "shepherd.agents"
+name = "Shepherd Agents"
 version = "0.1.0"
 min_herdr_version = "0.7.0"
-description = "Observe Herdr workers through Shepherd snapshots and notifications."
+description = "Read compact Herdr agent history through Shepherd."
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
-id = "context"
-title = "Show Shepherd context"
+id = "agent-list"
+title = "Show Shepherd agents"
 contexts = ["workspace"]
-command = ["node", "index.mjs", "context"]
+command = ["node", "index.mjs", "agent-list"]
 
 [[panes]]
-id = "dashboard"
-title = "Shepherd Workers"
+id = "agents"
+title = "Shepherd Agents"
 placement = "split"
-command = ["node", "index.mjs", "dashboard"]
+command = ["node", "index.mjs", "agents"]

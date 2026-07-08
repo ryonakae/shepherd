@@ -1,284 +1,145 @@
 import { describe, expect, test } from "vitest";
 import { helpText, parseCliArgs, runCliCommand } from "@/cli/shepherd.js";
 
-const CURRENT_HERDR_CONTEXT_ERROR =
-  "--current requires HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_WORKSPACE_ID. Run it inside a Herdr-managed pane or plugin command.";
+type FakeClient = {
+  calls: unknown[];
+  close(): void;
+  request(method: string, params: unknown): Promise<unknown>;
+};
 
-describe("Shepherd CLI", () => {
-  test("parses observed workspace commands", () => {
-    expect(parseCliArgs(["daemon"])).toEqual({ action: "status", command: "daemon" });
-    expect(parseCliArgs(["daemon", "start"])).toEqual({ action: "start", command: "daemon" });
-    expect(
-      parseCliArgs(["observe", "--herdr-session", "main", "--workspace", "w1", "--json"]),
-    ).toEqual({
-      command: "observe",
-      current: false,
-      herdrSessionName: "main",
-      json: true,
-      workspaceId: "w1",
-    });
-    expect(
-      parseCliArgs(["observe", "--current", "--json"], {
-        HERDR_ENV: "1",
-        HERDR_SOCKET_PATH: "/tmp/herdr.sock",
-        HERDR_WORKSPACE_ID: "w1",
-      }),
-    ).toEqual({
-      command: "observe",
-      current: true,
-      json: true,
-      socketPath: "/tmp/herdr.sock",
-      workspaceId: "w1",
-    });
-    expect(
-      parseCliArgs(["context", "--json"], {
-        HERDR_ENV: "1",
-        HERDR_SOCKET_PATH: "/tmp/herdr.sock",
-        HERDR_WORKSPACE_ID: "w1",
-      }),
-    ).toEqual({
-      command: "context",
-      json: true,
-      socketPath: "/tmp/herdr.sock",
-      workspaceId: "w1",
-    });
-    expect(
-      parseCliArgs(
-        ["context", "--observed-workspace", "ow_1", "--subscriber", "shepherd-agent", "--json"],
-        {},
-      ),
-    ).toEqual({
-      command: "context",
-      json: true,
-      observedWorkspaceId: "ow_1",
-      subscriberId: "shepherd-agent",
-    });
-    expect(parseCliArgs(["snapshot", "ow_123", "--json"])).toEqual({
-      command: "snapshot",
-      json: true,
-      observedWorkspaceId: "ow_123",
-    });
-    expect(parseCliArgs(["events", "ow_123", "--after", "10", "--json"])).toEqual({
-      command: "events",
-      afterEventId: 10,
-      json: true,
-      observedWorkspaceId: "ow_123",
-    });
-    expect(parseCliArgs(["ack", "--subscription", "ns_1", "--event", "42", "--json"])).toEqual({
-      command: "ack",
-      eventId: 42,
-      json: true,
-      subscriptionId: "ns_1",
+describe("shepherd CLI", () => {
+  test("parses agent list with current Herdr workspace", () => {
+    expect(parseCliArgs(["agent", "list"], { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "wB" })).toEqual({
+      command: "agent-list",
+      json: false,
+      workspaceId: "wB",
     });
   });
 
-  test("rejects old commands and current context without Herdr env", () => {
-    expect(() => parseCliArgs(["observe-current"], {})).toThrow("Unknown command: observe-current");
-    expect(() => parseCliArgs(["observe", "--current"], {})).toThrow(CURRENT_HERDR_CONTEXT_ERROR);
-    expect(() => parseCliArgs(["context"], {})).toThrow(CURRENT_HERDR_CONTEXT_ERROR);
-    expect(() =>
-      parseCliArgs(["observe", "--current", "--workspace", "w1"], {
+  test("parses explicit agent scopes", () => {
+    expect(parseCliArgs(["agent", "list", "--all", "--json"])).toEqual({
+      all: true,
+      command: "agent-list",
+      json: true,
+    });
+    expect(parseCliArgs(["agent", "list", "--workspace", "wB", "--session", "default"])).toEqual({
+      command: "agent-list",
+      herdrSessionName: "default",
+      json: false,
+      workspaceId: "wB",
+    });
+    expect(parseCliArgs(["agent", "list", "--session", "default"])).toEqual({
+      command: "agent-list",
+      herdrSessionName: "default",
+      json: false,
+    });
+  });
+
+  test("parses agent get and read", () => {
+    expect(
+      parseCliArgs(["agent", "get", "claude", "--json"], {
         HERDR_ENV: "1",
-        HERDR_SOCKET_PATH: "/tmp/herdr.sock",
-        HERDR_WORKSPACE_ID: "w1",
+        HERDR_WORKSPACE_ID: "wB",
       }),
-    ).toThrow(
-      "observe --current cannot be combined with --herdr-session, --socket, or --workspace",
+    ).toEqual({ command: "agent-get", json: true, target: "claude", workspaceId: "wB" });
+    expect(parseCliArgs(["agent", "get", "claude", "--session", "default", "--json"])).toEqual({
+      command: "agent-get",
+      herdrSessionName: "default",
+      json: true,
+      target: "claude",
+    });
+    expect(
+      parseCliArgs(["agent", "read", "wB:p2", "--limit", "20", "--json"], {
+        HERDR_ENV: "1",
+        HERDR_WORKSPACE_ID: "wB",
+      }),
+    ).toEqual({ command: "agent-read", json: true, limit: 20, target: "wB:p2", workspaceId: "wB" });
+    expect(() => parseCliArgs(["agent", "read", "wB:p2", "--limit", "0"])).toThrow(
+      "--limit must be between 1 and 500",
     );
-    for (const oldCommand of ["send", "open", "watch", "audit"]) {
-      expect(() => parseCliArgs([oldCommand])).toThrow(`Unknown command: ${oldCommand}`);
+  });
+
+  test("rejects removed commands", () => {
+    for (const command of [
+      "context",
+      "snapshot",
+      "events",
+      "notifications",
+      "message-worker",
+      "wait-worker",
+    ]) {
+      expect(() => parseCliArgs([command])).toThrow("Unknown command");
     }
   });
 
-  test("runs RPC commands", async () => {
-    const calls: unknown[] = [];
-    const output: string[] = [];
-    const client = {
-      close: () => calls.push(["close"]),
-      request: async (method: string, params: unknown) => {
-        calls.push([method, params]);
-        return method === "worker.events"
-          ? { events: [{ id: 11, type: "worker.completed" }] }
-          : { ok: true };
-      },
-    };
-
-    await runCliCommand(
-      { command: "snapshot", json: true, observedWorkspaceId: "ow_123" },
-      {
-        connect: async () => client,
-        output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
-      },
-    );
-    await runCliCommand(
-      { command: "events", afterEventId: 10, json: true, observedWorkspaceId: "ow_123" },
-      {
-        connect: async () => client,
-        output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
-      },
-    );
-    await runCliCommand(
-      { command: "ack", eventId: 42, json: true, subscriptionId: "ns_1" },
-      {
-        connect: async () => client,
-        output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
-      },
-    );
-
-    expect(calls).toEqual([
-      ["workspace.snapshot", { observedWorkspaceId: "ow_123" }],
-      ["close"],
-      ["worker.events", { afterEventId: 10, observedWorkspaceId: "ow_123" }],
-      ["close"],
-      ["notification.ack", { eventId: 42, subscriptionId: "ns_1" }],
-      ["close"],
-    ]);
-    expect(output).toHaveLength(3);
+  test("renders help for agent commands", () => {
+    expect(helpText()).toContain("shepherd agent list");
+    expect(helpText()).toContain("shepherd agent get <target>");
+    expect(helpText()).toContain("shepherd agent read <target>");
+    expect(helpText()).not.toContain("shepherd context");
+    expect(helpText()).not.toContain("shepherd snapshot");
   });
 
-  test("composes current context JSON from daemon RPC", async () => {
-    const calls: unknown[] = [];
+  test("dispatches agent JSON commands", async () => {
+    const client = createFakeClient();
     const output: string[] = [];
-    const client = createContextClient(calls);
-
     await runCliCommand(
-      { command: "context", json: true, socketPath: "/tmp/herdr.sock", workspaceId: "w1" },
+      { command: "agent-read", json: true, limit: 10, target: "claude", workspaceId: "wB" },
       {
         connect: async () => client,
         output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
+        socketPath: "/tmp/s.sock",
       },
     );
-
-    expect(calls).toEqual([
-      ["workspace.observe", { socketPath: "/tmp/herdr.sock", workspaceId: "w1" }],
-      ["workspace.snapshot", { observedWorkspaceId: "ow_1" }],
+    expect(client.calls).toEqual([
+      ["agent.read", { limit: 10, target: "claude", workspaceId: "wB" }],
       ["close"],
     ]);
-    expect(JSON.parse(output[0] ?? "")).toEqual({
-      observedWorkspace: { id: "ow_1", liveWorkspaceId: "w1", status: "active" },
-      workers: [
-        {
-          id: "wk_1",
-          status: "done",
-          agent: "pi",
-          summary: "completed",
-          recommendedAction: "review",
-        },
-      ],
-      notifications: { subscription: null, events: [] },
-    });
+    expect(JSON.parse(output[0] ?? "")).toEqual({ agent: { messages: [] } });
   });
 
-  test("composes known observed workspace context with notifications", async () => {
-    const calls: unknown[] = [];
+  test("renders human agent list", async () => {
+    const client = createFakeClient();
     const output: string[] = [];
-    const client = createContextClient(calls);
-
     await runCliCommand(
-      {
-        command: "context",
-        json: true,
-        observedWorkspaceId: "ow_1",
-        subscriberId: "shepherd-agent",
-      },
+      { command: "agent-list", json: false, workspaceId: "wB" },
       {
         connect: async () => client,
         output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
+        socketPath: "/tmp/s.sock",
       },
     );
-
-    expect(calls).toEqual([
-      ["workspace.snapshot", { observedWorkspaceId: "ow_1" }],
-      [
-        "notification.subscribe",
-        {
-          autoResume: false,
-          observedWorkspaceId: "ow_1",
-          subscriberId: "shepherd-agent",
-          subscriberKind: "cli",
-        },
-      ],
-      ["close"],
-    ]);
-    expect(JSON.parse(output[0] ?? "")).toEqual({
-      observedWorkspace: { id: "ow_1" },
-      workers: [
-        {
-          id: "wk_1",
-          status: "done",
-          agent: "pi",
-          summary: "completed",
-          recommendedAction: "review",
-        },
-      ],
-      notifications: {
-        subscription: { id: "ns_1" },
-        events: [{ id: 7, type: "worker.completed" }],
-      },
-    });
-  });
-
-  test("renders context as a human table", async () => {
-    const calls: unknown[] = [];
-    const output: string[] = [];
-    const client = createContextClient(calls);
-
-    await runCliCommand(
-      { command: "context", json: false, observedWorkspaceId: "ow_1" },
-      {
-        connect: async () => client,
-        output: (line) => output.push(line),
-        socketPath: "/tmp/shepherd.sock",
-      },
-    );
-
-    expect(output).toEqual([
-      "Observed workspace: ow_1\nWorkers: 1\nNotifications: 0\n\nstatus\tagent\tworker\tsummary\taction\ndone\tpi\twk_1\tcompleted\treview",
-    ]);
-  });
-
-  test("renders help", () => {
-    expect(helpText()).toContain(
-      "shepherd observe --herdr-session <name> --workspace <workspace-id>",
-    );
-    expect(helpText()).toContain("shepherd observe --current [--json]");
-    expect(helpText()).toContain(
-      "shepherd context [--observed-workspace <id>] [--subscriber <id>] [--json]",
-    );
-    expect(helpText()).not.toContain("shepherd observe-current");
-    expect(helpText()).not.toContain("shepherd send");
+    expect(output[0]).toContain("status\tagent\tpane\tlast user\tlast assistant\tupdated");
+    expect(output[0]).toContain("idle\tpi\twB:p1\tfix bug\tdone");
   });
 });
 
-function createContextClient(calls: unknown[]) {
+function createFakeClient(): FakeClient {
+  const calls: unknown[] = [];
   return {
+    calls,
     close: () => calls.push(["close"]),
-    request: async (method: string, params: unknown) => {
+    async request(method, params) {
       calls.push([method, params]);
-      if (method === "workspace.observe") {
-        return { observedWorkspace: { id: "ow_1", liveWorkspaceId: "w1", status: "active" } };
-      }
-      if (method === "workspace.snapshot") {
+      if (method === "agent.list") {
         return {
-          workers: [
+          agents: [
             {
-              id: "wk_1",
-              status: "done",
               agent: "pi",
-              summary: "completed",
-              recommendedAction: "review",
+              agentStatus: "idle",
+              history: {
+                lastAssistantMessage: { text: "done", timestamp: null, ref: "r2" },
+                lastUserMessage: { text: "fix bug", timestamp: null, ref: "r1" },
+                source: "pi-jsonl",
+                updatedAt: "2026-07-08T00:00:00.000Z",
+              },
+              paneId: "wB:p1",
             },
           ],
         };
       }
-      if (method === "notification.subscribe") {
-        return { events: [{ id: 7, type: "worker.completed" }], subscription: { id: "ns_1" } };
-      }
+      if (method === "agent.get") return { agent: { agent: "pi", history: {}, paneId: "wB:p1" } };
+      if (method === "agent.read") return { agent: { messages: [] } };
       return {};
     },
   };

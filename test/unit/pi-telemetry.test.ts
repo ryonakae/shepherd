@@ -39,7 +39,7 @@ describe("Pi telemetry normalization", () => {
       isError: true,
       redactionApplied: true,
       runtime: "pi",
-      type: "worker.tool.completed",
+      type: "agent.tool.completed",
     });
     expect(event.inputPreview).toContain("[REDACTED]");
     expect(event.errorExcerpt).toContain("[REDACTED]");
@@ -59,7 +59,7 @@ describe("Pi telemetry normalization", () => {
       needsInputHint: "Completed. Need input before deployment.",
       redactionApplied: false,
       textExcerpt: "Completed. Need input before deployment.",
-      type: "worker.message.final",
+      type: "agent.message.final",
     });
     expect(piTelemetryIdempotencyKey(event)).toBe("telemetry:pi:turn-1:message:final");
   });

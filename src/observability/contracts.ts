@@ -1,12 +1,22 @@
-export type ObservedWorkspaceStatus = "active" | "ambiguous" | "missing";
-export type WorkerStatus = "blocked" | "done" | "idle" | "unknown" | "working";
-export type WorkerEventType =
-  | "worker.blocked"
-  | "worker.completed"
-  | "worker.needs_input"
-  | "worker.status.changed"
-  | "worker.summary.updated"
-  | "worker.tool.failed";
+export type AgentStatus = "blocked" | "done" | "idle" | "unknown" | "working";
+
+export type HerdrSessionRecord = {
+  lastScannedAt: Date | null;
+  name: string;
+  running: boolean;
+  sessionDir: string;
+  socketPath: string;
+  updatedAt: Date;
+};
+
+export type HerdrWorkspaceRecord = {
+  agentStatus: AgentStatus;
+  focused: boolean;
+  herdrSessionName: string;
+  label: string | null;
+  lastSeenAt: Date;
+  workspaceId: string;
+};
 
 export type AgentSessionRef = {
   agent: string;
@@ -15,179 +25,172 @@ export type AgentSessionRef = {
   value: string;
 };
 
-export type WorkerIdentity =
-  | { key: string; kind: "agent_session"; session: AgentSessionRef }
-  | {
-      fallback: {
-        herdrSessionName?: string;
-        paneId: string;
-        socketPath?: string;
-        workspaceId: string;
-      };
-      key: string;
-      kind: "live_pane";
-    };
+export type AgentIndexRecord = {
+  agent: string | null;
+  agentSession: AgentSessionRef | null;
+  agentStatus: AgentStatus;
+  cwd: string | null;
+  firstSeenAt: Date;
+  focused: boolean;
+  foregroundCwd: string | null;
+  herdrSessionName: string;
+  id: string;
+  lastSeenAt: Date;
+  paneId: string;
+  tabId: string | null;
+  terminalId: string | null;
+  workspaceId: string;
+};
 
-export type ObservedWorkspaceRecord = {
+export type AgentHistoryRef = {
+  kind: "agent_session" | "discovered_file";
+  path?: string;
+  source: "claude-jsonl" | "pi-jsonl" | "unknown";
+  value: string;
+};
+
+export type AgentHistoryExcerpt = {
+  ref: string;
+  text: string;
+  timestamp: string | null;
+};
+
+export type CompactToolResult = {
+  compaction: {
+    mode:
+      | "failure_focus"
+      | "grouped_matches"
+      | "structured_summary"
+      | "truncated_passthrough"
+      | "web_sources"
+      | "unknown";
+    originalChars: number;
+    returnedChars: number;
+  };
+  isError: boolean;
+  ref: string;
+  text: string;
+  toolName: string;
+};
+
+export type CompactAgentHistory = {
+  historyRef: AgentHistoryRef | null;
+  lastAssistantMessage: AgentHistoryExcerpt | null;
+  lastToolResult: CompactToolResult | null;
+  lastUserMessage: AgentHistoryExcerpt | null;
+  messageCount: number;
+  source: string | null;
+  updatedAt: string | null;
+};
+
+export type AgentHistoryMessage = {
+  compact?: CompactToolResult;
+  ref: string;
+  role: "assistant" | "tool_result" | "user";
+  text: string;
+  timestamp: string | null;
+  toolName?: string;
+};
+
+export type AgentListItem = AgentIndexRecord & {
+  history: Pick<
+    CompactAgentHistory,
+    "lastAssistantMessage" | "lastUserMessage" | "source" | "updatedAt"
+  >;
+};
+
+export type AgentGetResult = AgentIndexRecord & {
+  history: CompactAgentHistory;
+};
+
+export type AgentReadResult = AgentIndexRecord & {
+  historyRef: AgentHistoryRef | null;
+  messages: AgentHistoryMessage[];
+};
+
+export type AgentEventType =
+  | "agent.blocked"
+  | "agent.done"
+  | "agent.idle"
+  | "agent.status.changed"
+  | "agent.tool.failed";
+
+export type AgentEventRecord = {
+  agentId: string | null;
+  compactHistory: CompactAgentHistory | null;
+  createdAt: Date;
+  herdrSessionName: string;
+  id: number;
+  paneId: string | null;
+  payload: unknown;
+  type: AgentEventType;
+  workspaceId: string | null;
+};
+
+export type AgentNotificationSubscriptionRecord = {
+  autoResume: boolean;
   createdAt: Date;
   herdrSessionName: string | null;
   id: string;
-  lastResolvedAt: Date | null;
-  liveWorkspaceId: string | null;
-  metadata: ObservedWorkspaceMetadata;
-  socketPath: string | null;
-  status: ObservedWorkspaceStatus;
+  subscriberId: string;
+  subscriberKind: string;
+  updatedAt: Date;
+  workspaceId: string | null;
+};
+
+export type AgentNotificationCursorRecord = {
+  ackedEventId: number;
+  autoResumeEventId: number;
+  deliveredEventId: number;
+  hiddenContextEventId: number;
+  subscriptionId: string;
   updatedAt: Date;
 };
 
-export type ObservedWorkspaceMetadata = {
-  label?: string;
-  workspaceCwd?: string;
-  worktree?: {
-    checkoutPath: string;
-    isLinkedWorktree: boolean;
-    repoKey: string;
-    repoName: string;
-    repoRoot: string;
-  };
-};
-
-export type WorkerEvidence = {
-  excerpt?: string;
-  ref?: string;
-  source: "herdr" | "pi" | "transcript" | "rule";
-  timestamp?: string;
-};
-
-export type WorkerSnapshot = {
-  agent: string | null;
-  blockedReason: string | null;
-  completion: string | null;
-  confidence: "high" | "low" | "medium";
-  currentWork: string | null;
-  evidence: WorkerEvidence[];
-  id: string;
-  lastActivityAt: string | null;
-  lastMessageExcerpt: string | null;
-  lastTool: WorkerToolSummary | null;
-  needsInput: boolean;
-  observedWorkspaceId: string;
-  pane: { paneId: string; tabId: string | null; workspaceId: string | null } | null;
-  recommendedAction: string | null;
-  sessionRef: AgentSessionRef | null;
-  status: WorkerStatus;
-  summary: string | null;
-};
-
-export type WorkerToolSummary = {
-  durationMs?: number;
-  errorExcerpt?: string;
-  inputPreview?: string;
-  isError: boolean;
-  name: string;
-  outputExcerpt?: string;
-  toolCallId: string;
-};
-
-export type WorkerTelemetryEvent =
-  | WorkerToolTelemetryEvent
-  | WorkerMessageFinalTelemetryEvent
-  | WorkerLifecycleTelemetryEvent;
-
-export type WorkerToolTelemetryEvent = {
-  artifactRefs: string[];
-  durationMs?: number;
-  errorExcerpt?: string;
-  inputPreview?: string;
-  isError: boolean;
-  occurredAt: string;
-  outputExcerpt?: string;
-  redactionApplied: boolean;
-  runtime: "pi" | string;
-  sessionRef: AgentSessionRef | null;
-  toolCallId: string;
-  toolName: string;
-  turnId: string;
-  type: "worker.tool.completed";
-  workerKey: string | null;
-};
-
-export type WorkerMessageFinalTelemetryEvent = {
-  blockedHint?: string;
-  completionHint?: string;
-  evidenceRefs: string[];
-  needsInputHint?: string;
-  occurredAt: string;
-  redactionApplied: boolean;
-  runtime: "pi" | string;
-  sessionRef: AgentSessionRef | null;
-  stopReason: "aborted" | "error" | "length" | "stop" | "toolUse" | string;
-  textExcerpt: string;
-  turnId: string;
-  type: "worker.message.final";
-  workerKey: string | null;
-};
-
-export type WorkerLifecycleTelemetryEvent = {
-  occurredAt: string;
-  runtime: "pi" | string;
-  sessionRef: AgentSessionRef | null;
-  status: WorkerStatus;
-  type: "worker.lifecycle";
-  workerKey: string | null;
-};
-
-export type WorkerEventWireRecord = {
-  createdAt: string;
-  id: number;
-  observedWorkspaceId: string;
-  payload: unknown;
-  type: WorkerEventType;
-  workerId: string | null;
-};
-
-export type HerdrControlClientWithSnapshot = {
-  agentRead(params: {
-    lines?: number;
-    source?: "detection" | "recent" | "recent-unwrapped" | "visible";
-    target: string;
-  }): Promise<unknown>;
-  agentSend(params: { target: string; text: string }): Promise<unknown>;
-  agentStart(params: {
-    argv: string[];
-    cwd?: string;
-    env?: Record<string, string>;
-    name: string;
-    tab_id?: string;
-    workspace_id?: string;
-  }): Promise<unknown>;
-  close(): void;
-  listAgents(): Promise<unknown>;
-  sessionSnapshot(): Promise<unknown>;
-  subscribeEvents(
-    params: { paneIds: string[]; workspaceId: string },
-    options?: { signal?: AbortSignal },
-  ): AsyncIterable<unknown>;
-};
-
-export type WorkerIdentityInput =
-  | { kind: "agent_session"; session: AgentSessionRef }
+export type AgentTelemetryEvent =
   | {
-      fallback: {
-        herdrSessionName?: string;
-        paneId: string;
-        socketPath?: string;
-        workspaceId: string;
-      };
-      kind: "live_pane";
+      artifactRefs: string[];
+      durationMs?: number;
+      errorExcerpt?: string;
+      inputPreview?: string;
+      isError: boolean;
+      occurredAt: string;
+      outputExcerpt?: string;
+      redactionApplied: boolean;
+      runtime: string;
+      sessionRef: AgentSessionRef | null;
+      toolCallId: string;
+      toolName: string;
+      turnId: string;
+      type: "agent.tool.completed";
+    }
+  | {
+      blockedHint?: string;
+      completionHint?: string;
+      evidenceRefs: string[];
+      needsInputHint?: string;
+      occurredAt: string;
+      redactionApplied: boolean;
+      runtime: string;
+      sessionRef: AgentSessionRef | null;
+      stopReason: string;
+      textExcerpt: string;
+      turnId: string;
+      type: "agent.message.final";
     };
 
-export function workerIdentityKey(input: WorkerIdentityInput): string {
-  if (input.kind === "agent_session") {
-    const session = input.session;
-    return `session:${session.source}:${session.agent}:${session.kind}:${session.value}`;
-  }
+export type AgentQueryScope = {
+  all?: boolean;
+  herdrSessionName?: string;
+  workspaceId?: string;
+};
 
-  const scope = input.fallback.herdrSessionName ?? input.fallback.socketPath ?? "unknown-herdr";
-  return `pane:${scope}:${input.fallback.workspaceId}:${input.fallback.paneId}`;
+export function parseAgentStatus(value: unknown): AgentStatus {
+  return value === "blocked" ||
+    value === "done" ||
+    value === "idle" ||
+    value === "unknown" ||
+    value === "working"
+    ? value
+    : "unknown";
 }

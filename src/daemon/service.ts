@@ -1,19 +1,20 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { env, exit } from "node:process";
+import { createAgentHistoryService } from "@/agent-history/service.js";
 import { resolveRuntime } from "@/config/runtime.js";
+import { AgentEventStore } from "@/db/agent-events.js";
+import { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
+import { AgentNotificationCursorStore } from "@/db/agent-notification-cursors.js";
+import { AgentStore } from "@/db/agents.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
-import { NotificationCursorStore } from "@/db/notification-cursors.js";
-import { ObservedWorkspaceStore } from "@/db/observed-workspaces.js";
-import { WorkerEventStore } from "@/db/worker-events.js";
-import { WorkerSnapshotStore } from "@/db/worker-snapshots.js";
-import { WorkerStore } from "@/db/workers.js";
-import { ManagedHerdrSocketClient } from "@/herdr/managed-socket-client.js";
-import { HerdrSocketClient } from "@/herdr/socket-client.js";
-import type { HerdrControlClientWithSnapshot } from "@/observability/contracts.js";
-import { NotificationService } from "@/observability/notification-service.js";
-import { WorkerStatePipeline } from "@/observability/worker-state-pipeline.js";
+import { HerdrSessionStore } from "@/db/herdr-sessions.js";
+import { HerdrWorkspaceStore } from "@/db/herdr-workspaces.js";
+import { createHerdrSessionListRunner } from "@/herdr/session-list.js";
+import { AgentIndexService } from "@/observability/agent-index-service.js";
+import { AgentNotificationService } from "@/observability/agent-notification-service.js";
+import { HerdrSessionWatchManager } from "./herdr-session-watch-manager.js";
 import { ObservabilityRpcServer } from "./observability-server.js";
 
 export async function runObservabilityDaemonService(
@@ -27,45 +28,42 @@ export async function runObservabilityDaemonService(
   const { sqlite } = openSqlite(runtime.paths.dbPath);
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
 
-  const observedWorkspaces = new ObservedWorkspaceStore(sqlite);
-  const workers = new WorkerStore(sqlite);
-  const workerEvents = new WorkerEventStore(sqlite);
-  const snapshots = new WorkerSnapshotStore(sqlite);
-  const cursors = new NotificationCursorStore(sqlite);
-  const notifications = new NotificationService({ cursors, workerEvents });
-  const pipeline = new WorkerStatePipeline({
-    herdrClientForWorkspace(workspace) {
-      if (workspace.socketPath) {
-        return asSnapshotClient(new HerdrSocketClient({ socketPath: workspace.socketPath }));
-      }
-      if (!workspace.herdrSessionName) {
-        throw new Error(`Observed workspace has no Herdr selector: ${workspace.id}`);
-      }
-      return asSnapshotClient(
-        new ManagedHerdrSocketClient({ herdrSessionName: workspace.herdrSessionName }),
-      );
-    },
-    observedWorkspaces,
-    snapshots,
-    transcriptAdapters: [],
-    workerEvents,
-    workers,
+  const herdrSessions = new HerdrSessionStore(sqlite);
+  const herdrWorkspaces = new HerdrWorkspaceStore(sqlite);
+  const agents = new AgentStore(sqlite);
+  const agentEvents = new AgentEventStore(sqlite);
+  const agentHistoryCache = new AgentHistoryCacheStore(sqlite);
+  const agentNotificationCursors = new AgentNotificationCursorStore({
+    events: agentEvents,
+    sqlite,
   });
-
-  for (const workspace of observedWorkspaces.listActive()) {
-    await pipeline.refreshWorkspace(workspace.id).catch(() => undefined);
-  }
+  const history = createAgentHistoryService({ cache: agentHistoryCache });
+  const notifications = new AgentNotificationService({ cursors: agentNotificationCursors });
+  const index = new AgentIndexService({
+    history,
+    stores: { agentEvents, agentHistoryCache, agents, herdrSessions, herdrWorkspaces },
+  });
 
   const server = new ObservabilityRpcServer({
+    history,
     notifications,
-    pipeline,
     socketPath: runtime.paths.socketPath,
-    stores: { observedWorkspaces, snapshots, workerEvents, workers },
+    stores: { agentEvents, agents, herdrWorkspaces },
   });
+  const watchManager = new HerdrSessionWatchManager({
+    agents,
+    herdrSessions,
+    index,
+    onAgentEvent: (event) => server.publishAgentEvent(event),
+    sessionList: createHerdrSessionListRunner({ env: runtime.environment }),
+  });
+
   await server.start();
-  console.log(`Shepherd observability daemon listening on ${runtime.paths.socketPath}`);
+  await watchManager.start();
+  console.log(`Shepherd daemon listening on ${runtime.paths.socketPath}`);
 
   const stop = async () => {
+    await watchManager.stop();
     await server.stop();
     sqlite.close();
     exit(0);
@@ -74,34 +72,9 @@ export async function runObservabilityDaemonService(
   process.once("SIGTERM", stop);
 }
 
-function asSnapshotClient(
-  client: HerdrSocketClient | ManagedHerdrSocketClient,
-): HerdrControlClientWithSnapshot {
-  return {
-    agentRead: (params) => client.readAgent(params),
-    agentSend: (params) => client.sendAgentMessage(params),
-    agentStart: (params) =>
-      client.startAgent({
-        args: params.argv.slice(1),
-        command: params.argv[0] ?? params.name,
-        ...(params.cwd ? { cwd: params.cwd } : {}),
-        name: params.name,
-        ...(params.tab_id ? { tab_id: params.tab_id } : {}),
-        ...(params.workspace_id ? { workspace_id: params.workspace_id } : {}),
-      }),
-    close: () => client.close(),
-    listAgents: () => client.listAgents(),
-    sessionSnapshot: () => client.sessionSnapshot(),
-    subscribeEvents: (params, options) => client.subscribeEvents(params, options),
-  };
-}
-
 function applyEnvironment(environment: NodeJS.ProcessEnv): void {
   for (const [key, value] of Object.entries(environment)) {
-    if (value === undefined) {
-      delete env[key];
-    } else {
-      env[key] = value;
-    }
+    if (value === undefined) delete env[key];
+    else env[key] = value;
   }
 }

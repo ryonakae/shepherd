@@ -1,55 +1,36 @@
-import type {
-  AgentSessionRef,
-  WorkerMessageFinalTelemetryEvent,
-  WorkerTelemetryEvent,
-  WorkerToolTelemetryEvent,
-} from "@/observability/contracts.js";
+import type { AgentSessionRef, AgentTelemetryEvent } from "./contracts.js";
 
 const maxExcerptLength = 4096;
-const secretPatterns = [
-  /(Authorization:\s*Bearer\s+)[^\s]+/gi,
-  /\b(token=)[^\s&]+/gi,
-  /\b(password=)[^\s&]+/gi,
-  /\b(secret=)[^\s&]+/gi,
-  /\b(api_key=)[^\s&]+/gi,
-];
-const blockedPattern = /\b(blocked|cannot proceed)\b|ブロック|確認が必要/i;
-const completionPattern = /\b(done|completed)\b|完了|実装しました|修正しました/i;
-const needsInputPattern = /\b(need input|needs input|confirm|confirmation|確認が必要)\b/i;
+const completionPattern = /\b(done|completed|完了|実装しました|修正しました)\b/i;
+const needsInputPattern = /\b(blocked|ブロック|確認が必要|cannot proceed|need input)\b/i;
 
-export function sanitizeTelemetryExcerpt(
-  value: unknown,
-  options: { maxLength?: number } = {},
-): { redacted: boolean; text: string } {
-  const maxLength = options.maxLength ?? maxExcerptLength;
+export function sanitizeTelemetryExcerpt(value: unknown): { redacted: boolean; text: string } {
   let text = typeof value === "string" ? value : JSON.stringify(value);
-  if (text === undefined) {
-    text = String(value);
-  }
-
+  if (text === undefined) text = String(value);
   let redacted = false;
-  for (const pattern of secretPatterns) {
+  for (const pattern of [
+    /(Authorization:\s*Bearer\s+)[^\s]+/gi,
+    /\b(token=)[^\s&]+/gi,
+    /\b(password=)[^\s&]+/gi,
+    /\b(secret=)[^\s&]+/gi,
+    /\b(api_key=)[^\s&]+/gi,
+  ]) {
     text = text.replace(pattern, (_match, prefix: string) => {
       redacted = true;
       return `${prefix}[REDACTED]`;
     });
   }
-
-  if (text.length > maxLength) {
-    text = text.slice(0, maxLength);
-  }
-
-  return { redacted, text };
+  return {
+    redacted,
+    text: text.length > maxExcerptLength ? text.slice(0, maxExcerptLength) : text,
+  };
 }
 
-export function piTelemetryIdempotencyKey(event: WorkerTelemetryEvent): string {
-  if (event.type === "worker.tool.completed") {
+export function piTelemetryIdempotencyKey(event: AgentTelemetryEvent): string {
+  if (event.type === "agent.tool.completed") {
     return `telemetry:pi:${event.turnId}:tool:${event.toolCallId}:completed`;
   }
-  if (event.type === "worker.message.final") {
-    return `telemetry:pi:${event.turnId}:message:final`;
-  }
-  return `telemetry:pi:${event.workerKey ?? event.sessionRef?.value ?? "unknown"}:lifecycle:${event.status}`;
+  return `telemetry:pi:${event.turnId}:message:final`;
 }
 
 export function normalizePiToolTelemetry(input: {
@@ -57,59 +38,50 @@ export function normalizePiToolTelemetry(input: {
   durationMs?: number;
   inputPreview?: unknown;
   isError: boolean;
-  occurredAt?: string;
-  output?: unknown;
-  runtime?: string;
+  output: unknown;
   sessionRef: AgentSessionRef | null;
   toolCallId: string;
   toolName: string;
   turnId: string;
-  workerKey?: string | null;
-}): WorkerToolTelemetryEvent {
-  const inputPreview = sanitizeTelemetryExcerpt(input.inputPreview ?? "");
-  const output = sanitizeTelemetryExcerpt(input.output ?? "");
+}): Extract<AgentTelemetryEvent, { type: "agent.tool.completed" }> {
+  const output = sanitizeTelemetryExcerpt(input.output);
+  const inputPreview =
+    input.inputPreview === undefined ? undefined : sanitizeTelemetryExcerpt(input.inputPreview);
   return {
     artifactRefs: input.artifactRefs ?? [],
     ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
     ...(input.isError ? { errorExcerpt: output.text } : { outputExcerpt: output.text }),
-    inputPreview: inputPreview.text,
+    ...(inputPreview ? { inputPreview: inputPreview.text } : {}),
     isError: input.isError,
-    occurredAt: input.occurredAt ?? new Date().toISOString(),
-    redactionApplied: inputPreview.redacted || output.redacted,
-    runtime: input.runtime ?? "pi",
+    occurredAt: new Date().toISOString(),
+    redactionApplied: output.redacted || (inputPreview?.redacted ?? false),
+    runtime: "pi",
     sessionRef: input.sessionRef,
     toolCallId: input.toolCallId,
     toolName: input.toolName,
     turnId: input.turnId,
-    type: "worker.tool.completed",
-    workerKey: input.workerKey ?? null,
+    type: "agent.tool.completed",
   };
 }
 
 export function normalizePiMessageFinalTelemetry(input: {
-  evidenceRefs?: string[];
-  occurredAt?: string;
-  runtime?: string;
   sessionRef: AgentSessionRef | null;
   stopReason: string;
   text: unknown;
   turnId: string;
-  workerKey?: string | null;
-}): WorkerMessageFinalTelemetryEvent {
+}): Extract<AgentTelemetryEvent, { type: "agent.message.final" }> {
   const excerpt = sanitizeTelemetryExcerpt(input.text);
   return {
-    ...(blockedPattern.test(excerpt.text) ? { blockedHint: excerpt.text } : {}),
     ...(completionPattern.test(excerpt.text) ? { completionHint: excerpt.text } : {}),
-    evidenceRefs: input.evidenceRefs ?? [],
+    evidenceRefs: [],
     ...(needsInputPattern.test(excerpt.text) ? { needsInputHint: excerpt.text } : {}),
-    occurredAt: input.occurredAt ?? new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     redactionApplied: excerpt.redacted,
-    runtime: input.runtime ?? "pi",
+    runtime: "pi",
     sessionRef: input.sessionRef,
     stopReason: input.stopReason,
     textExcerpt: excerpt.text,
     turnId: input.turnId,
-    type: "worker.message.final",
-    workerKey: input.workerKey ?? null,
+    type: "agent.message.final",
   };
 }

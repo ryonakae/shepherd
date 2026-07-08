@@ -10,7 +10,8 @@ type Module = {
     clientFactory: () => FakeClient;
   }) => (pi: FakePi) => void;
   defaultSocketPath: () => string;
-  formatHiddenNotifications: (
+  formatHiddenAgentContext: (input: { agents: unknown[]; workspaceId: string }) => string;
+  formatHiddenAgentUpdates: (
     events: Array<{ id: number; type: string; payload: unknown }>,
   ) => string;
 };
@@ -23,12 +24,11 @@ type FakeClient = {
 
 type FakePi = ReturnType<typeof createFakePi>;
 
-describe("shepherd-pi observability bridge", () => {
+describe("shepherd-pi agent history bridge", () => {
   test("defaults to the Shepherd daemon socket", async () => {
     const { defaultSocketPath } = (await import(extensionModuleUrl)) as Module;
     const previousHome = process.env.SHEPHERD_HOME;
     process.env.SHEPHERD_HOME = "/tmp/shepherd-home";
-
     try {
       expect(defaultSocketPath()).toBe("/tmp/shepherd-home/shepherd.sock");
     } finally {
@@ -36,20 +36,13 @@ describe("shepherd-pi observability bridge", () => {
     }
   });
 
-  test("observes Herdr workspace on session_start and sends telemetry", async () => {
+  test("subscribes to agent notifications and sends agent telemetry", async () => {
     const client = createFakeClient();
     const pi = createFakePi();
     const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
     createShepherdPiExtension({ clientFactory: () => client })(pi);
 
-    const previousEnv = {
-      HERDR_ENV: process.env.HERDR_ENV,
-      HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
-      HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
-    };
-    process.env.HERDR_ENV = "1";
-    process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
-    process.env.HERDR_WORKSPACE_ID = "w1";
+    const previousEnv = withHerdrEnv();
     await pi.emit("session_start", {}, fakeCtx());
     await pi.emit("tool_result", {
       content: "failed token=abc",
@@ -59,100 +52,113 @@ describe("shepherd-pi observability bridge", () => {
       turnId: "turn-1",
     });
     await pi.emit("message_end", { stopReason: "stop", text: "completed", turnId: "turn-1" });
-
-    process.env.HERDR_ENV = previousEnv.HERDR_ENV;
-    process.env.HERDR_SOCKET_PATH = previousEnv.HERDR_SOCKET_PATH;
-    process.env.HERDR_WORKSPACE_ID = previousEnv.HERDR_WORKSPACE_ID;
+    restoreEnv(previousEnv);
 
     expect(client.calls).toEqual([
-      ["workspace.observe", { socketPath: "/tmp/herdr.sock", workspaceId: "w1" }],
       [
-        "notification.subscribe",
+        "agent.notifications.subscribe",
         {
           autoResume: false,
-          observedWorkspaceId: "ow_1",
           subscriberId: "pi-session",
           subscriberKind: "pi",
+          workspaceId: "wB",
         },
       ],
       [
-        "runtime.telemetry",
+        "agent.telemetry",
         expect.objectContaining({
           event: expect.objectContaining({
             errorExcerpt: "failed token=[REDACTED]",
-            type: "worker.tool.completed",
+            type: "agent.tool.completed",
           }),
-          observedWorkspaceId: "ow_1",
+          workspaceId: "wB",
         }),
       ],
       [
-        "runtime.telemetry",
+        "agent.telemetry",
         expect.objectContaining({
-          event: expect.objectContaining({
-            textExcerpt: "completed",
-            type: "worker.message.final",
-          }),
-          observedWorkspaceId: "ow_1",
+          event: expect.objectContaining({ textExcerpt: "completed", type: "agent.message.final" }),
+          workspaceId: "wB",
         }),
       ],
     ]);
   });
 
-  test("handles notifications, hidden context ack, and auto-resume", async () => {
-    const client = createFakeClient();
+  test("injects current workspace agent context and unread updates", async () => {
+    const client = createFakeClient({
+      events: [
+        {
+          compactHistory: { lastAssistantMessage: { text: "done" } },
+          id: 42,
+          payload: { agent: "claude" },
+          paneId: "wB:p2",
+          type: "agent.done",
+        },
+      ],
+    });
     const pi = createFakePi();
     const ctx = fakeCtx({ idle: true });
-    const { createShepherdPiExtension, formatHiddenNotifications } = (await import(
-      extensionModuleUrl
-    )) as Module;
+    const { createShepherdPiExtension, formatHiddenAgentContext, formatHiddenAgentUpdates } =
+      (await import(extensionModuleUrl)) as Module;
     createShepherdPiExtension({ autoResume: true, clientFactory: () => client })(pi);
-    const previousEnv = {
-      HERDR_ENV: process.env.HERDR_ENV,
-      HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
-      HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
-    };
-    process.env.HERDR_ENV = "1";
-    process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
-    process.env.HERDR_WORKSPACE_ID = "w1";
+    const previousEnv = withHerdrEnv();
     await pi.emit("session_start", {}, ctx);
     await pi.emit(
-      "worker.event",
-      {
-        event: { id: 42, payload: { summary: "done" }, type: "worker.completed", workerId: "wk_1" },
-      },
+      "agent.event",
+      { event: { id: 43, payload: { agent: "pi" }, type: "agent.idle", paneId: "wB:p1" } },
       ctx,
     );
+    restoreEnv(previousEnv);
 
-    process.env.HERDR_ENV = previousEnv.HERDR_ENV;
-    process.env.HERDR_SOCKET_PATH = previousEnv.HERDR_SOCKET_PATH;
-    process.env.HERDR_WORKSPACE_ID = previousEnv.HERDR_WORKSPACE_ID;
-
-    expect(ctx.status).toEqual(["shepherd", "1 unread worker event"]);
-    expect(pi.messages).toEqual([expect.stringContaining("worker.completed")]);
+    expect(ctx.status).toEqual(["shepherd", "2 unread agent events"]);
+    expect(pi.messages).toEqual([expect.stringContaining("agent.idle")]);
+    expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
+      "[SHEPHERD AGENT CONTEXT]",
+    );
     expect(
-      formatHiddenNotifications([
-        { id: 42, payload: { summary: "done" }, type: "worker.completed" },
-      ]),
-    ).toContain("[SHEPHERD WORKER NOTIFICATIONS]");
+      formatHiddenAgentUpdates([{ id: 42, payload: { agent: "claude" }, type: "agent.done" }]),
+    ).toContain("[SHEPHERD AGENT UPDATES]");
 
     const before = await pi.emit("before_agent_start", {}, ctx);
-    expect(before).toEqual({ hiddenContext: expect.stringContaining("worker.completed") });
+    expect(before).toEqual({ hiddenContext: expect.stringContaining("[SHEPHERD AGENT CONTEXT]") });
+    expect(before).toEqual({ hiddenContext: expect.stringContaining("[SHEPHERD AGENT UPDATES]") });
+    expect(client.calls).toContainEqual(["agent.list", { workspaceId: "wB" }]);
     expect(client.calls).toContainEqual([
-      "notification.ack",
-      { eventId: 42, subscriptionId: "ns_1" },
+      "agent.notifications.ack",
+      { eventId: 42, subscriptionId: "ans_1" },
+    ]);
+    expect(client.calls).toContainEqual([
+      "agent.notifications.ack",
+      { eventId: 43, subscriptionId: "ans_1" },
     ]);
   });
 });
 
-function createFakeClient(): FakeClient {
+function createFakeClient(options: { events?: unknown[] } = {}): FakeClient {
   const calls: unknown[] = [];
   return {
     calls,
     close: () => calls.push(["close"]),
     async request(method, params) {
       calls.push([method, params]);
-      if (method === "workspace.observe") return { observedWorkspace: { id: "ow_1" } };
-      if (method === "notification.subscribe") return { events: [], subscription: { id: "ns_1" } };
+      if (method === "agent.notifications.subscribe") {
+        return { events: options.events ?? [], subscription: { id: "ans_1" } };
+      }
+      if (method === "agent.list") {
+        return {
+          agents: [
+            {
+              agent: "pi",
+              agentStatus: "idle",
+              history: {
+                lastAssistantMessage: { text: "ready" },
+                lastUserMessage: { text: "work" },
+              },
+              paneId: "wB:p1",
+            },
+          ],
+        };
+      }
       return { ok: true };
     },
   };
@@ -179,15 +185,36 @@ function fakeCtx(options: { idle?: boolean } = {}) {
   const ctx = {
     isIdle: () => options.idle ?? false,
     sessionManager: {
-      getSessionFile: () => "/tmp/session.jsonl",
+      getSessionFile: () => "/tmp/pi-session.jsonl",
       getSessionId: () => "pi-session",
     },
-    status: undefined as unknown,
+    status: [] as unknown[],
     ui: {
-      setStatus(key: string, value: string) {
-        ctx.status = [key, value];
+      setStatus(...args: unknown[]) {
+        ctx.status = args;
       },
+      setWidget() {},
     },
   };
   return ctx;
+}
+
+function withHerdrEnv() {
+  const previous = {
+    HERDR_ENV: process.env.HERDR_ENV,
+    HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
+  };
+  process.env.HERDR_ENV = "1";
+  process.env.HERDR_WORKSPACE_ID = "wB";
+  return previous;
+}
+
+function restoreEnv(previous: {
+  HERDR_ENV: string | undefined;
+  HERDR_WORKSPACE_ID: string | undefined;
+}) {
+  if (previous.HERDR_ENV === undefined) delete process.env.HERDR_ENV;
+  else process.env.HERDR_ENV = previous.HERDR_ENV;
+  if (previous.HERDR_WORKSPACE_ID === undefined) delete process.env.HERDR_WORKSPACE_ID;
+  else process.env.HERDR_WORKSPACE_ID = previous.HERDR_WORKSPACE_ID;
 }

@@ -1,59 +1,58 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { Value } from "@sinclair/typebox/value";
-import type { ObservedWorkspaceStore } from "@/db/observed-workspaces.js";
-import type { WorkerEventStore } from "@/db/worker-events.js";
-import type { WorkerSnapshotStore } from "@/db/worker-snapshots.js";
-import type { WorkerStore } from "@/db/workers.js";
-import type { NotificationService } from "@/observability/notification-service.js";
+import type { AgentHistoryService } from "@/agent-history/service.js";
+import type { AgentEventStore } from "@/db/agent-events.js";
+import type { AgentStore } from "@/db/agents.js";
+import type { HerdrWorkspaceStore } from "@/db/herdr-workspaces.js";
+import type { AgentNotificationService } from "@/observability/agent-notification-service.js";
+import type {
+  AgentEventRecord,
+  AgentIndexRecord,
+  AgentQueryScope,
+} from "@/observability/contracts.js";
 import {
-  notificationAckInputSchema,
-  notificationSubscribeInputSchema,
-  observeWorkspaceInputSchema,
-  runtimeTelemetryInputSchema,
-  workerEventsInputSchema,
-  workerMessageInputSchema,
-  workerStartInputSchema,
-  workerWaitStateInputSchema,
-  workspaceSnapshotInputSchema,
+  agentEventsInputSchema,
+  agentGetInputSchema,
+  agentListInputSchema,
+  agentNotificationAckInputSchema,
+  agentNotificationSubscribeInputSchema,
+  agentReadInputSchema,
+  agentTelemetryInputSchema,
 } from "@/observability/schemas.js";
-import type { WorkerStatePipeline } from "@/observability/worker-state-pipeline.js";
 import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 
 type RpcRequest = { id?: number | string; method?: string; params?: unknown };
 
-type ObservabilityStores = {
-  observedWorkspaces: ObservedWorkspaceStore;
-  snapshots: WorkerSnapshotStore;
-  workerEvents: WorkerEventStore;
-  workers: WorkerStore;
+type AgentStores = {
+  agentEvents: AgentEventStore;
+  agents: AgentStore;
+  herdrWorkspaces: HerdrWorkspaceStore;
 };
 
 export class ObservabilityRpcServer {
-  readonly #notifications: NotificationService;
-  readonly #pipeline: WorkerStatePipeline;
+  readonly #history: AgentHistoryService;
+  readonly #notifications: AgentNotificationService;
   readonly #server: Server;
   readonly #socketPath: string;
   readonly #sockets = new Set<Socket>();
-  readonly #stores: ObservabilityStores;
+  readonly #stores: AgentStores;
 
   constructor(options: {
-    notifications: NotificationService;
-    pipeline: WorkerStatePipeline;
+    history: AgentHistoryService;
+    notifications: AgentNotificationService;
     socketPath: string;
-    stores: ObservabilityStores;
+    stores: AgentStores;
   }) {
+    this.#history = options.history;
     this.#notifications = options.notifications;
-    this.#pipeline = options.pipeline;
     this.#socketPath = options.socketPath;
     this.#stores = options.stores;
     this.#server = createServer((socket) => this.#handleConnection(socket));
   }
 
   start(): Promise<void> {
-    if (existsSync(this.#socketPath)) {
-      unlinkSync(this.#socketPath);
-    }
+    if (existsSync(this.#socketPath)) unlinkSync(this.#socketPath);
     return new Promise((resolve, reject) => {
       this.#server.once("error", reject);
       this.#server.listen(this.#socketPath, () => {
@@ -64,9 +63,7 @@ export class ObservabilityRpcServer {
   }
 
   async stop(): Promise<void> {
-    for (const socket of this.#sockets) {
-      socket.destroy();
-    }
+    for (const socket of this.#sockets) socket.destroy();
     this.#sockets.clear();
     await new Promise<void>((resolve, reject) => {
       if (!this.#server.listening) {
@@ -75,25 +72,12 @@ export class ObservabilityRpcServer {
       }
       this.#server.close((error) => (error ? reject(error) : resolve()));
     });
-    if (existsSync(this.#socketPath)) {
-      unlinkSync(this.#socketPath);
-    }
+    if (existsSync(this.#socketPath)) unlinkSync(this.#socketPath);
   }
 
-  publishWorkerEvent(input: { observedWorkspaceId: string }): void {
-    const event = this.#stores.workerEvents.listAfter({
-      afterEventId: Math.max(
-        0,
-        this.#stores.workerEvents.latestEventId(input.observedWorkspaceId) - 1,
-      ),
-      limit: 1,
-      observedWorkspaceId: input.observedWorkspaceId,
-    })[0];
-    if (!event) {
-      return;
-    }
+  publishAgentEvent(event: AgentEventRecord): void {
     for (const socket of this.#sockets) {
-      socket.write(encodeJsonLine({ method: "worker.event", params: { event } }));
+      socket.write(encodeJsonLine({ method: "agent.event", params: { event } }));
     }
   }
 
@@ -111,9 +95,7 @@ export class ObservabilityRpcServer {
 
   async #handleRequest(socket: Socket, request: RpcRequest): Promise<void> {
     try {
-      if (!request.method) {
-        throw new Error("Missing method");
-      }
+      if (!request.method) throw new Error("Missing method");
       const result = await this.#dispatch(request.method, request.params ?? {});
       socket.write(encodeJsonLine({ id: request.id, result }));
     } catch (error) {
@@ -128,82 +110,123 @@ export class ObservabilityRpcServer {
 
   async #dispatch(method: string, params: unknown): Promise<unknown> {
     switch (method) {
-      case "workspace.observe": {
-        assertSchema(observeWorkspaceInputSchema, params);
-        const input = params as {
-          herdrSessionName?: string;
-          label?: string;
-          socketPath?: string;
-          workspaceId: string;
+      case "agent.list": {
+        assertSchema(agentListInputSchema, params);
+        const scope = this.#resolveScope(params as AgentQueryScope);
+        const agents = this.#stores.agents.list(scope);
+        return {
+          agents: await Promise.all(
+            agents.map(async (agent) => {
+              const history = await this.#history.getCompactHistory(historyInput(agent));
+              return {
+                ...agent,
+                history: {
+                  lastAssistantMessage: history.lastAssistantMessage,
+                  lastUserMessage: history.lastUserMessage,
+                  source: history.source,
+                  updatedAt: history.updatedAt,
+                },
+              };
+            }),
+          ),
         };
-        const observedWorkspace = this.#stores.observedWorkspaces.observe({
-          ...(input.herdrSessionName ? { herdrSessionName: input.herdrSessionName } : {}),
-          metadata: input.label ? { label: input.label } : {},
-          ...(input.socketPath ? { socketPath: input.socketPath } : {}),
-          workspaceId: input.workspaceId,
-        });
-        return { observedWorkspace };
       }
-      case "workspace.snapshot": {
-        assertSchema(workspaceSnapshotInputSchema, params);
-        const input = params as { observedWorkspaceId: string };
-        await this.#pipeline.refreshWorkspace(input.observedWorkspaceId);
-        return { workers: this.#stores.snapshots.listCurrent(input.observedWorkspaceId) };
-      }
-      case "worker.events": {
-        assertSchema(workerEventsInputSchema, params);
-        const input = params as {
-          afterEventId?: number;
-          limit?: number;
-          observedWorkspaceId: string;
+      case "agent.get": {
+        assertSchema(agentGetInputSchema, params);
+        const input = params as AgentQueryScope & { target: string };
+        const scope = this.#resolveScope(input);
+        const agent = this.#stores.agents.resolveTarget(scope, input.target);
+        return {
+          agent: { ...agent, history: await this.#history.getCompactHistory(historyInput(agent)) },
         };
-        return { events: this.#stores.workerEvents.listAfter(input) };
       }
-      case "runtime.telemetry": {
-        assertSchema(runtimeTelemetryInputSchema, params);
-        const input = params as Parameters<WorkerStatePipeline["handleTelemetry"]>[0];
-        await this.#pipeline.handleTelemetry(input);
-        return { accepted: true };
+      case "agent.read": {
+        assertSchema(agentReadInputSchema, params);
+        const input = params as AgentQueryScope & { limit?: number; target: string };
+        const scope = this.#resolveScope(input);
+        const agent = this.#stores.agents.resolveTarget(scope, input.target);
+        const read = await this.#history.read(historyInput(agent), { limit: input.limit ?? 20 });
+        return { agent: { ...agent, historyRef: read.historyRef, messages: read.messages } };
       }
-      case "notification.subscribe": {
-        assertSchema(notificationSubscribeInputSchema, params);
+      case "agent.events": {
+        assertSchema(agentEventsInputSchema, params);
+        const input = params as AgentQueryScope & { afterEventId?: number; limit?: number };
+        return { events: this.#stores.agentEvents.listAfter(input) };
+      }
+      case "agent.notifications.subscribe": {
+        assertSchema(agentNotificationSubscribeInputSchema, params);
         const input = params as {
           autoResume?: boolean;
-          observedWorkspaceId: string;
+          herdrSessionName?: string;
           subscriberId: string;
           subscriberKind: string;
+          workspaceId?: string;
         };
         const subscription = this.#notifications.subscribe({
-          ...input,
           autoResume: input.autoResume ?? false,
+          herdrSessionName: input.herdrSessionName ?? null,
+          subscriberId: input.subscriberId,
+          subscriberKind: input.subscriberKind,
+          workspaceId: input.workspaceId ?? null,
         });
         return {
           events: this.#notifications.pending({ subscriptionId: subscription.id }),
           subscription,
         };
       }
-      case "notification.ack": {
-        assertSchema(notificationAckInputSchema, params);
+      case "agent.notifications.ack": {
+        assertSchema(agentNotificationAckInputSchema, params);
         this.#notifications.ack(params as { eventId: number; subscriptionId: string });
         return { acknowledged: true };
       }
-      case "worker.message":
-        assertSchema(workerMessageInputSchema, params);
+      case "agent.telemetry": {
+        assertSchema(agentTelemetryInputSchema, params);
         return { accepted: true };
-      case "worker.wait_state":
-        assertSchema(workerWaitStateInputSchema, params);
-        return { matched: false };
-      case "worker.start":
-        assertSchema(workerStartInputSchema, params);
-        return { started: true };
+      }
       default:
         throw new Error(`Unknown method: ${method}`);
     }
   }
+
+  #resolveScope(input: AgentQueryScope): AgentQueryScope {
+    if (input.all)
+      return {
+        all: true,
+        ...(input.herdrSessionName ? { herdrSessionName: input.herdrSessionName } : {}),
+      };
+    if (input.workspaceId && !input.herdrSessionName) {
+      const sessions = new Set(
+        this.#stores.agents
+          .list({ workspaceId: input.workspaceId })
+          .map((agent) => agent.herdrSessionName),
+      );
+      if (sessions.size > 1) {
+        throw new Error(
+          `workspace ${input.workspaceId} exists in multiple Herdr sessions; pass --session <name>: ${[...sessions].join(", ")}`,
+        );
+      }
+    }
+    if (input.workspaceId || input.herdrSessionName) {
+      return {
+        ...(input.herdrSessionName ? { herdrSessionName: input.herdrSessionName } : {}),
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+      };
+    }
+    throw new Error(
+      "agent scope requires current Herdr workspace, --workspace, --session, or --all",
+    );
+  }
+}
+
+function historyInput(agent: AgentIndexRecord) {
+  return {
+    agent: agent.agent,
+    agentSession: agent.agentSession,
+    cwd: agent.cwd,
+    foregroundCwd: agent.foregroundCwd,
+  };
 }
 
 function assertSchema(schema: Parameters<typeof Value.Check>[0], value: unknown): void {
-  if (!Value.Check(schema, value)) {
-    throw new Error("Invalid RPC params");
-  }
+  if (!Value.Check(schema, value)) throw new Error("Invalid RPC params");
 }

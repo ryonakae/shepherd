@@ -9,63 +9,30 @@ import {
   startDaemonProcess,
   stopDaemonProcess,
 } from "@/daemon/process-manager.js";
+import type {
+  AgentEventRecord,
+  AgentGetResult,
+  AgentListItem,
+  AgentReadResult,
+} from "@/observability/contracts.js";
 
-const CURRENT_HERDR_CONTEXT_ERROR =
-  "--current requires HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_WORKSPACE_ID. Run it inside a Herdr-managed pane or plugin command.";
+const CURRENT_HERDR_WORKSPACE_ERROR =
+  "agent command requires HERDR_ENV=1 with HERDR_WORKSPACE_ID, --workspace <id>, --session <name>, or --all.";
 
 type DaemonAction = "restart" | "start" | "status" | "stop";
 
+type AgentScope = {
+  all?: boolean;
+  herdrSessionName?: string;
+  workspaceId?: string;
+};
+
 export type CliCommand =
   | { action: DaemonAction; command: "daemon" }
-  | {
-      command: "context";
-      json: boolean;
-      observedWorkspaceId?: string;
-      socketPath?: string;
-      subscriberId?: string;
-      workspaceId?: string;
-    }
-  | {
-      command: "observe";
-      current: boolean;
-      herdrSessionName?: string;
-      json: boolean;
-      socketPath?: string;
-      workspaceId: string;
-    }
-  | { command: "snapshot"; json: boolean; observedWorkspaceId: string }
-  | { afterEventId?: number; command: "events"; json: boolean; observedWorkspaceId: string }
-  | {
-      autoResume: boolean;
-      command: "notifications";
-      json: boolean;
-      observedWorkspaceId: string;
-      subscriberId: string;
-    }
-  | { command: "ack"; eventId: number; json: boolean; subscriptionId: string }
-  | { command: "message-worker"; text: string; workerId: string }
-  | { command: "wait-worker"; state: string; timeoutMs?: number; workerId: string }
+  | ({ command: "agent-list"; json: boolean } & AgentScope)
+  | ({ command: "agent-get"; json: boolean; target: string } & AgentScope)
+  | ({ command: "agent-read"; json: boolean; limit?: number; target: string } & AgentScope)
   | { command: "help" };
-
-type ContextResult = {
-  notifications: {
-    subscription: unknown | null;
-    events: unknown[];
-  };
-  observedWorkspace: {
-    id?: string;
-    liveWorkspaceId?: string | null;
-    status?: string;
-  };
-  workers: Array<{
-    agent?: string | null;
-    id?: string;
-    recommendedAction?: string | null;
-    status?: string;
-    summary?: string | null;
-    workerId?: string | null;
-  }>;
-};
 
 type RpcClientLike = Pick<ObservabilityRpcClient, "close" | "request">;
 
@@ -91,139 +58,83 @@ export function parseCliArgs(
     return { action, command: "daemon" };
   }
 
-  if (command === "observe") {
-    const json = takeFlag(rest, "--json");
-    const current = takeFlag(rest, "--current");
-    const herdrSessionName = takeOption(rest, "--herdr-session");
-    const socketPath = takeOption(rest, "--socket");
-    const workspaceId = takeOption(rest, "--workspace");
-    rejectExtra(rest);
-
-    if (current) {
-      if (herdrSessionName || socketPath || workspaceId) {
-        throw new Error(
-          "observe --current cannot be combined with --herdr-session, --socket, or --workspace",
-        );
-      }
-      const currentContext = currentHerdrContext(environment);
-      return {
-        command: "observe",
-        current: true,
-        json,
-        socketPath: currentContext.socketPath,
-        workspaceId: currentContext.workspaceId,
-      };
-    }
-
-    if (!workspaceId || (!herdrSessionName && !socketPath)) {
-      throw new Error("observe requires a Herdr selector and --workspace <workspace-id>");
-    }
-    return {
-      command: "observe",
-      current: false,
-      ...(herdrSessionName ? { herdrSessionName } : {}),
-      json,
-      ...(socketPath ? { socketPath } : {}),
-      workspaceId,
-    };
-  }
-
-  if (command === "context") {
-    const json = takeFlag(rest, "--json");
-    const observedWorkspaceId = takeOption(rest, "--observed-workspace");
-    const subscriberId = takeOption(rest, "--subscriber");
-    rejectExtra(rest);
-    const currentContext = observedWorkspaceId ? undefined : currentHerdrContext(environment);
-    return {
-      command: "context",
-      json,
-      ...(observedWorkspaceId ? { observedWorkspaceId } : {}),
-      ...(currentContext
-        ? { socketPath: currentContext.socketPath, workspaceId: currentContext.workspaceId }
-        : {}),
-      ...(subscriberId ? { subscriberId } : {}),
-    };
-  }
-
-  if (command === "snapshot") {
-    const json = takeFlag(rest, "--json");
-    const [observedWorkspaceId, ...extra] = rest;
-    if (!observedWorkspaceId) throw new Error("snapshot requires <observed-workspace-id>");
-    rejectExtra(extra);
-    return { command: "snapshot", json, observedWorkspaceId };
-  }
-
-  if (command === "events") {
-    const json = takeFlag(rest, "--json");
-    const after = takeOption(rest, "--after");
-    const [observedWorkspaceId, ...extra] = rest;
-    if (!observedWorkspaceId) throw new Error("events requires <observed-workspace-id>");
-    rejectExtra(extra);
-    return {
-      command: "events",
-      ...(after ? { afterEventId: Number(after) } : {}),
-      json,
-      observedWorkspaceId,
-    };
-  }
-
-  if (command === "notifications") {
-    const json = takeFlag(rest, "--json");
-    const autoResume = takeFlag(rest, "--auto-resume");
-    const subscriberId = takeOption(rest, "--subscriber");
-    const [observedWorkspaceId, ...extra] = rest;
-    if (!observedWorkspaceId || !subscriberId)
-      throw new Error("notifications requires <observed-workspace-id> --subscriber <id>");
-    rejectExtra(extra);
-    return { autoResume, command: "notifications", json, observedWorkspaceId, subscriberId };
-  }
-
-  if (command === "ack") {
-    const json = takeFlag(rest, "--json");
-    const subscriptionId = takeOption(rest, "--subscription");
-    const eventId = takeOption(rest, "--event");
-    if (!subscriptionId || !eventId)
-      throw new Error("ack requires --subscription <id> --event <event-id>");
-    rejectExtra(rest);
-    return { command: "ack", eventId: Number(eventId), json, subscriptionId };
-  }
-
-  if (command === "message-worker") {
-    const [workerId, ...textParts] = rest;
-    if (!workerId || textParts.length === 0)
-      throw new Error("message-worker requires <worker-id> <text>");
-    return { command: "message-worker", text: textParts.join(" "), workerId };
-  }
-
-  if (command === "wait-worker") {
-    const timeout = takeOption(rest, "--timeout-ms");
-    const state = takeOption(rest, "--state");
-    const [workerId, ...extra] = rest;
-    if (!workerId || !state) throw new Error("wait-worker requires <worker-id> --state <state>");
-    rejectExtra(extra);
-    return {
-      command: "wait-worker",
-      state,
-      ...(timeout ? { timeoutMs: Number(timeout) } : {}),
-      workerId,
-    };
+  if (command === "agent") {
+    return parseAgentCommand(rest, environment);
   }
 
   throw new Error(`Unknown command: ${command}`);
 }
 
+function parseAgentCommand(args: string[], environment: NodeJS.ProcessEnv): CliCommand {
+  const [subcommand, ...rest] = args;
+  if (!subcommand || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+    return { command: "help" };
+  }
+  const json = takeFlag(rest, "--json");
+  const herdrSessionName = takeOption(rest, "--session");
+  const workspaceId = takeOption(rest, "--workspace");
+  const explicitScope: AgentScope = {
+    ...(herdrSessionName ? { herdrSessionName } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+  };
+
+  if (subcommand === "list") {
+    const all = takeFlag(rest, "--all");
+    rejectExtra(rest);
+    return {
+      command: "agent-list",
+      ...(all ? { all: true } : scopedOrCurrent(explicitScope, environment)),
+      json,
+    };
+  }
+
+  if (subcommand === "get") {
+    const [target, ...extra] = rest;
+    if (!target) throw new Error("agent get requires <target>");
+    rejectExtra(extra);
+    return {
+      command: "agent-get",
+      ...scopedOrCurrent(explicitScope, environment),
+      json,
+      target,
+    };
+  }
+
+  if (subcommand === "read") {
+    const limitValue = takeOption(rest, "--limit");
+    const [target, ...extra] = rest;
+    if (!target) throw new Error("agent read requires <target>");
+    rejectExtra(extra);
+    const limit = limitValue ? Number(limitValue) : undefined;
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 500)) {
+      throw new Error("--limit must be between 1 and 500");
+    }
+    return {
+      command: "agent-read",
+      ...scopedOrCurrent(explicitScope, environment),
+      json,
+      ...(limit !== undefined ? { limit } : {}),
+      target,
+    };
+  }
+
+  throw new Error(`Unknown agent command: ${subcommand}`);
+}
+
+function scopedOrCurrent(scope: AgentScope, environment: NodeJS.ProcessEnv): AgentScope {
+  if (scope.herdrSessionName || scope.workspaceId || scope.all) return scope;
+  if (environment.HERDR_ENV === "1" && environment.HERDR_WORKSPACE_ID) {
+    return { workspaceId: environment.HERDR_WORKSPACE_ID };
+  }
+  throw new Error(CURRENT_HERDR_WORKSPACE_ERROR);
+}
+
 export function helpText(): string {
   return `Usage:
   shepherd daemon [start|stop|restart|status]
-  shepherd context [--observed-workspace <id>] [--subscriber <id>] [--json]
-  shepherd observe --herdr-session <name> --workspace <workspace-id> [--json]
-  shepherd observe --current [--json]
-  shepherd snapshot <observed-workspace-id> [--json]
-  shepherd events <observed-workspace-id> [--after EVENT_ID] [--json]
-  shepherd notifications <observed-workspace-id> --subscriber <id> [--auto-resume] [--json]
-  shepherd ack --subscription <id> --event <event-id> [--json]
-  shepherd message-worker <worker-id> <text>
-  shepherd wait-worker <worker-id> --state <blocked|done|idle|unknown|working> [--timeout-ms N]
+  shepherd agent list [--all] [--workspace <id>] [--session <name>] [--json]
+  shepherd agent get <target> [--workspace <id>] [--session <name>] [--json]
+  shepherd agent read <target> [--limit N] [--workspace <id>] [--session <name>] [--json]
   shepherd help
 `;
 }
@@ -233,10 +144,7 @@ export async function runCliCommand(command: CliCommand, deps: RunCliDeps): Prom
     deps.output(helpText());
     return;
   }
-  if (command.command === "daemon") {
-    throw new Error("daemon command is handled by main");
-  }
-
+  if (command.command === "daemon") throw new Error("daemon command is handled by main");
   const client = await deps.connect(deps.socketPath);
   try {
     const result = await dispatchRpcCommand(command, client);
@@ -250,91 +158,24 @@ async function dispatchRpcCommand(
   command: Exclude<CliCommand, { command: "daemon" | "help" }>,
   client: RpcClientLike,
 ) {
-  switch (command.command) {
-    case "context":
-      return buildContext(command, client);
-    case "observe":
-      return client.request("workspace.observe", {
-        ...(command.herdrSessionName ? { herdrSessionName: command.herdrSessionName } : {}),
-        ...(command.socketPath ? { socketPath: command.socketPath } : {}),
-        workspaceId: command.workspaceId,
-      });
-    case "snapshot":
-      return client.request("workspace.snapshot", {
-        observedWorkspaceId: command.observedWorkspaceId,
-      });
-    case "events":
-      return client.request("worker.events", {
-        ...(command.afterEventId !== undefined ? { afterEventId: command.afterEventId } : {}),
-        observedWorkspaceId: command.observedWorkspaceId,
-      });
-    case "notifications":
-      return client.request("notification.subscribe", {
-        autoResume: command.autoResume,
-        observedWorkspaceId: command.observedWorkspaceId,
-        subscriberId: command.subscriberId,
-        subscriberKind: "cli",
-      });
-    case "ack":
-      return client.request("notification.ack", {
-        eventId: command.eventId,
-        subscriptionId: command.subscriptionId,
-      });
-    case "message-worker":
-      return client.request("worker.message", { text: command.text, workerId: command.workerId });
-    case "wait-worker":
-      return client.request("worker.wait_state", {
-        state: command.state,
-        ...(command.timeoutMs !== undefined ? { timeoutMs: command.timeoutMs } : {}),
-        workerId: command.workerId,
-      });
+  if (command.command === "agent-list") {
+    return client.request("agent.list", scopeParams(command));
   }
+  if (command.command === "agent-get") {
+    return client.request("agent.get", { ...scopeParams(command), target: command.target });
+  }
+  return client.request("agent.read", {
+    ...scopeParams(command),
+    ...(command.limit !== undefined ? { limit: command.limit } : {}),
+    target: command.target,
+  });
 }
 
-async function buildContext(
-  command: Extract<CliCommand, { command: "context" }>,
-  client: RpcClientLike,
-): Promise<ContextResult> {
-  let observedWorkspace: ContextResult["observedWorkspace"];
-  if (command.observedWorkspaceId) {
-    observedWorkspace = { id: command.observedWorkspaceId };
-  } else {
-    if (!command.socketPath || !command.workspaceId) {
-      throw new Error(CURRENT_HERDR_CONTEXT_ERROR);
-    }
-    const observed = (await client.request("workspace.observe", {
-      socketPath: command.socketPath,
-      workspaceId: command.workspaceId,
-    })) as { observedWorkspace?: ContextResult["observedWorkspace"] };
-    observedWorkspace = observed.observedWorkspace ?? {};
-  }
-
-  if (!observedWorkspace.id) {
-    throw new Error("context requires an observed workspace id");
-  }
-
-  const snapshot = (await client.request("workspace.snapshot", {
-    observedWorkspaceId: observedWorkspace.id,
-  })) as { workers?: ContextResult["workers"] };
-
-  let notifications: ContextResult["notifications"] = { subscription: null, events: [] };
-  if (command.subscriberId) {
-    const subscribed = (await client.request("notification.subscribe", {
-      autoResume: false,
-      observedWorkspaceId: observedWorkspace.id,
-      subscriberId: command.subscriberId,
-      subscriberKind: "cli",
-    })) as ContextResult["notifications"];
-    notifications = {
-      subscription: subscribed.subscription ?? null,
-      events: subscribed.events ?? [],
-    };
-  }
-
+function scopeParams(scope: AgentScope): AgentScope {
   return {
-    observedWorkspace,
-    workers: snapshot.workers ?? [],
-    notifications,
+    ...(scope.all ? { all: true } : {}),
+    ...(scope.herdrSessionName ? { herdrSessionName: scope.herdrSessionName } : {}),
+    ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}),
   };
 }
 
@@ -347,39 +188,72 @@ function printResult(command: CliCommand, result: unknown, output: (line: string
 }
 
 function formatHumanResult(command: CliCommand, result: unknown): string {
-  if (command.command === "context") {
-    return formatContextResult(result as ContextResult);
-  }
-  if (command.command === "observe") {
-    const observedWorkspace = (
-      result as { observedWorkspace?: { id?: string; liveWorkspaceId?: string; status?: string } }
-    ).observedWorkspace;
-    return `Observed workspace ${observedWorkspace?.id ?? "unknown"} (${observedWorkspace?.status ?? "unknown"}) -> Herdr workspace ${observedWorkspace?.liveWorkspaceId ?? "unknown"}`;
-  }
+  if (command.command === "agent-list")
+    return formatAgentList(result as { agents?: AgentListItem[] });
+  if (command.command === "agent-get") return formatAgentGet(result as { agent?: AgentGetResult });
+  if (command.command === "agent-read")
+    return formatAgentRead(result as { agent?: AgentReadResult });
   return JSON.stringify(result);
 }
 
-function formatContextResult(result: ContextResult): string {
-  const lines = [
-    `Observed workspace: ${result.observedWorkspace.id ?? "unknown"}`,
-    `Workers: ${result.workers.length}`,
-    `Notifications: ${result.notifications.events.length}`,
-  ];
-  if (result.workers.length === 0) return lines.join("\n");
-
-  lines.push("", ["status", "agent", "worker", "summary", "action"].join("\t"));
-  for (const worker of result.workers) {
+function formatAgentList(result: { agents?: AgentListItem[] }): string {
+  const agents = result.agents ?? [];
+  if (agents.length === 0) return "No Shepherd agents indexed.";
+  const lines = [["status", "agent", "pane", "last user", "last assistant", "updated"].join("\t")];
+  for (const agent of agents) {
     lines.push(
       [
-        worker.status ?? "unknown",
-        worker.agent ?? "unknown",
-        worker.id ?? worker.workerId ?? "workspace",
-        worker.summary ?? "",
-        worker.recommendedAction ?? "",
+        agent.agentStatus,
+        agent.agent ?? "unknown",
+        agent.paneId,
+        oneLine(agent.history.lastUserMessage?.text ?? ""),
+        oneLine(agent.history.lastAssistantMessage?.text ?? ""),
+        agent.history.updatedAt ?? "",
       ].join("\t"),
     );
   }
   return lines.join("\n");
+}
+
+function formatAgentGet(result: { agent?: AgentGetResult }): string {
+  const agent = result.agent;
+  if (!agent) return "Agent not found.";
+  return [
+    `agent: ${agent.agent ?? "unknown"}`,
+    `status: ${agent.agentStatus}`,
+    `pane: ${agent.paneId}`,
+    `terminal: ${agent.terminalId ?? "unknown"}`,
+    `workspace: ${agent.workspaceId}`,
+    `Herdr session: ${agent.herdrSessionName}`,
+    `cwd: ${agent.cwd ?? agent.foregroundCwd ?? "unknown"}`,
+    `agent_session: ${agent.agentSession ? `${agent.agentSession.source}:${agent.agentSession.value}` : "none"}`,
+    `last user: ${oneLine(agent.history.lastUserMessage?.text ?? "")}`,
+    `last assistant: ${oneLine(agent.history.lastAssistantMessage?.text ?? "")}`,
+    `last tool: ${agent.history.lastToolResult ? `${agent.history.lastToolResult.toolName} ${oneLine(agent.history.lastToolResult.text)}` : ""}`,
+  ].join("\n");
+}
+
+function formatAgentRead(result: { agent?: AgentReadResult }): string {
+  const agent = result.agent;
+  if (!agent) return "Agent not found.";
+  const lines = [`agent: ${agent.agent ?? "unknown"} ${agent.paneId}`, ""];
+  for (const message of agent.messages) {
+    lines.push(
+      [
+        message.timestamp ?? "",
+        message.role,
+        message.toolName ?? "",
+        message.compact
+          ? `[${message.compact.compaction.mode}] ${oneLine(message.text)}`
+          : oneLine(message.text),
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, " ").slice(0, 160);
 }
 
 async function main(): Promise<void> {
@@ -459,23 +333,6 @@ function resolveRuntimeForCommand() {
     : resolveRuntime({ environment: process.env });
 }
 
-function currentHerdrContext(environment: NodeJS.ProcessEnv): {
-  socketPath: string;
-  workspaceId: string;
-} {
-  if (
-    environment.HERDR_ENV !== "1" ||
-    !environment.HERDR_SOCKET_PATH ||
-    !environment.HERDR_WORKSPACE_ID
-  ) {
-    throw new Error(CURRENT_HERDR_CONTEXT_ERROR);
-  }
-  return {
-    socketPath: environment.HERDR_SOCKET_PATH,
-    workspaceId: environment.HERDR_WORKSPACE_ID,
-  };
-}
-
 function takeFlag(args: string[], name: string): boolean {
   const index = args.indexOf(name);
   if (index < 0) return false;
@@ -505,6 +362,7 @@ function formatCliError(error: unknown): string {
   if (
     message.includes("ENOENT") ||
     message.includes("ECONNREFUSED") ||
+    message.includes("Shepherd daemon socket closed") ||
     message.includes("Observability RPC socket closed")
   ) {
     return `${message}\nRun \`shepherd daemon start\` before using Shepherd commands.`;

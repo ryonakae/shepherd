@@ -1,56 +1,46 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, test } from "vitest";
-import { workerIdentityKey } from "@/observability/contracts.js";
 import {
-  observeWorkspaceInputSchema,
-  runtimeTelemetryInputSchema,
+  agentGetInputSchema,
+  agentListInputSchema,
+  agentReadInputSchema,
+  agentTelemetryInputSchema,
 } from "@/observability/schemas.js";
 
-describe("observability contracts", () => {
-  test("builds stable worker keys", () => {
+describe("agent observability contracts", () => {
+  test("validates agent list scopes", () => {
+    expect(Value.Check(agentListInputSchema, {})).toBe(true);
+    expect(Value.Check(agentListInputSchema, { all: true })).toBe(true);
     expect(
-      workerIdentityKey({
-        kind: "agent_session",
-        session: { source: "herdr:pi", agent: "pi", kind: "path", value: "/tmp/session.jsonl" },
-      }),
-    ).toBe("session:herdr:pi:pi:path:/tmp/session.jsonl");
-
-    expect(
-      workerIdentityKey({
-        kind: "live_pane",
-        fallback: { herdrSessionName: "herdr-main", workspaceId: "w1", paneId: "w1:p1" },
-      }),
-    ).toBe("pane:herdr-main:w1:w1:p1");
-  });
-
-  test("validates observe workspace input", () => {
-    expect(
-      Value.Check(observeWorkspaceInputSchema, { herdrSessionName: "main", workspaceId: "w1" }),
+      Value.Check(agentListInputSchema, { herdrSessionName: "default", workspaceId: "wB" }),
     ).toBe(true);
-    expect(Value.Check(observeWorkspaceInputSchema, { workspaceId: "w1" })).toBe(false);
+    expect(Value.Check(agentListInputSchema, { observedWorkspaceId: "ow_1" })).toBe(false);
   });
 
-  test("validates runtime telemetry input", () => {
+  test("validates agent get and read input", () => {
+    expect(Value.Check(agentGetInputSchema, { target: "claude", workspaceId: "wB" })).toBe(true);
+    expect(Value.Check(agentReadInputSchema, { limit: 10, target: "wB:p2" })).toBe(true);
+    expect(Value.Check(agentReadInputSchema, { limit: 0, target: "wB:p2" })).toBe(false);
+    expect(Value.Check(agentReadInputSchema, { limit: 501, target: "wB:p2" })).toBe(false);
+  });
+
+  test("validates agent telemetry", () => {
     expect(
-      Value.Check(runtimeTelemetryInputSchema, {
+      Value.Check(agentTelemetryInputSchema, {
         event: {
-          artifactRefs: ["pi-session:/tmp/session.jsonl#entry=a1b2c3d4"],
+          artifactRefs: [],
           isError: false,
-          occurredAt: "2026-07-02T00:00:00.000Z",
-          redactionApplied: true,
+          occurredAt: "2026-07-08T00:00:00.000Z",
+          outputExcerpt: "ok",
+          redactionApplied: false,
           runtime: "pi",
-          sessionRef: {
-            source: "herdr:pi",
-            agent: "pi",
-            kind: "path",
-            value: "/tmp/session.jsonl",
-          },
+          sessionRef: null,
           toolCallId: "tool-1",
           toolName: "bash",
           turnId: "turn-1",
-          type: "worker.tool.completed",
-          workerKey: null,
+          type: "agent.tool.completed",
         },
+        workspaceId: "wB",
       }),
     ).toBe(true);
   });
