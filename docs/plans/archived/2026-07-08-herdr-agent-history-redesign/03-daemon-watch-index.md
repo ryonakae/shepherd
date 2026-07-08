@@ -94,7 +94,7 @@ export class HerdrSessionWatchManager {
 **Interfaces:**
 - Produces: `createHerdrSessionListRunner()` and `normalizeHerdrSessionList()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Test cases:
 
@@ -104,23 +104,23 @@ Test cases:
 4. Command runner calls `herdr session list --json` with inherited env.
 5. Invalid JSON throws `Failed to parse herdr session list --json output`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/herdr-session-list.test.ts`
 
 Expected: Import fails because session-list module does not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Use `node:child_process` `execFile` or `spawn` wrapped in a promise. Do not shell interpolate arguments. Normalize snake_case to camelCase.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/herdr-session-list.test.ts`
 
 Expected: All session list tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/herdr/session-list.ts test/unit/herdr-session-list.test.ts
@@ -139,7 +139,7 @@ git commit -m "herdr: discover running sessions"
 - Consumes: stores from child plan 01, `createAgentHistoryService()` from child plan 02, `normalizeHerdrSessionSnapshot()`.
 - Produces: `refreshHerdrSession()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Test cases:
 
@@ -150,13 +150,13 @@ Test cases:
 5. It removes agent rows that disappeared from the latest snapshot for that Herdr session.
 6. It does not remove rows for other Herdr sessions.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/agent-index-service.test.ts`
 
 Expected: Import fails because `AgentIndexService` does not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implementation outline:
 
@@ -179,13 +179,13 @@ async refreshHerdrSession(input) {
 
 Keep socket client factory injectable for tests.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/agent-index-service.test.ts`
 
 Expected: Snapshot indexing tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/agent-index-service.ts test/integration/agent-index-service.test.ts
@@ -204,7 +204,7 @@ git commit -m "observability: index herdr agents"
 - Consumes: `AgentStore.resolveTarget` or pane lookup, `AgentEventStore.append`, `AgentHistoryService.getCompactHistory`.
 - Produces: `handleHerdrEvent()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add tests:
 
@@ -215,13 +215,13 @@ Add tests:
 5. Event payload includes `from`, `to`, `agent`, `paneId`, `workspaceId`, and `herdrSessionName`.
 6. Unknown pane id causes service to refresh the Herdr session once, then tries again before dropping the event.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/agent-index-service.test.ts`
 
 Expected: New status event tests fail because `handleHerdrEvent()` is missing/incomplete.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Rules:
 
@@ -242,13 +242,13 @@ Use idempotency keys:
 
 If Herdr event has no sequence/timestamp, use current persisted status transition key without timestamp so repeated identical transitions dedupe.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/agent-index-service.test.ts`
 
 Expected: All agent index service tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/agent-index-service.ts test/integration/agent-index-service.test.ts
@@ -269,7 +269,7 @@ git commit -m "observability: emit agent status events"
 - Consumes: `HerdrSessionListRunner`, `AgentIndexService`, `HerdrSocketClient.subscribeEvents()`.
 - Produces: session watch manager lifecycle.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Test cases:
 
@@ -282,13 +282,13 @@ Test cases:
 7. On broad pane/workspace events (`pane.created`, `pane.closed`, `pane.moved`, `pane.agent_detected`, `workspace.closed`), watcher refreshes session and recreates status subscriptions for the current pane ids.
 8. Watch manager uses a 60,000 ms interval by default and accepts an injected interval for tests.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/herdr-session-watch-manager.test.ts test/integration/herdr-socket-client.test.ts`
 
 Expected: Watch manager import fails or subscription tests fail.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Update `HerdrSocketClient.subscribeEvents()` to accept:
 
@@ -316,13 +316,13 @@ Implement watch manager:
   5. For topology events, aborts current subscription and restarts after refresh.
 - On socket errors, retry after the next session rescan. Do not crash daemon.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/herdr-session-watch-manager.test.ts test/integration/herdr-socket-client.test.ts`
 
 Expected: Watch manager and socket subscription tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/herdr/socket-client.ts src/daemon/herdr-session-watch-manager.ts test/integration/herdr-session-watch-manager.test.ts test/integration/herdr-socket-client.test.ts
@@ -343,7 +343,7 @@ git commit -m "daemon: watch running herdr sessions"
 - Consumes: new stores, history service, index service, watch manager.
 - Produces: running daemon with agent event stream.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update `test/integration/observability-rpc.test.ts`:
 
@@ -352,13 +352,13 @@ Update `test/integration/observability-rpc.test.ts`:
 3. `agent.notifications.ack` marks an event as acked.
 4. Old methods `workspace.snapshot`, `worker.events`, `runtime.telemetry` with worker event types, and `notification.subscribe` return `Unknown method` after child plan 04 completes. For this child, mark the expectations but enable them when RPC method replacement is implemented.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: Tests fail because server still streams old worker methods.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `service.ts`:
 
@@ -376,13 +376,13 @@ In `observability-server.ts`:
 - Stream method name `agent.event`.
 - Keep JSON Lines framing unchanged.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: Agent event streaming and notification cursor tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/daemon/service.ts src/daemon/observability-server.ts src/observability/agent-notification-service.ts test/integration/observability-rpc.test.ts

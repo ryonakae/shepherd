@@ -122,7 +122,7 @@ result: { accepted: true }
 - Consumes: stores from child plan 01, `AgentHistoryService` from child plan 02.
 - Produces: RPC methods listed above.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `test/integration/observability-rpc.test.ts`, add cases:
 
@@ -137,13 +137,13 @@ In `test/integration/observability-rpc.test.ts`, add cases:
 9. `agent.notifications.subscribe` and `agent.notifications.ack` work with agent events.
 10. Old methods `workspace.snapshot`, `worker.events`, `runtime.telemetry` with worker event type, and `notification.subscribe` return `Unknown method`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: New agent RPC tests fail because methods are missing.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In server dispatch:
 
@@ -170,13 +170,13 @@ Rules:
 - If only `herdrSessionName` is set, scope to all workspaces in that Herdr session. `agent get/read` must then require a target that is unique in that Herdr session.
 - If none of `all`, `workspaceId`, or `herdrSessionName` is set, return an error: `agent scope requires current Herdr workspace, --workspace, --session, or --all`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: All agent RPC tests pass and old method tests return `Unknown method`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts src/observability/schemas.ts test/integration/observability-rpc.test.ts
@@ -195,7 +195,7 @@ git commit -m "rpc: expose agent history methods"
 - Consumes: RPC methods from Task 1.
 - Produces: `CliCommand` variants for `agent-list`, `agent-get`, `agent-read` or nested `command: "agent"` variants.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update `test/unit/cli.test.ts` with parse cases:
 
@@ -210,13 +210,13 @@ Update `test/unit/cli.test.ts` with parse cases:
 9. Old commands `context`, `snapshot`, `events`, `notifications`, `message-worker`, and `wait-worker` throw `Unknown command`.
 10. Help contains only daemon/help and `agent list/get/read` user commands.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: Tests fail because parser still supports old commands and not agent subcommands.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Parser rules:
 
@@ -234,13 +234,13 @@ agent list requires HERDR_ENV=1 with HERDR_WORKSPACE_ID, --workspace <id>, or --
 
 Do not parse `--observed-workspace`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: CLI parse/help tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/cli/shepherd.ts test/unit/cli.test.ts
@@ -259,7 +259,7 @@ git commit -m "cli: add shepherd agent commands"
 - Consumes: parse variants from Task 2.
 - Produces: human and JSON rendering.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add run command tests:
 
@@ -271,13 +271,13 @@ Add run command tests:
 6. Human `agent read` prints each message as `timestamp role tool text`, truncating each text cell to a human-readable width.
 7. Socket connection errors produce: `Run \`shepherd daemon start\` before using Shepherd commands.`
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: Dispatch/format tests fail.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Map commands:
 
@@ -293,13 +293,13 @@ Human formatting rules:
 
 Keep JSON output exactly `JSON.stringify(result)`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/cli.test.ts`
 
 Expected: All CLI tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/cli/shepherd.ts test/unit/cli.test.ts
@@ -318,7 +318,7 @@ git commit -m "cli: read agent history via daemon"
 - Consumes: existing `formatCliError()`.
 - Produces: daemon-required error text.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Tests:
 
@@ -327,23 +327,23 @@ Tests:
 3. CLI does not call `startDaemonProcess()` for agent commands.
 4. `shepherd daemon start` behavior remains handled by `main()` and existing daemon tests still pass.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/cli.test.ts test/unit/daemon-process-manager.test.ts`
 
 Expected: Any missing daemon-required behavior fails.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Keep existing daemon command handling. Ensure agent commands go through `ObservabilityRpcClient` and do not call daemon start. Update `formatCliError()` message from observability wording to Shepherd daemon wording if needed.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/cli.test.ts test/unit/daemon-process-manager.test.ts`
 
 Expected: Tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/cli/shepherd.ts test/unit/cli.test.ts test/unit/daemon-process-manager.test.ts

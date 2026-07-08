@@ -99,7 +99,7 @@ Current Herdr workspace: wB
 - Consumes: `agent.list`, `agent.notifications.subscribe`, `agent.notifications.ack`, `agent.telemetry`, streamed `agent.event`.
 - Produces: `formatHiddenAgentContext()` and `formatHiddenAgentUpdates()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update tests:
 
@@ -112,13 +112,13 @@ Update tests:
 7. Final message telemetry sends `agent.telemetry` with type `agent.message.final`.
 8. No output string contains `worker`, `snapshot`, or `[SHEPHERD WORKER NOTIFICATIONS]`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: Tests fail because extension still uses worker methods and worker text.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implementation rules:
 
@@ -132,13 +132,13 @@ Implementation rules:
 - Acknowledge pending events after hidden context is built.
 - Rename helper exports to `formatHiddenAgentContext` and `formatHiddenAgentUpdates`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: Pi extension tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts test/unit/shepherd-pi-extension.test.ts
@@ -158,7 +158,7 @@ git commit -m "pi: inject agent history context"
 - Consumes: daemon RPC `agent.list` and optional `agent.read`.
 - Produces: plugin action/pane for agent history.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update plugin package tests:
 
@@ -169,13 +169,13 @@ Update plugin package tests:
 5. Invalid old command `context` returns usage error.
 6. Pack dry-run still includes `index.mjs` and `herdr-plugin.toml` and no `dist/`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/herdr-plugin-package.test.ts`
 
 Expected: Tests fail because plugin still exposes context/dashboard worker surface.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 - Replace command parser entries with `agent-list` and `agents` pane command.
 - Remove `workspace.observe` and `workspace.snapshot` usage.
@@ -183,13 +183,13 @@ Expected: Tests fail because plugin still exposes context/dashboard worker surfa
 - Call `agent.list` with `{ workspaceId: env.HERDR_WORKSPACE_ID }`.
 - Render compact agent rows.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/herdr-plugin-package.test.ts`
 
 Expected: Plugin tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shepherd-herdr-plugin/index.mjs packages/shepherd-herdr-plugin/herdr-plugin.toml test/unit/herdr-plugin-package.test.ts
@@ -210,7 +210,7 @@ git commit -m "plugin: show shepherd agents"
 - Consumes: agent replacements from child plans 01-04.
 - Produces: active code with no old worker surface.
 
-- [ ] **Step 1: Search for old terms**
+- [x] **Step 1: Search for old terms**
 
 Run:
 
@@ -220,7 +220,7 @@ rg "worker|Worker|snapshot|context|observedWorkspace|observed-workspace|workspac
 
 Expected: Many hits before cleanup. Do not include `docs/plans` in this search because plan files may mention old names.
 
-- [ ] **Step 2: Remove or rename active code**
+- [x] **Step 2: Remove or rename active code**
 
 Rules:
 
@@ -232,7 +232,7 @@ Rules:
 - Keep the term `context` only when it refers to Pi/Herdr API types or general hidden context, not as a Shepherd command or API surface.
 - Keep the term `snapshot` only for Herdr official `session.snapshot`, not Shepherd user-facing snapshot command.
 
-- [ ] **Step 3: Run targeted compile/test check**
+- [x] **Step 3: Run targeted compile/test check**
 
 Run:
 
@@ -243,7 +243,7 @@ pnpm test test/unit/cli.test.ts test/unit/shepherd-pi-extension.test.ts test/uni
 
 Expected: Typecheck passes and targeted tests pass.
 
-- [ ] **Step 4: Re-run old-term search**
+- [x] **Step 4: Re-run old-term search**
 
 Run:
 
@@ -253,7 +253,7 @@ rg "message-worker|wait-worker|shepherd context|shepherd snapshot|workspace\.sna
 
 Expected: No matches. If matches remain in quoted test fixtures for old rejection behavior, change tests to avoid old command strings or move the assertion to a focused parser test without documenting old names in user docs.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src packages test package.json README.md README.ja.md SKILL.md
@@ -280,7 +280,7 @@ git commit -m "cleanup: remove worker observability surface"
 - Consumes: final CLI/RPC behavior.
 - Produces: docs aligned with commands.
 
-- [ ] **Step 1: Write doc changes**
+- [x] **Step 1: Write doc changes**
 
 Docs must state:
 
@@ -308,7 +308,7 @@ shepherd agent list --all --json
 
 Docs must not present `context`, `snapshot`, or worker commands.
 
-- [ ] **Step 2: Run doc term search**
+- [x] **Step 2: Run doc term search**
 
 Run:
 
@@ -318,7 +318,7 @@ rg "worker|Worker|shepherd context|shepherd snapshot|message-worker|wait-worker"
 
 Expected: No matches except package changelog/history text if present. If matches remain in package lock or generated artifacts, do not edit generated artifacts for wording.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md README.ja.md SKILL.md packages/shepherd-pi/README.md packages/shepherd-pi/skills/shepherd/SKILL.md packages/shepherd-herdr-plugin/README.md package.json packages/shepherd-pi/package.json packages/shepherd-herdr-plugin/package.json
@@ -336,7 +336,7 @@ git commit -m "docs: describe agent history workflow"
 - Consumes: all child plans.
 - Produces: verified implementation.
 
-- [ ] **Step 1: Run full validation**
+- [x] **Step 1: Run full validation**
 
 Run:
 
@@ -357,7 +357,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/installs/pnpm/11.9.0/bin:$PATH" pnpm build
 ```
 
-- [ ] **Step 2: Start daemon with isolated home for dogfood**
+- [x] **Step 2: Start daemon with isolated home for dogfood**
 
 Run:
 
@@ -369,7 +369,7 @@ SHEPHERD_HOME=/tmp/shepherd-agent-history-dogfood node dist/src/cli/shepherd.js 
 
 Expected: daemon starts and writes socket under `/tmp/shepherd-agent-history-dogfood`.
 
-- [ ] **Step 3: Verify Herdr sessions are indexed**
+- [x] **Step 3: Verify Herdr sessions are indexed**
 
 Run:
 
@@ -383,7 +383,7 @@ Expected:
 - Herdr reports at least the running `default` session.
 - Shepherd returns agents from running Herdr sessions.
 
-- [ ] **Step 4: Verify workspace `wB`**
+- [x] **Step 4: Verify workspace `wB`**
 
 From any shell, run:
 
@@ -399,7 +399,7 @@ Expected:
 - `agent get claude` includes metadata and compact history.
 - `agent read claude --limit 10` includes recent user/assistant/tool_result messages and no full raw tool output.
 
-- [ ] **Step 5: Verify daemon-required behavior**
+- [x] **Step 5: Verify daemon-required behavior**
 
 Run with daemon stopped:
 
@@ -410,7 +410,7 @@ SHEPHERD_HOME=/tmp/shepherd-agent-history-dogfood node dist/src/cli/shepherd.js 
 
 Expected: command fails with guidance to run `shepherd daemon start`; it does not auto-start.
 
-- [ ] **Step 6: Commit validation fixes only if needed**
+- [x] **Step 6: Commit validation fixes only if needed**
 
 If validation required fixes, commit them with a targeted message. If no fixes, do not create an empty commit.
 

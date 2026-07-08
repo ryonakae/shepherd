@@ -192,7 +192,7 @@ export type AgentEventRecord = {
 - Produces: `AgentListItem`, `AgentGetResult`, `AgentReadResult`, `AgentEventRecord`, `CompactAgentHistory`, `AgentHistoryMessage`.
 - Produces schemas: `agentListInputSchema`, `agentGetInputSchema`, `agentReadInputSchema`, `agentEventsInputSchema`, `agentNotificationSubscribeInputSchema`, `agentNotificationAckInputSchema`, `agentTelemetryInputSchema`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `test/unit/observability-contracts.test.ts`, replace worker telemetry validation cases with these cases:
 
@@ -203,13 +203,13 @@ In `test/unit/observability-contracts.test.ts`, replace worker telemetry validat
 5. `agentTelemetryInputSchema` accepts a Pi tool result event with type `agent.tool.completed` and no `workerKey`.
 6. Old worker schemas are not exported from `src/observability/schemas.ts`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: TypeScript or Vitest failures because new schema exports do not exist yet.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace worker contracts with the interfaces listed above. In `schemas.ts`, define TypeBox schemas that match the contract names exactly. Use these input shapes. Do not use `Type.Intersect` with closed objects here because each branch would reject fields from the other branch.
 
@@ -245,13 +245,13 @@ export const agentReadInputSchema = Type.Object(
 
 For telemetry, replace `worker.tool.completed` with `agent.tool.completed` and `worker.message.final` with `agent.message.final`. Keep redaction and excerpt fields bounded to 4096 chars.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: All contract/schema tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/contracts.ts src/observability/schemas.ts test/unit/observability-contracts.test.ts
@@ -277,7 +277,7 @@ git commit -m "contracts: define agent history surface"
 - Consumes: contracts from Task 1.
 - Produces store classes: `HerdrSessionStore`, `HerdrWorkspaceStore`, `AgentStore`, `AgentEventStore`, `AgentHistoryCacheStore`, `AgentNotificationCursorStore`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `test/integration/agent-stores.test.ts` with these cases:
 
@@ -289,13 +289,13 @@ Create `test/integration/agent-stores.test.ts` with these cases:
 6. `AgentHistoryCacheStore.getFresh()` returns a cache only when path, source mtime, source size, and formatter version match.
 7. `AgentNotificationCursorStore` subscribes, lists pending agent events, and acks by event id.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/integration/agent-stores.test.ts`
 
 Expected: Imports fail because new store files do not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Define these tables in `src/db/schema.ts`:
 
@@ -368,13 +368,13 @@ Also add `agent_history_cache`, `agent_notification_subscriptions`, and `agent_n
 
 Implement store classes with explicit map functions. Do not keep compatibility wrappers named `WorkerStore`, `WorkerEventStore`, or `WorkerSnapshotStore`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/integration/agent-stores.test.ts`
 
 Expected: All new store tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/db/schema.ts src/db/herdr-sessions.ts src/db/herdr-workspaces.ts src/db/agents.ts src/db/agent-events.ts src/db/agent-history-cache.ts src/db/agent-notification-cursors.ts test/integration/agent-stores.test.ts test/integration/observability-db-harness.ts
@@ -394,7 +394,7 @@ git commit -m "db: replace worker persistence with agent index"
 - Consumes: Drizzle schema from Task 2.
 - Produces: migration baseline matching new table names.
 
-- [ ] **Step 1: Update migration test**
+- [x] **Step 1: Update migration test**
 
 In `test/integration/sqlite-migrations.test.ts`, update expected table list to exactly:
 
@@ -412,13 +412,13 @@ In `test/integration/sqlite-migrations.test.ts`, update expected table list to e
 
 The test must also assert that no table name starts with `worker` and that `observed_workspaces` and `worker_snapshots` are absent.
 
-- [ ] **Step 2: Run migration test to verify it fails**
+- [x] **Step 2: Run migration test to verify it fails**
 
 Run: `pnpm test test/integration/sqlite-migrations.test.ts`
 
 Expected: Test fails because existing migrations still create old tables.
 
-- [ ] **Step 3: Regenerate migrations**
+- [x] **Step 3: Regenerate migrations**
 
 Because DB compatibility is intentionally dropped, remove old generated migration files under `drizzle/` and `drizzle/meta/`, then run:
 
@@ -428,7 +428,7 @@ pnpm db:generate
 
 Expected: Drizzle generates a new baseline SQL and meta snapshot for the new schema.
 
-- [ ] **Step 4: Verify migration test and Drizzle check**
+- [x] **Step 4: Verify migration test and Drizzle check**
 
 Run:
 
@@ -439,7 +439,7 @@ pnpm db:check
 
 Expected: Migration test passes and Drizzle reports no schema drift.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add drizzle test/integration/sqlite-migrations.test.ts

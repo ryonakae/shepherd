@@ -82,7 +82,7 @@ export type AgentHistoryService = {
 - Consumes: `AgentIndexRecord`-like metadata fields and `AgentSessionRef`.
 - Produces: `discoverAgentHistory(input): Promise<AgentHistoryRef | null>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create temp HOME directories and test these cases:
 
@@ -93,13 +93,13 @@ Create temp HOME directories and test these cases:
 5. If no candidate matches, discovery returns `null`.
 6. Discovery uses `foregroundCwd` when `cwd` is null.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/agent-history-discovery.test.ts`
 
 Expected: Import fails because discovery module does not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implement `discoverAgentHistory()` with this precedence:
 
@@ -127,13 +127,13 @@ function historySourceFromSessionRef(ref: AgentSessionRef): "claude-jsonl" | "pi
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/agent-history-discovery.test.ts`
 
 Expected: All discovery tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent-history/discovery.ts src/agent-history/text.ts test/unit/agent-history-discovery.test.ts
@@ -152,7 +152,7 @@ git commit -m "history: discover agent history files"
 **Interfaces:**
 - Produces: `compactToolResult(input): CompactToolResult`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create tests for these cases:
 
@@ -164,13 +164,13 @@ Create tests for these cases:
 6. `originalChars` equals raw input length in characters and `returnedChars` equals compact text length in characters.
 7. Redaction replaces bearer tokens, `token=`, `password=`, `secret=`, and `api_key=` values before compaction.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/tool-compaction.test.ts`
 
 Expected: Import fails because compaction module does not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implement:
 
@@ -201,13 +201,13 @@ Compaction order:
 
 Never return more than `maxToolResultChars + marker.length + 80` chars.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/tool-compaction.test.ts`
 
 Expected: All compaction tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent-history/tool-compaction.ts src/agent-history/text.ts test/unit/tool-compaction.test.ts
@@ -228,7 +228,7 @@ git commit -m "history: compact tool results"
 - Consumes: `compactToolResult()` from Task 2.
 - Produces: `PiHistoryReader`, `ClaudeHistoryReader`, `readJsonlMessages()` helpers.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create fixtures inline in the test for both Pi and Claude:
 
@@ -245,13 +245,13 @@ Claude cases:
 3. Extract tool result entries when Claude records tool results in user/tool result blocks; compact content and set toolName when available.
 4. Ignore `attachment`, `mode`, `permission-mode`, and `file-history-snapshot` entries.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/agent-history-readers.test.ts`
 
 Expected: Import fails because reader modules do not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implement common JSONL parsing in `readers.ts`:
 
@@ -269,13 +269,13 @@ Implementation rules:
 - Strip hidden thinking/reasoning blocks from assistant text.
 - For Claude tool result formats that are not recognized, preserve a compact `tool_result` only when content clearly represents tool output; otherwise treat as user text.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/agent-history-readers.test.ts`
 
 Expected: All reader tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent-history/readers.ts src/agent-history/pi-reader.ts src/agent-history/claude-reader.ts test/unit/agent-history-readers.test.ts
@@ -294,7 +294,7 @@ git commit -m "history: parse agent messages"
 - Consumes: discovery, readers, compaction, optional `AgentHistoryCacheStore`.
 - Produces: `createAgentHistoryService(options)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Tests:
 
@@ -304,13 +304,13 @@ Tests:
 4. `read({ limit: 2 })` bypasses compact-only cache and returns recent messages.
 5. Unknown history source returns empty compact history, not an exception.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test test/unit/agent-history-service.test.ts`
 
 Expected: Import fails because service module does not exist.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Implement:
 
@@ -335,13 +335,13 @@ Use reader registry order: Pi, Claude. `getCompactHistory()` should:
 
 `read()` should discover ref and return last `limit` messages via the matching reader.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test test/unit/agent-history-service.test.ts`
 
 Expected: All service tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent-history/service.ts test/unit/agent-history-service.test.ts

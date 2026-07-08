@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute the child plans task-by-task. Complete each checkbox step, run the listed validation, and commit after each task. This parent plan is the source of scope, terminology, and ordering.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Rebuild Shepherd around Herdr agents and agent history so `shepherd agent list/get/read` returns compact, accurate context for running Herdr workspaces, while the daemon keeps push notifications, unread cursors, and cache/index data.
 
@@ -60,17 +60,15 @@
 ## Progress
 
 - [x] Design decisions captured from `/dig` session.
-- [ ] Child plan 01 implemented and verified.
-- [ ] Child plan 02 implemented and verified.
-- [ ] Child plan 03 implemented and verified.
-- [ ] Child plan 04 implemented and verified.
-- [ ] Child plan 05 implemented and verified.
+- [x] Child plan 01 implemented and verified.
+- [x] Child plan 02 implemented and verified.
+- [x] Child plan 03 implemented and verified.
+- [x] Child plan 04 implemented and verified.
+- [x] Child plan 05 implemented and verified.
 
-## Next steps
+## Completion notes
 
-1. Start with child plan 01 and commit after it passes targeted tests and `pnpm db:generate`.
-2. Continue child plans in numeric order. Do not implement later plans before their dependencies are in place.
-3. After child plan 05, run full validation: `pnpm check`, `pnpm build`, and manual dogfood in Herdr workspace `wB`.
+Implemented through child plans 01-05, committed and pushed in multiple slices. Final validation passed with `pnpm check` and `pnpm build`. Dogfood with `SHEPHERD_HOME=/tmp/shepherd-agent-history-dogfood` verified `agent list/get/read` for workspace `wB` and daemon-required CLI behavior.
 
 ## Validation
 
