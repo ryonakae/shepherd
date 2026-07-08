@@ -26,6 +26,7 @@ type AgentListItem = {
 
 type ShepherdDaemonClient = {
   close(): void;
+  onAgentEvent: ((event: AgentEventWireRecord) => void) | undefined;
   request(method: string, params: unknown): Promise<unknown>;
 };
 
@@ -85,6 +86,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
 
     pi.on("session_start", async (_event: unknown, ctx: PiContext) => {
       state.client = options.clientFactory?.() ?? new JsonLineDaemonClient(defaultSocketPath());
+      state.client.onAgentEvent = (event) => handleAgentEvent(event, ctx, pi, state, options);
       state.sessionRef = {
         agent: "pi",
         kind: "path",
@@ -168,13 +170,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
 
     pi.on("agent.event", async (message: { event?: AgentEventWireRecord }, ctx?: PiContext) => {
       if (!message.event) return;
-      state.pendingEvents.push(message.event);
-      ctx?.ui.setStatus?.("shepherd", `${state.pendingEvents.length} unread agent event${state.pendingEvents.length === 1 ? "" : "s"}`);
-      ctx?.ui.setWidget?.("shepherd", { unread: state.pendingEvents.length });
-      pi.appendEntry?.("shepherd.agent_event", message.event);
-      if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(message.event)) {
-        pi.sendUserMessage?.(`Shepherd agent notification: ${message.event.type} event ${message.event.id}`);
-      }
+      handleAgentEvent(message.event, ctx, pi, state, options);
     });
 
     pi.on("before_agent_start", async () => {
@@ -199,12 +195,16 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         }
       }
       return {
-        hiddenContext: [
-          formatHiddenAgentContext({ agents, workspaceId: state.currentWorkspaceId }),
-          events.length > 0 ? formatHiddenAgentUpdates(events) : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
+        message: {
+          content: [
+            formatHiddenAgentContext({ agents, workspaceId: state.currentWorkspaceId }),
+            events.length > 0 ? formatHiddenAgentUpdates(events) : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          customType: "shepherd-agent-context",
+          display: false,
+        },
       };
     });
   };
@@ -243,6 +243,22 @@ export function formatHiddenAgentUpdates(events: AgentEventWireRecord[]): string
   ].join("\n");
 }
 
+function handleAgentEvent(
+  event: AgentEventWireRecord,
+  ctx: PiContext | undefined,
+  pi: PiApi,
+  state: ShepherdState,
+  options: ExtensionOptions,
+): void {
+  state.pendingEvents.push(event);
+  ctx?.ui.setStatus?.("shepherd", `${state.pendingEvents.length} unread agent event${state.pendingEvents.length === 1 ? "" : "s"}`);
+  ctx?.ui.setWidget?.("shepherd", { unread: state.pendingEvents.length });
+  pi.appendEntry?.("shepherd.agent_event", event);
+  if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(event)) {
+    pi.sendUserMessage?.(`Shepherd agent notification: ${event.type} event ${event.id}`);
+  }
+}
+
 function shouldAutoResume(event: AgentEventWireRecord): boolean {
   return event.type === "agent.done" || event.type === "agent.blocked" || event.type === "agent.idle";
 }
@@ -275,6 +291,7 @@ function oneLine(value: string): string {
 type Pending = { reject(error: Error): void; resolve(value: unknown): void };
 
 class JsonLineDaemonClient implements ShepherdDaemonClient {
+  onAgentEvent: ((event: AgentEventWireRecord) => void) | undefined;
   readonly #pending = new Map<string, Pending>();
   readonly #socket: Socket;
   #buffer = "";
@@ -309,6 +326,8 @@ class JsonLineDaemonClient implements ShepherdDaemonClient {
       if (!line) continue;
       const message = JSON.parse(line) as { error?: { message?: string }; id?: string; method?: string; params?: unknown; result?: unknown };
       if (message.method === "agent.event") {
+        const event = record(record(message.params).event) as AgentEventWireRecord;
+        if (typeof event.id === "number" && typeof event.type === "string") this.onAgentEvent?.(event);
         continue;
       }
       if (!message.id) continue;

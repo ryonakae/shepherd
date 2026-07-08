@@ -19,6 +19,8 @@ type Module = {
 type FakeClient = {
   calls: unknown[];
   close: () => void;
+  emitAgentEvent?: (event: unknown) => void;
+  onAgentEvent: ((event: unknown) => void) | undefined;
   request: (method: string, params: unknown) => Promise<unknown>;
 };
 
@@ -103,11 +105,12 @@ describe("shepherd-pi agent history bridge", () => {
     createShepherdPiExtension({ autoResume: true, clientFactory: () => client })(pi);
     const previousEnv = withHerdrEnv();
     await pi.emit("session_start", {}, ctx);
-    await pi.emit(
-      "agent.event",
-      { event: { id: 43, payload: { agent: "pi" }, type: "agent.idle", paneId: "wB:p1" } },
-      ctx,
-    );
+    client.emitAgentEvent?.({
+      id: 43,
+      payload: { agent: "pi" },
+      type: "agent.idle",
+      paneId: "wB:p1",
+    });
     restoreEnv(previousEnv);
 
     expect(ctx.status).toEqual(["shepherd", "2 unread agent events"]);
@@ -120,8 +123,18 @@ describe("shepherd-pi agent history bridge", () => {
     ).toContain("[SHEPHERD AGENT UPDATES]");
 
     const before = await pi.emit("before_agent_start", {}, ctx);
-    expect(before).toEqual({ hiddenContext: expect.stringContaining("[SHEPHERD AGENT CONTEXT]") });
-    expect(before).toEqual({ hiddenContext: expect.stringContaining("[SHEPHERD AGENT UPDATES]") });
+    expect(before).toEqual({
+      message: {
+        content: expect.stringContaining("[SHEPHERD AGENT CONTEXT]"),
+        customType: "shepherd-agent-context",
+        display: false,
+      },
+    });
+    expect(before).toEqual({
+      message: expect.objectContaining({
+        content: expect.stringContaining("[SHEPHERD AGENT UPDATES]"),
+      }),
+    });
     expect(client.calls).toContainEqual(["agent.list", { workspaceId: "wB" }]);
     expect(client.calls).toContainEqual([
       "agent.notifications.ack",
@@ -136,9 +149,14 @@ describe("shepherd-pi agent history bridge", () => {
 
 function createFakeClient(options: { events?: unknown[] } = {}): FakeClient {
   const calls: unknown[] = [];
+  let onAgentEvent: ((event: unknown) => void) | undefined;
   return {
     calls,
     close: () => calls.push(["close"]),
+    emitAgentEvent: (event: unknown) => onAgentEvent?.(event),
+    set onAgentEvent(handler: ((event: unknown) => void) | undefined) {
+      onAgentEvent = handler;
+    },
     async request(method, params) {
       calls.push([method, params]);
       if (method === "agent.notifications.subscribe") {

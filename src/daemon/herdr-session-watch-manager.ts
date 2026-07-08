@@ -21,6 +21,7 @@ export class HerdrSessionWatchManager {
   readonly #index: AgentIndexService;
   readonly #intervalMs: number;
   readonly #onAgentEvent: (event: AgentEventRecord) => void;
+  readonly #reconnectDelayMs: number;
   readonly #sessionList: HerdrSessionListRunner;
   readonly #watchers = new Map<string, Watcher>();
   #interval: NodeJS.Timeout | undefined;
@@ -34,6 +35,7 @@ export class HerdrSessionWatchManager {
     index: AgentIndexService;
     intervalMs?: number;
     onAgentEvent(event: AgentEventRecord): void;
+    reconnectDelayMs?: number;
     sessionList: HerdrSessionListRunner;
   }) {
     this.#agents = options.agents;
@@ -42,6 +44,7 @@ export class HerdrSessionWatchManager {
     this.#index = options.index;
     this.#intervalMs = options.intervalMs ?? 60_000;
     this.#onAgentEvent = options.onAgentEvent;
+    this.#reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
     this.#sessionList = options.sessionList;
   }
 
@@ -139,9 +142,26 @@ export class HerdrSessionWatchManager {
           break;
         }
       }
-      if (!restart) return;
+      if (!restart) {
+        await delay(this.#reconnectDelayMs, signal);
+      }
     }
   }
+}
+
+async function delay(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 function shouldRestartSubscription(type: unknown): boolean {
