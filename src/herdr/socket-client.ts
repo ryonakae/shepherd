@@ -29,9 +29,11 @@ export class HerdrSocketClient {
   readonly #pending = new Map<HerdrRequestId, PendingRequest>();
   readonly #subscribers = new Set<EventSubscriber>();
   readonly #socket: Socket;
+  readonly #socketPath: string;
   #nextId = 1;
 
   constructor(options: HerdrSocketClientOptions) {
+    this.#socketPath = options.socketPath;
     this.#socket = createConnection(options.socketPath);
     this.#socket.on("data", (chunk) => this.#handleData(chunk));
     this.#socket.on("error", (error) => this.#rejectAll(error));
@@ -187,8 +189,36 @@ export class HerdrSocketClient {
     return this.request("events.wait", params);
   }
 
-  sessionSnapshot(): Promise<unknown> {
-    return this.request("session.snapshot");
+  async sessionSnapshot(): Promise<unknown> {
+    try {
+      return await this.#requestOnce("session.snapshot");
+    } catch (error) {
+      if (!isUnsupportedSessionSnapshotError(error)) {
+        throw error;
+      }
+    }
+
+    const [workspacesResult, panesResult, tabsResult, agentsResult] = await Promise.all([
+      this.#requestOnce("workspace.list"),
+      this.#requestOnce("pane.list"),
+      this.#requestOnce("tab.list"),
+      this.#requestOnce("agent.list"),
+    ]);
+    const workspaces = arrayProperty(workspacesResult, "workspaces");
+    const panes = arrayProperty(panesResult, "panes");
+    const tabs = arrayProperty(tabsResult, "tabs");
+    const agents = arrayProperty(agentsResult, "agents");
+
+    return {
+      snapshot: {
+        agents,
+        ...focusedId("focused_pane_id", panes, "pane_id"),
+        ...focusedId("focused_workspace_id", workspaces, "workspace_id"),
+        panes,
+        tabs,
+        workspaces,
+      },
+    };
   }
 
   async *subscribeEvents(
@@ -242,6 +272,46 @@ export class HerdrSocketClient {
     }
   }
 
+  #requestOnce(method: string, params: unknown = {}): Promise<unknown> {
+    const id = `shepherd-${this.#nextId}`;
+    this.#nextId += 1;
+
+    return new Promise((resolve, reject) => {
+      const decoder = new JsonLineDecoder();
+      const socket = createConnection(this.#socketPath);
+      let settled = false;
+      const finish = (result: { error?: Error; value?: unknown }) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        socket.destroy();
+        if (result.error) {
+          reject(result.error);
+          return;
+        }
+        resolve(result.value);
+      };
+
+      socket.on("connect", () => socket.write(encodeJsonLine({ id, method, params })));
+      socket.on("data", (chunk) => {
+        for (const message of decoder.push(chunk.toString("utf8"))) {
+          const response = message as HerdrResponse;
+          if (response.error) {
+            finish({ error: new Error(response.error.message ?? "Herdr request failed") });
+            return;
+          }
+          if (response.id === id) {
+            finish({ value: response.result });
+            return;
+          }
+        }
+      });
+      socket.on("error", (error) => finish({ error }));
+      socket.on("close", () => finish({ error: new Error("Herdr socket closed") }));
+    });
+  }
+
   #handleData(chunk: Buffer): void {
     for (const message of this.#decoder.push(chunk.toString("utf8"))) {
       const response = message as HerdrResponse;
@@ -286,4 +356,37 @@ function notificationEvent(message: HerdrResponse): unknown {
     return params.event ?? message.params;
   }
   return message.result ?? message;
+}
+
+function isUnsupportedSessionSnapshotError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.includes("session.snapshot") && error.message.includes("unknown variant");
+}
+
+function arrayProperty(value: unknown, key: string): unknown[] {
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const property = (value as Record<string, unknown>)[key];
+  return Array.isArray(property) ? property : [];
+}
+
+function focusedId(
+  outputKey: string,
+  records: unknown[],
+  recordKey: string,
+): Record<string, string> {
+  const focused = records.find(
+    (record) =>
+      typeof record === "object" &&
+      record !== null &&
+      (record as { focused?: unknown }).focused === true,
+  );
+  if (typeof focused !== "object" || focused === null) {
+    return {};
+  }
+  const id = (focused as Record<string, unknown>)[recordKey];
+  return typeof id === "string" ? { [outputKey]: id } : {};
 }

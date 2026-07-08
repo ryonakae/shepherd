@@ -115,20 +115,109 @@ describe("HerdrSocketClient", () => {
     ]);
   });
 
-  test("requests session snapshots", async () => {
+  test("uses Herdr session snapshots when available", async () => {
+    const sessionSnapshot = {
+      type: "session_snapshot",
+      snapshot: {
+        agents: [{ agent: "pi", pane_id: "w1:p1", workspace_id: "w1" }],
+        focused_pane_id: "w1:p1",
+        focused_tab_id: "w1:t1",
+        focused_workspace_id: "w1",
+        layouts: [{ focused_pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" }],
+        panes: [{ focused: true, pane_id: "w1:p1", workspace_id: "w1" }],
+        protocol: 16,
+        tabs: [{ focused: true, tab_id: "w1:t1", workspace_id: "w1" }],
+        version: "0.7.2",
+        workspaces: [{ focused: true, label: "Repo", workspace_id: "w1" }],
+      },
+    };
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(
-        encodeJsonLine({ id: request.id, result: { snapshot: { workspaces: [{ id: "w1" }] } } }),
-      );
+      socket.write(encodeJsonLine({ id: request.id, result: sessionSnapshot }));
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    await expect(client.sessionSnapshot()).resolves.toEqual(sessionSnapshot);
+    client.close();
+
+    expect(requests.map((request) => request.method)).toEqual(["session.snapshot"]);
+  });
+
+  test("falls back to list APIs when Herdr session snapshots are unavailable", async () => {
+    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
+      if (request.method === "session.snapshot") {
+        socket.write(
+          encodeJsonLine({
+            error: {
+              code: "invalid_request",
+              message: "invalid request: unknown variant `session.snapshot`",
+            },
+            id: "",
+          }),
+        );
+        return;
+      }
+      if (request.method === "workspace.list") {
+        socket.write(
+          encodeJsonLine({
+            id: request.id,
+            result: {
+              type: "workspace_list",
+              workspaces: [{ focused: true, label: "Repo", workspace_id: "w1" }],
+            },
+          }),
+        );
+        return;
+      }
+      if (request.method === "pane.list") {
+        socket.write(
+          encodeJsonLine({
+            id: request.id,
+            result: { panes: [{ focused: true, pane_id: "w1:p1", workspace_id: "w1" }] },
+          }),
+        );
+        return;
+      }
+      if (request.method === "tab.list") {
+        socket.write(
+          encodeJsonLine({
+            id: request.id,
+            result: { tabs: [{ focused: true, tab_id: "w1:t1", workspace_id: "w1" }] },
+          }),
+        );
+        return;
+      }
+      if (request.method === "agent.list") {
+        socket.write(
+          encodeJsonLine({
+            id: request.id,
+            result: { agents: [{ agent: "Pi", pane_id: "w1:p1", status: "working" }] },
+          }),
+        );
+        return;
+      }
+      socket.write(encodeJsonLine({ id: request.id, result: {} }));
     });
 
     const client = new HerdrSocketClient({ socketPath });
     await expect(client.sessionSnapshot()).resolves.toEqual({
-      snapshot: { workspaces: [{ id: "w1" }] },
+      snapshot: {
+        agents: [{ agent: "Pi", pane_id: "w1:p1", status: "working" }],
+        focused_pane_id: "w1:p1",
+        focused_workspace_id: "w1",
+        panes: [{ focused: true, pane_id: "w1:p1", workspace_id: "w1" }],
+        tabs: [{ focused: true, tab_id: "w1:t1", workspace_id: "w1" }],
+        workspaces: [{ focused: true, label: "Repo", workspace_id: "w1" }],
+      },
     });
     client.close();
 
-    expect(requests[0]).toMatchObject({ method: "session.snapshot", params: {} });
+    expect(requests.map((request) => request.method)).toEqual([
+      "session.snapshot",
+      "workspace.list",
+      "pane.list",
+      "tab.list",
+      "agent.list",
+    ]);
   });
 
   test("subscribes to Herdr events and yields socket notifications", async () => {

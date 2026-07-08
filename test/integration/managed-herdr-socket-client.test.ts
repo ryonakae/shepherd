@@ -26,10 +26,19 @@ afterEach(async () => {
 
 describe("ManagedHerdrSocketClient", () => {
   test("delegates session snapshots through the managed socket", async () => {
+    const sessionSnapshot = {
+      type: "session_snapshot",
+      snapshot: {
+        agents: [{ agent: "pi", pane_id: "w1:p1", workspace_id: "w1" }],
+        focused_pane_id: "w1:p1",
+        focused_workspace_id: "w1",
+        panes: [{ focused: true, pane_id: "w1:p1", workspace_id: "w1" }],
+        tabs: [{ focused: true, tab_id: "w1:t1", workspace_id: "w1" }],
+        workspaces: [{ focused: true, workspace_id: "w1" }],
+      },
+    };
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(
-        encodeJsonLine({ id: request.id, result: { snapshot: { focused_workspace_id: "w1" } } }),
-      );
+      socket.write(encodeJsonLine({ id: request.id, result: sessionSnapshot }));
     });
     const client = new ManagedHerdrSocketClient({
       herdrSessionName: "shepherd-api",
@@ -40,12 +49,10 @@ describe("ManagedHerdrSocketClient", () => {
       } as unknown as HerdrSessionLifecycle,
     });
 
-    await expect(client.sessionSnapshot()).resolves.toEqual({
-      snapshot: { focused_workspace_id: "w1" },
-    });
+    await expect(client.sessionSnapshot()).resolves.toEqual(sessionSnapshot);
     client.close();
 
-    expect(requests[0]).toMatchObject({ method: "session.snapshot" });
+    expect(requests.map((request) => request.method)).toEqual(["session.snapshot"]);
   });
 
   test("ensures the named session before sending socket requests", async () => {
