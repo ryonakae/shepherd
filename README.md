@@ -1,8 +1,18 @@
 # Shepherd
 
-Shepherd indexes Herdr agents and their agent history so coding agents can read compact agent history without scraping terminal panes.
+Shepherd gives coding agents a compact, queryable view of other agents running in Herdr, without scraping terminal panes.
 
-Herdr remains the control surface for workspaces, tabs, panes, and terminal I/O. Shepherd reads running Herdr sessions, discovers agent history files, caches compact history, and delivers agent updates to integrations such as Pi.
+<!-- README-I18N:START -->
+**English** | [日本語](./README.ja.md)
+<!-- README-I18N:END -->
+
+Herdr remains the control surface for workspaces, tabs, panes, and terminal I/O. Shepherd follows running Herdr sessions, discovers agent history files, caches compact history, and delivers agent updates to integrations such as Pi.
+
+## Why use Shepherd?
+
+- **Agent context from the CLI:** check what another agent is doing without reading its terminal pane.
+- **Compact history:** fetch the latest user, assistant, and tool-result excerpts without replaying full transcripts.
+- **Pi and Herdr integration:** pass current-workspace agent history and unread agent updates into Pi, and show compact agent rows in Herdr.
 
 ## Requirements
 
@@ -10,19 +20,29 @@ Herdr remains the control surface for workspaces, tabs, panes, and terminal I/O.
 - pnpm >= 11.9.0
 - Herdr with socket API support
 
+## Install from source
+
+```bash
+git clone https://github.com/ryonakae/shepherd.git
+cd shepherd
+pnpm install
+pnpm build
+npm install -g . --ignore-scripts
+shepherd help
+```
+
 ## Start the daemon
 
-Shepherd commands require the daemon. It watches all running Herdr sessions reported by `herdr session list --json` and rescans them every 60 seconds.
+Shepherd agent commands require the daemon. It watches all running Herdr sessions reported by `herdr session list --json`, rescans them every 60 seconds, and ignores stopped sessions. Runtime files live in `~/.shepherd` by default; set `SHEPHERD_HOME` to use another directory.
 
 ```bash
 shepherd daemon start
 ```
 
-Stopped Herdr sessions are not indexed.
 
 ## Main commands
 
-Inside a Herdr workspace, the current workspace is selected automatically:
+Inside a Herdr workspace, Shepherd selects the current workspace automatically:
 
 ```bash
 shepherd agent list --json
@@ -43,7 +63,7 @@ Use `--session <name>` when the same workspace id or agent name is ambiguous acr
 
 ## Command behavior
 
-- `shepherd agent list` returns agents in the selected workspace plus compact last user/assistant messages.
+- `shepherd agent list` returns agents in the selected workspace plus compact last user and assistant messages.
 - `shepherd agent get <target>` returns one agent's metadata and compact history, including the latest compact tool result.
 - `shepherd agent read <target> --limit N` returns recent structured user, assistant, and compact `tool_result` messages.
 
@@ -51,7 +71,7 @@ Targets follow Herdr conventions where possible: pane id, terminal id, or a uniq
 
 ## Pi extension
 
-The `shepherd-pi` extension can inject current-workspace compact agent history before a Pi turn. It also receives unread agent updates from the daemon and includes compact history in hidden context.
+The `shepherd-pi` extension connects to the Shepherd daemon when Pi runs inside Herdr. Before a Pi turn, it injects current-workspace compact agent history as hidden context. It also receives unread agent updates from the daemon and includes them in the next turn.
 
 ## Packages
 
@@ -74,3 +94,7 @@ DB schema changes require:
 pnpm db:generate
 pnpm db:check
 ```
+
+## License
+
+[MIT](./LICENSE)

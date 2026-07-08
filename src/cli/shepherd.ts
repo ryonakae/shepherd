@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { fileURLToPath } from "node:url";
@@ -365,7 +366,35 @@ function formatCliError(error: unknown): string {
   return message;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function shouldRunCliMain(input: {
+  argvPath: string | undefined;
+  modulePath: string;
+  realArgvPath?: string | undefined;
+}): boolean {
+  const modulePath = resolve(input.modulePath);
+  return [input.argvPath, input.realArgvPath]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .map((value) => resolve(value))
+    .includes(modulePath);
+}
+
+function realpathOrUndefined(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+const modulePath = fileURLToPath(import.meta.url);
+if (
+  shouldRunCliMain({
+    argvPath: process.argv[1],
+    modulePath,
+    realArgvPath: realpathOrUndefined(process.argv[1]),
+  })
+) {
   main().catch((error: unknown) => {
     console.error(formatCliError(error));
     exit(1);
