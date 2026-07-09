@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import type { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import type { CompactAgentHistory } from "@/observability/contracts.js";
 import { ClaudeHistoryReader } from "./claude-reader.js";
+import { CodexHistoryReader } from "./codex-reader.js";
 import { type AgentHistoryLookupInput, discoverAgentHistory } from "./discovery.js";
 import { PiHistoryReader } from "./pi-reader.js";
 import type { AgentHistoryReader } from "./readers.js";
@@ -13,7 +14,11 @@ type CacheLike = Pick<AgentHistoryCacheStore, "getFresh" | "put">;
 export function createAgentHistoryService(
   options: { cache?: CacheLike; homeDir?: string; readers?: AgentHistoryReader[] } = {},
 ) {
-  const readers = options.readers ?? [new PiHistoryReader(), new ClaudeHistoryReader()];
+  const readers = options.readers ?? [
+    new PiHistoryReader(),
+    new ClaudeHistoryReader(),
+    new CodexHistoryReader(),
+  ];
 
   return {
     async discover(input: AgentHistoryLookupInput) {
