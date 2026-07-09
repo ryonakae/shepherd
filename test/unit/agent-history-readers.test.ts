@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 import { CodexHistoryReader } from "@/agent-history/codex-reader.js";
+import { GeminiHistoryReader } from "@/agent-history/gemini-reader.js";
 import { OpenCodeHistoryReader } from "@/agent-history/opencode-reader.js";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 
@@ -172,6 +173,90 @@ describe("OpenCodeHistoryReader", () => {
     await expect(
       new OpenCodeHistoryReader().read(
         { kind: "discovered_file", path: dbPath, source: "opencode-sqlite", value: "s1" },
+        { limit: 10 },
+      ),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("GeminiHistoryReader", () => {
+  test("reads user and gemini assistant messages from object-shaped session JSON", async () => {
+    const homeDir = await tempHome("shepherd-gemini-reader-");
+    const projectDir = join(homeDir, ".gemini", "tmp", "repo-project");
+    const chatsDir = join(projectDir, "chats");
+    await mkdir(chatsDir, { recursive: true });
+    const sessionPath = join(chatsDir, "session-2026-07-09T12-00-00abcdef.json");
+    await writeFile(
+      sessionPath,
+      JSON.stringify({
+        sessionId: "g1",
+        messages: [
+          {
+            id: "u1",
+            timestamp: "2026-07-09T12:00:00.000Z",
+            type: "user",
+            content: [{ text: "please check" }],
+          },
+          { id: "a1", timestamp: "2026-07-09T12:00:01.000Z", type: "gemini", content: "checked" },
+          { id: "i1", timestamp: "2026-07-09T12:00:02.000Z", type: "info", content: "ignored" },
+        ],
+      }),
+    );
+
+    const messages = await new GeminiHistoryReader().read(
+      { kind: "discovered_file", path: sessionPath, source: "gemini-json", value: sessionPath },
+      { limit: 10 },
+    );
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        role: "user",
+        text: "please check",
+        timestamp: "2026-07-09T12:00:00.000Z",
+      }),
+      expect.objectContaining({
+        role: "assistant",
+        text: "checked",
+        timestamp: "2026-07-09T12:00:01.000Z",
+      }),
+    ]);
+  });
+
+  test("reads tool result messages when Gemini session records tool output", async () => {
+    const homeDir = await tempHome("shepherd-gemini-tool-");
+    const sessionPath = join(homeDir, "session.json");
+    await writeFile(
+      sessionPath,
+      JSON.stringify({
+        messages: [
+          {
+            id: "t1",
+            timestamp: "2026-07-09T12:00:03.000Z",
+            type: "tool",
+            tool: "shell",
+            content: "ok",
+          },
+        ],
+      }),
+    );
+
+    const messages = await new GeminiHistoryReader().read(
+      { kind: "discovered_file", path: sessionPath, source: "gemini-json", value: sessionPath },
+      { limit: 10 },
+    );
+
+    expect(messages).toEqual([expect.objectContaining({ role: "tool_result", toolName: "shell" })]);
+    expect(messages[0]?.compact?.text).toContain("ok");
+  });
+
+  test("returns empty history when Gemini session JSON is malformed", async () => {
+    const homeDir = await tempHome("shepherd-gemini-bad-json-");
+    const sessionPath = join(homeDir, "session.json");
+    await writeFile(sessionPath, "{not-json");
+
+    await expect(
+      new GeminiHistoryReader().read(
+        { kind: "discovered_file", path: sessionPath, source: "gemini-json", value: sessionPath },
         { limit: 10 },
       ),
     ).resolves.toEqual([]);
