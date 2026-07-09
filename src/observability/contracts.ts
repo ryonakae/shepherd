@@ -45,7 +45,13 @@ export type AgentIndexRecord = {
 export type AgentHistoryRef = {
   kind: "agent_session" | "discovered_file";
   path?: string;
-  source: "claude-jsonl" | "pi-jsonl" | "unknown";
+  source:
+    | "claude-jsonl"
+    | "codex-jsonl"
+    | "gemini-json"
+    | "opencode-sqlite"
+    | "pi-jsonl"
+    | "unknown";
   value: string;
 };
 

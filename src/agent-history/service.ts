@@ -32,12 +32,13 @@ export function createAgentHistoryService(
       const reader = readers.find((candidate) => candidate.canRead(historyRef));
       if (!reader) return emptyCompactHistory(historyRef.source);
       const path = historyRef.path ?? historyRef.value;
+      const cacheSourcePath = cacheSourcePathForRef(historyRef);
       const stats = await stat(path).catch(() => null);
       if (stats && options.cache) {
         const cached = options.cache.getFresh({
           formatterVersion: agentHistoryFormatterVersion,
           sourceMtimeMs: Math.trunc(stats.mtimeMs),
-          sourcePath: path,
+          sourcePath: cacheSourcePath,
           sourceSize: stats.size,
         });
         if (cached) return cached.compactHistory;
@@ -49,7 +50,7 @@ export function createAgentHistoryService(
           formatterVersion: agentHistoryFormatterVersion,
           historyRef,
           sourceMtimeMs: Math.trunc(stats.mtimeMs),
-          sourcePath: path,
+          sourcePath: cacheSourcePath,
           sourceSize: stats.size,
         });
       }
@@ -70,6 +71,16 @@ export function createAgentHistoryService(
 }
 
 export type AgentHistoryService = ReturnType<typeof createAgentHistoryService>;
+
+export function cacheSourcePathForRef(historyRef: {
+  kind?: string;
+  path?: string;
+  source: string;
+  value: string;
+}): string {
+  const path = historyRef.path ?? historyRef.value;
+  return historyRef.source === "opencode-sqlite" ? `${path}#session=${historyRef.value}` : path;
+}
 
 export function emptyCompactHistory(source: string | null = null): CompactAgentHistory {
   return {
