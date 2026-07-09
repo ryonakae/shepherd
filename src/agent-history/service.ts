@@ -4,6 +4,7 @@ import type { CompactAgentHistory } from "@/observability/contracts.js";
 import { ClaudeHistoryReader } from "./claude-reader.js";
 import { CodexHistoryReader } from "./codex-reader.js";
 import { type AgentHistoryLookupInput, discoverAgentHistory } from "./discovery.js";
+import { OpenCodeHistoryReader } from "./opencode-reader.js";
 import { PiHistoryReader } from "./pi-reader.js";
 import type { AgentHistoryReader } from "./readers.js";
 
@@ -18,6 +19,7 @@ export function createAgentHistoryService(
     new PiHistoryReader(),
     new ClaudeHistoryReader(),
     new CodexHistoryReader(),
+    new OpenCodeHistoryReader(),
   ];
 
   return {

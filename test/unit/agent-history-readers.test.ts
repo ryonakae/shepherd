@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 import { CodexHistoryReader } from "@/agent-history/codex-reader.js";
+import { OpenCodeHistoryReader } from "@/agent-history/opencode-reader.js";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 
 const tempDirs: string[] = [];
@@ -94,5 +96,84 @@ describe("CodexHistoryReader", () => {
       historyRef: { source: "codex-jsonl", path },
       messages: [expect.objectContaining({ role: "user", text: "hello" })],
     });
+  });
+});
+
+describe("OpenCodeHistoryReader", () => {
+  test("reads text and tool parts from an OpenCode SQLite session", async () => {
+    const homeDir = await tempHome("shepherd-opencode-reader-");
+    const dbPath = join(homeDir, "opencode.db");
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(`
+      create table session (id text primary key, directory text not null, time_updated integer not null);
+      create table message (id text primary key, session_id text not null, time_created integer not null, time_updated integer not null, data text not null);
+      create table part (id text primary key, message_id text not null, session_id text not null, time_created integer not null, time_updated integer not null, data text not null);
+    `);
+    sqlite
+      .prepare("insert into session (id, directory, time_updated) values (?, ?, ?)")
+      .run("s1", "/repo", 1000);
+    sqlite
+      .prepare(
+        "insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)",
+      )
+      .run("m1", "s1", 1000, 1000, JSON.stringify({ role: "user" }));
+    sqlite
+      .prepare(
+        "insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)",
+      )
+      .run("p1", "m1", "s1", 1001, 1001, JSON.stringify({ type: "text", text: "inspect this" }));
+    sqlite
+      .prepare(
+        "insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)",
+      )
+      .run("m2", "s1", 2000, 2000, JSON.stringify({ role: "assistant", finish: "tool-calls" }));
+    sqlite
+      .prepare(
+        "insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "p2",
+        "m2",
+        "s1",
+        2001,
+        2001,
+        JSON.stringify({
+          type: "tool",
+          tool: "bash",
+          state: { status: "completed", output: "ok" },
+        }),
+      );
+    sqlite
+      .prepare(
+        "insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)",
+      )
+      .run("p3", "m2", "s1", 2002, 2002, JSON.stringify({ type: "text", text: "done" }));
+    sqlite.close();
+
+    const messages = await new OpenCodeHistoryReader().read(
+      { kind: "discovered_file", path: dbPath, source: "opencode-sqlite", value: "s1" },
+      { limit: 10 },
+    );
+
+    expect(messages.map((message) => message.role)).toEqual(["user", "tool_result", "assistant"]);
+    expect(messages[0]).toMatchObject({ role: "user", text: "inspect this" });
+    expect(messages[1]).toMatchObject({ role: "tool_result", toolName: "bash" });
+    expect(messages[1]?.compact?.text).toContain("ok");
+    expect(messages[2]).toMatchObject({ role: "assistant", text: "done" });
+  });
+
+  test("returns empty history when the OpenCode DB schema is unreadable", async () => {
+    const homeDir = await tempHome("shepherd-opencode-bad-db-");
+    const dbPath = join(homeDir, "opencode.db");
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec("create table unrelated (id text primary key)");
+    sqlite.close();
+
+    await expect(
+      new OpenCodeHistoryReader().read(
+        { kind: "discovered_file", path: dbPath, source: "opencode-sqlite", value: "s1" },
+        { limit: 10 },
+      ),
+    ).resolves.toEqual([]);
   });
 });
