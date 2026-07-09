@@ -1,26 +1,22 @@
-# Shepherd
+![Shepherd cover](./assets/shepherd-cover.png)
 
-Shepherd は、Herdr で動いている他の agent の状態と履歴を、terminal pane を読まずに短く取得できるようにします。
+# Shepherd
 
 <!-- README-I18N:START -->
 [English](./README.md) | **日本語**
 <!-- README-I18N:END -->
 
-Herdr は workspace、tab、pane、terminal I/O の操作を担います。Shepherd は実行中の Herdr session を追跡し、agent history file から短い履歴をキャッシュして、Pi などの連携先へ agent update を届けます。
+Shepherd は、Herdr で動いている他の agent の状態と短い履歴を CLI から読めるようにするツールです。
 
-Shepherd は現在、Herdr が agent を識別できる場合、または workspace directory から履歴を発見できる場合に、Pi、Claude Code、Codex、OpenCode、Gemini CLI の短い履歴を読み取れます。
+Herdr の `herdr agent read` でも別 agent の出力を読むことはできます。ただしこれは terminal stream や scrollback を読む方式なので、agent の履歴を構造的に取得しづらく、余分な出力も含まれます。Shepherd は agent のセッションデータを読み取り、別 agent の作業状況、最新メッセージの抜粋、unread agent update を扱いやすい形にして提供します。
 
-## Shepherd を使う意味
-
-- **CLI から agent の文脈を読む:** terminal pane を読み直さず、別 agent の作業状況を確認できます。
-- **短い履歴を取得する:** 履歴全文を読み込まず、最新の user / assistant / tool-result の抜粋だけを取得できます。
-- **Pi と Herdr に接続する:** current workspace の agent history と unread agent update を Pi に渡し、Herdr には短い agent row を表示できます。
+現在は Claude Code、Codex、Gemini CLI、OpenCode、Pi のセッション履歴の取得に対応しています。
 
 ## 要件
 
 - Node.js >= 24.18.0
 - pnpm >= 11.9.0
-- socket API support を備えた Herdr
+- Herdr >= 0.7.0
 
 ## ソースからインストールする
 
@@ -43,6 +39,10 @@ shepherd daemon start
 
 ## 主なコマンド
 
+- `shepherd agent list`: 選択した workspace の agent 一覧と、最後の user / assistant message を返します。
+- `shepherd agent get <target>`: 1 agent の metadata と compact history を返します。最新の compact tool result も含みます。
+- `shepherd agent read <target> --limit N`: 直近 N 件の user / assistant / compact `tool_result` message を返します。
+
 Herdr workspace 内では、Shepherd が current workspace を自動で選びます。
 
 ```bash
@@ -60,26 +60,22 @@ shepherd agent get claude --workspace wB --json
 shepherd agent read wB:p2 --workspace wB --limit 20 --json
 ```
 
-同じ workspace id や agent name が複数の running Herdr session にある場合は `--session <name>` を付けます。
-
-## 返す内容
-
-- `shepherd agent list`: 選択した workspace の agent 一覧と、最後の user / assistant message。
-- `shepherd agent get <target>`: 1 agent の metadata と compact history。最新の compact tool result も含みます。
-- `shepherd agent read <target> --limit N`: 直近 N 件の user / assistant / compact `tool_result` message。
-
-`<target>` には、Herdr の慣例に合わせて pane id、terminal id、または scope 内で一意な agent name を指定できます。
+`<target>` には、Herdr の慣例に合わせて pane id、terminal id、または scope 内で一意な agent name を指定できます。同じ workspace id や agent name が複数の running Herdr session にある場合は `--session <name>` を付けます。
 
 ## Pi extension
 
 `shepherd-pi` extension は、Pi が Herdr 内で動くと Shepherd daemon に接続します。Pi の turn 前に、current workspace の compact agent history を hidden context として注入します。daemon から unread agent update も受け取り、次の turn に含めます。
+
+## Herdr plugin
+
+`shepherd-herdr-plugin` は任意の Herdr plugin です。Herdr workspace 内で Shepherd daemon に接続し、current workspace の compact agent row を Herdr UI に表示します。Shepherd の CLI や Pi extension を使うだけなら必須ではありません。
 
 ## パッケージ
 
 | Path | Purpose |
 | --- | --- |
 | `packages/shepherd-pi` | agent history と agent update の Pi extension。 |
-| `packages/shepherd-herdr-plugin` | compact Shepherd agent row を表示する Herdr plugin。 |
+| `packages/shepherd-herdr-plugin` | Herdr UI に compact agent row を表示する任意の plugin。 |
 
 ## 開発
 
