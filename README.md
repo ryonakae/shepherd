@@ -8,6 +8,8 @@ Shepherd gives coding agents a compact, queryable view of other agents running i
 
 Herdr remains the control surface for workspaces, tabs, panes, and terminal I/O. Shepherd follows running Herdr sessions, discovers agent history files, caches compact history, and delivers agent updates to integrations such as Pi.
 
+Shepherd currently reads compact history from Pi, Claude Code, Codex, OpenCode, and Gemini CLI sessions when Herdr identifies those agents or their history can be discovered from the workspace directory.
+
 ## Why use Shepherd?
 
 - **Agent context from the CLI:** check what another agent is doing without reading its terminal pane.

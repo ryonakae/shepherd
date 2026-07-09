@@ -8,6 +8,8 @@ Shepherd は、Herdr で動いている他の agent の状態と履歴を、term
 
 Herdr は workspace、tab、pane、terminal I/O の操作を担います。Shepherd は実行中の Herdr session を追跡し、agent history file から短い履歴をキャッシュして、Pi などの連携先へ agent update を届けます。
 
+Shepherd は現在、Herdr が agent を識別できる場合、または workspace directory から履歴を発見できる場合に、Pi、Claude Code、Codex、OpenCode、Gemini CLI の短い履歴を読み取れます。
+
 ## Shepherd を使う意味
 
 - **CLI から agent の文脈を読む:** terminal pane を読み直さず、別 agent の作業状況を確認できます。
