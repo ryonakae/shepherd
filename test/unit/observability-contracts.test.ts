@@ -57,7 +57,7 @@ describe("agent observability contracts", () => {
     expect(
       Value.Check(agentOrchestratorAckInputSchema, {
         eventId: 42,
-        subscriptionId: "ans_legacy",
+        unexpected: "legacy",
       }),
     ).toBe(false);
   });
