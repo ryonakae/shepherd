@@ -1,41 +1,77 @@
-import { type Socket, createConnection } from "node:net";
-
-type AgentEventWireRecord = {
-  agentId?: string | null;
-  compactHistory?: CompactAgentHistory | null;
-  id: number;
-  payload: unknown;
-  paneId?: string | null;
-  type: string;
-  workspaceId?: string | null;
-};
-
-type CompactAgentHistory = {
-  lastAssistantMessage?: { text?: string | null } | null;
-  lastToolResult?: { text?: string; toolName?: string } | null;
-  lastUserMessage?: { text?: string | null } | null;
-  updatedAt?: string | null;
-};
+import {
+  type AgentEventWireRecord,
+  type AgentOrchestratorChanged,
+  type AgentOrchestratorWireState,
+  type DaemonStreamMessage,
+  ReconnectingDaemonClient,
+} from "./daemon-client.js";
 
 type AgentListItem = {
   agent?: string | null;
   agentStatus?: string;
-  history?: CompactAgentHistory;
+  history?: {
+    lastAssistantMessage?: { text?: string | null } | null;
+    lastUserMessage?: { text?: string | null } | null;
+  };
   paneId?: string;
 };
 
-type ShepherdDaemonClient = {
+type AgentSessionRef = {
+  agent: string;
+  kind: "path";
+  source: string;
+  value: string;
+};
+
+type PiPresence = {
+  autoResume: boolean;
+  connectedAt: number;
+  herdrSessionName: string;
+  paneId: string;
+  subscriberId: string;
+  terminalId: string;
+  workspaceId: string;
+};
+
+type ConnectionStateResponse = {
+  changed?: boolean;
+  events?: AgentEventWireRecord[];
+  presence: PiPresence;
+  state: AgentOrchestratorWireState | null;
+};
+
+export type ShepherdDaemonClient = {
   close(): void;
-  onAgentEvent: ((event: AgentEventWireRecord) => void) | undefined;
+  onConnected: (() => Promise<void> | void) | undefined;
+  onDisconnected: ((error: Error) => void) | undefined;
+  onStreamMessage: ((message: DaemonStreamMessage) => void) | undefined;
   request(method: string, params: unknown): Promise<unknown>;
+};
+
+type CurrentScope = {
+  herdrSessionName: string;
+  paneId: string;
+  terminalId: string;
+  workspaceId: string;
+};
+
+type LaunchIdentity = {
+  herdrSocketPath: string;
+  paneId: string;
+  workspaceId: string;
 };
 
 type ShepherdState = {
   client: ShepherdDaemonClient | undefined;
-  currentSubscriptionId: string | undefined;
-  currentWorkspaceId: string | undefined;
+  connected: boolean;
+  currentScope: CurrentScope | undefined;
+  isOrchestrator: boolean;
+  launchIdentity: LaunchIdentity | undefined;
   pendingEvents: AgentEventWireRecord[];
-  sessionRef: { agent: string; kind: "path"; source: string; value: string } | undefined;
+  registrationInFlight: Promise<void> | undefined;
+  roleMutationInFlight: boolean;
+  sessionRef: AgentSessionRef | undefined;
+  subscriberId: string | undefined;
   toolStartTimes: Map<string, { inputPreview?: string; startedAt: number; toolName: string }>;
 };
 
@@ -43,15 +79,22 @@ type PiContext = {
   isIdle?: () => boolean;
   sessionManager: { getSessionFile(): string; getSessionId(): string };
   ui: {
+    notify?: (message: string, level?: "error" | "info" | "warning") => void;
     setStatus?: (key: string, value?: string) => void;
     setWidget?: (key: string, value?: unknown) => void;
   };
 };
 
+type CommandOptions = {
+  description: string;
+  getArgumentCompletions?(prefix: string): Array<{ label: string; value: string }> | null;
+  handler(args: string, ctx: PiContext): Promise<void>;
+};
+
 type PiApi = {
   appendEntry?: (customType: string, data: unknown) => void;
   on: (eventName: string, handler: (...args: any[]) => unknown) => void;
-  registerCommand?: (name: string, options: unknown) => void;
+  registerCommand?: (name: string, options: CommandOptions) => void;
   registerTool?: (tool: unknown) => void;
   sendUserMessage?: (message: string) => void;
   setSessionName?: (name: string) => void;
@@ -64,6 +107,9 @@ type ExtensionOptions = {
 
 const DEFAULT_HOME_NAME = ".shepherd";
 const MAX_EXCERPT = 4096;
+const COMMAND_USAGE = "Usage: /shepherd orchestrator [on|off|status]";
+const UNAVAILABLE_MESSAGE =
+  "Shepherd orchestrator is unavailable until this Pi reconnects to the daemon";
 
 function defaultShepherdHome() {
   return process.env.SHEPHERD_HOME || `${process.env.HOME || ""}/${DEFAULT_HOME_NAME}`;
@@ -77,41 +123,266 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
   return function shepherdPiExtension(pi: PiApi): void {
     const state: ShepherdState = {
       client: undefined,
-      currentSubscriptionId: undefined,
-      currentWorkspaceId: undefined,
+      connected: false,
+      currentScope: undefined,
+      isOrchestrator: false,
+      launchIdentity: undefined,
       pendingEvents: [],
+      registrationInFlight: undefined,
+      roleMutationInFlight: false,
       sessionRef: undefined,
+      subscriberId: undefined,
       toolStartTimes: new Map(),
     };
+    let activeContext: PiContext | undefined;
 
-    pi.on("session_start", async (_event: unknown, ctx: PiContext) => {
-      state.client = options.clientFactory?.() ?? new JsonLineDaemonClient(defaultSocketPath());
-      state.client.onAgentEvent = (event) => handleAgentEvent(event, ctx, pi, state, options);
+    const setRoleUi = (ctx: PiContext | undefined) => {
+      ctx?.ui.setStatus?.(
+        "shepherd-orchestrator",
+        state.isOrchestrator ? "Shepherd: orchestrator" : undefined,
+      );
+    };
+
+    const setUnreadUi = (ctx: PiContext | undefined) => {
+      const count = state.pendingEvents.length;
+      ctx?.ui.setStatus?.(
+        "shepherd",
+        count > 0 ? `${count} unread agent event${count === 1 ? "" : "s"}` : undefined,
+      );
+      ctx?.ui.setWidget?.("shepherd", count > 0 ? { unread: count } : undefined);
+    };
+
+    const loseRole = (ctx: PiContext | undefined) => {
+      state.isOrchestrator = false;
+      state.pendingEvents = [];
+      setRoleUi(ctx);
+      setUnreadUi(ctx);
+    };
+
+    const addPendingEvents = (events: AgentEventWireRecord[], ctx: PiContext | undefined) => {
+      const byId = new Map(state.pendingEvents.map((event) => [event.id, event]));
+      for (const event of events) byId.set(event.id, event);
+      state.pendingEvents = [...byId.values()].sort((left, right) => left.id - right.id);
+      setUnreadUi(ctx);
+    };
+
+    const applyConnectionStateResponse = (
+      response: ConnectionStateResponse,
+      ctx: PiContext | undefined,
+    ) => {
+      state.currentScope = {
+        herdrSessionName: response.presence.herdrSessionName,
+        paneId: response.presence.paneId,
+        terminalId: response.presence.terminalId,
+        workspaceId: response.presence.workspaceId,
+      };
+      const isOwner =
+        response.state?.owner?.terminalId === response.presence.terminalId &&
+        response.state.herdrSessionName === response.presence.herdrSessionName &&
+        response.state.workspaceId === response.presence.workspaceId;
+      if (!isOwner) {
+        loseRole(ctx);
+        return;
+      }
+      state.isOrchestrator = true;
+      setRoleUi(ctx);
+      addPendingEvents(response.events ?? [], ctx);
+    };
+
+    const handleAgentEvent = (event: AgentEventWireRecord, ctx: PiContext | undefined) => {
+      if (!state.isOrchestrator || !state.currentScope) return;
+      if (event.terminalId && event.terminalId === state.currentScope.terminalId) return;
+      addPendingEvents([event], ctx);
+      pi.appendEntry?.("shepherd.agent_event", event);
+      if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(event)) {
+        pi.sendUserMessage?.(`Shepherd agent notification: ${event.type} event ${event.id}`);
+      }
+    };
+
+    const refreshAfterRoleGain = async (ctx: PiContext | undefined) => {
+      if (!state.client || !state.connected) return;
+      try {
+        const response = (await state.client.request(
+          "agent.orchestrator.get",
+          {},
+        )) as ConnectionStateResponse;
+        applyConnectionStateResponse(response, ctx);
+      } catch {
+        // Reconnect handling owns transport failures.
+      }
+    };
+
+    const handleRoleChange = (change: AgentOrchestratorChanged, ctx: PiContext | undefined) => {
+      const terminalId = state.currentScope?.terminalId;
+      if (!terminalId) return;
+      const wasOwner = change.previous.owner?.terminalId === terminalId;
+      const isOwner = change.current.owner?.terminalId === terminalId;
+      if (isOwner && change.current.owner) {
+        const scopeChanged =
+          state.currentScope?.herdrSessionName !== change.current.herdrSessionName ||
+          state.currentScope?.workspaceId !== change.current.workspaceId;
+        state.currentScope = {
+          herdrSessionName: change.current.herdrSessionName,
+          paneId: change.current.owner.paneId,
+          terminalId,
+          workspaceId: change.current.workspaceId,
+        };
+        const gainedRole = !state.isOrchestrator;
+        state.isOrchestrator = true;
+        setRoleUi(ctx);
+        if (gainedRole || scopeChanged) void refreshAfterRoleGain(ctx);
+        return;
+      }
+      if (!wasOwner) return;
+      state.currentScope = {
+        herdrSessionName: change.current.herdrSessionName,
+        paneId: state.currentScope?.paneId ?? change.previous.owner?.paneId ?? "unknown",
+        terminalId,
+        workspaceId: change.current.workspaceId,
+      };
+      loseRole(ctx);
+      if (!state.roleMutationInFlight) {
+        ctx?.ui.notify?.(
+          change.current.owner
+            ? `Shepherd orchestrator moved to ${change.current.owner.paneId}`
+            : "Shepherd orchestrator is now off for this workspace",
+          "info",
+        );
+      }
+    };
+
+    const handleStreamMessage = (message: DaemonStreamMessage) => {
+      if (message.method === "agent.event") {
+        handleAgentEvent(message.params.event, activeContext);
+        return;
+      }
+      handleRoleChange(message.params.change, activeContext);
+    };
+
+    const registerPresence = (ctx: PiContext): Promise<void> => {
+      if (state.registrationInFlight) return state.registrationInFlight;
+      const client = state.client;
+      const launchIdentity = state.launchIdentity;
+      const subscriberId = state.subscriberId;
+      if (!client || !launchIdentity || !subscriberId) return Promise.resolve();
+      const registration = client
+        .request("agent.orchestrator.register", {
+          autoResume: options.autoResume ?? false,
+          herdrSocketPath: launchIdentity.herdrSocketPath,
+          paneId: state.currentScope?.paneId ?? launchIdentity.paneId,
+          subscriberId,
+          subscriberKind: "pi",
+          workspaceId: state.currentScope?.workspaceId ?? launchIdentity.workspaceId,
+        })
+        .then((response) => {
+          state.connected = true;
+          ctx.ui.setStatus?.("shepherd-connection", undefined);
+          applyConnectionStateResponse(response as ConnectionStateResponse, ctx);
+        })
+        .catch((error) => {
+          state.connected = false;
+          loseRole(ctx);
+          ctx.ui.setStatus?.("shepherd-connection", "Shepherd: reconnecting");
+          throw error;
+        })
+        .finally(() => {
+          state.registrationInFlight = undefined;
+        });
+      state.registrationInFlight = registration;
+      return registration;
+    };
+
+    pi.registerCommand?.("shepherd", {
+      description: "Manage the Shepherd orchestrator for this Herdr workspace",
+      getArgumentCompletions(prefix: string) {
+        const values = [
+          "orchestrator",
+          "orchestrator on",
+          "orchestrator off",
+          "orchestrator status",
+        ];
+        const items = values
+          .filter((value) => value.startsWith(prefix))
+          .map((value) => ({ label: value, value }));
+        return items.length > 0 ? items : null;
+      },
+      handler: async (args: string, ctx: PiContext) => {
+        const tokens = args.trim().split(/\s+/).filter(Boolean);
+        const action =
+          tokens.length === 1 && tokens[0] === "orchestrator"
+            ? "status"
+            : tokens.length === 2 && tokens[0] === "orchestrator"
+              ? tokens[1]
+              : undefined;
+        if (action !== "on" && action !== "off" && action !== "status") {
+          ctx.ui.notify?.(COMMAND_USAGE, "warning");
+          return;
+        }
+        if (!state.client || !state.connected || !state.currentScope) {
+          ctx.ui.notify?.(UNAVAILABLE_MESSAGE, "error");
+          return;
+        }
+        try {
+          if (action === "status") {
+            const response = (await state.client.request(
+              "agent.orchestrator.get",
+              {},
+            )) as ConnectionStateResponse;
+            applyConnectionStateResponse(response, ctx);
+            notifyStatus(response, ctx);
+            return;
+          }
+          state.roleMutationInFlight = true;
+          const response = (await state.client.request("agent.orchestrator.set", {
+            enabled: action === "on",
+          })) as ConnectionStateResponse;
+          applyConnectionStateResponse(response, ctx);
+          if (action === "off" && response.changed === false) {
+            ctx.ui.notify?.("This Pi is not the Shepherd orchestrator", "info");
+          } else {
+            notifyStatus(response, ctx);
+          }
+        } catch (error) {
+          ctx.ui.notify?.(error instanceof Error ? error.message : String(error), "error");
+        } finally {
+          state.roleMutationInFlight = false;
+        }
+      },
+    });
+
+    pi.on("session_start", (_event: unknown, ctx: PiContext) => {
+      activeContext = ctx;
+      state.subscriberId = ctx.sessionManager.getSessionId();
       state.sessionRef = {
         agent: "pi",
         kind: "path",
         source: "herdr:pi",
         value: ctx.sessionManager.getSessionFile(),
       };
-      state.currentWorkspaceId =
-        process.env.HERDR_ENV === "1" && process.env.HERDR_WORKSPACE_ID
-          ? process.env.HERDR_WORKSPACE_ID
-          : undefined;
-      if (state.currentWorkspaceId) {
-        const subscription = (await state.client.request("agent.notifications.subscribe", {
-          autoResume: options.autoResume ?? false,
-          subscriberId: ctx.sessionManager.getSessionId(),
-          subscriberKind: "pi",
-          workspaceId: state.currentWorkspaceId,
-        })) as { events?: AgentEventWireRecord[]; subscription?: { id?: string } };
-        if (subscription.subscription?.id) state.currentSubscriptionId = subscription.subscription.id;
-        state.pendingEvents.push(...(subscription.events ?? []));
+      state.launchIdentity = herdrLaunchIdentity(process.env);
+      if (!state.launchIdentity) {
+        state.connected = false;
+        loseRole(ctx);
+        return;
       }
+      state.client?.close();
+      const client = options.clientFactory?.() ?? new ReconnectingDaemonClient({ socketPath: defaultSocketPath() });
+      state.client = client;
+      client.onConnected = () => registerPresence(ctx);
+      client.onDisconnected = () => {
+        state.connected = false;
+        loseRole(activeContext);
+        activeContext?.ui.setStatus?.("shepherd-connection", "Shepherd: reconnecting");
+      };
+      client.onStreamMessage = handleStreamMessage;
     });
 
     pi.on("session_shutdown", () => {
+      state.connected = false;
+      loseRole(activeContext);
       state.client?.close();
       state.client = undefined;
+      activeContext = undefined;
     });
 
     pi.on("tool_execution_start", (event: Record<string, unknown>) => {
@@ -125,94 +396,112 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     });
 
     pi.on("tool_result", async (event: Record<string, unknown>) => {
-      if (!state.client || !state.currentWorkspaceId) return;
+      if (!state.client || !state.connected || !state.currentScope) return;
       const toolCallId = stringValue(event.toolCallId) ?? stringValue(event.id) ?? "unknown";
       const started = state.toolStartTimes.get(toolCallId);
+      state.toolStartTimes.delete(toolCallId);
       const output = sanitize(event.content ?? event.output ?? event.details ?? "");
-      await state.client.request("agent.telemetry", {
-        event: {
-          artifactRefs: [`pi-session:${state.sessionRef?.value ?? "unknown"}#tool=${toolCallId}`],
-          durationMs: started ? Date.now() - started.startedAt : undefined,
-          ...(event.isError === true ? { errorExcerpt: output.text } : { outputExcerpt: output.text }),
-          inputPreview: started?.inputPreview,
-          isError: event.isError === true,
-          occurredAt: new Date().toISOString(),
-          redactionApplied: output.redacted,
-          runtime: "pi",
-          sessionRef: state.sessionRef ?? null,
-          toolCallId,
-          toolName: stringValue(event.toolName) ?? started?.toolName ?? "unknown",
-          turnId: stringValue(event.turnId) ?? "unknown-turn",
-          type: "agent.tool.completed",
-        },
-        workspaceId: state.currentWorkspaceId,
-      });
+      try {
+        await state.client.request("agent.telemetry", {
+          event: {
+            artifactRefs: [`pi-session:${state.sessionRef?.value ?? "unknown"}#tool=${toolCallId}`],
+            durationMs: started ? Date.now() - started.startedAt : undefined,
+            ...(event.isError === true
+              ? { errorExcerpt: output.text }
+              : { outputExcerpt: output.text }),
+            inputPreview: started?.inputPreview,
+            isError: event.isError === true,
+            occurredAt: new Date().toISOString(),
+            redactionApplied: output.redacted,
+            runtime: "pi",
+            sessionRef: state.sessionRef ?? null,
+            toolCallId,
+            toolName: stringValue(event.toolName) ?? started?.toolName ?? "unknown",
+            turnId: stringValue(event.turnId) ?? "unknown-turn",
+            type: "agent.tool.completed",
+          },
+          workspaceId: state.currentScope.workspaceId,
+        });
+      } catch {
+        // Telemetry is best effort.
+      }
     });
 
     pi.on("message_end", async (event: Record<string, unknown>) => {
-      if (!state.client || !state.currentWorkspaceId) return;
+      if (!state.client || !state.connected || !state.currentScope) return;
       const excerpt = sanitize(event.text ?? event.content ?? "");
-      await state.client.request("agent.telemetry", {
-        event: {
-          evidenceRefs: [`pi-session:${state.sessionRef?.value ?? "unknown"}#message=final`],
-          occurredAt: new Date().toISOString(),
-          redactionApplied: excerpt.redacted,
-          runtime: "pi",
-          sessionRef: state.sessionRef ?? null,
-          stopReason: stringValue(event.stopReason) ?? "stop",
-          textExcerpt: excerpt.text,
-          turnId: stringValue(event.turnId) ?? "unknown-turn",
-          type: "agent.message.final",
-        },
-        workspaceId: state.currentWorkspaceId,
-      });
-    });
-
-    pi.on("agent.event", async (message: { event?: AgentEventWireRecord }, ctx?: PiContext) => {
-      if (!message.event) return;
-      handleAgentEvent(message.event, ctx, pi, state, options);
+      try {
+        await state.client.request("agent.telemetry", {
+          event: {
+            evidenceRefs: [`pi-session:${state.sessionRef?.value ?? "unknown"}#message=final`],
+            occurredAt: new Date().toISOString(),
+            redactionApplied: excerpt.redacted,
+            runtime: "pi",
+            sessionRef: state.sessionRef ?? null,
+            stopReason: stringValue(event.stopReason) ?? "stop",
+            textExcerpt: excerpt.text,
+            turnId: stringValue(event.turnId) ?? "unknown-turn",
+            type: "agent.message.final",
+          },
+          workspaceId: state.currentScope.workspaceId,
+        });
+      } catch {
+        // Telemetry is best effort.
+      }
     });
 
     pi.on("before_agent_start", async () => {
-      if (!state.client || !state.currentWorkspaceId) return {};
-      let agents: AgentListItem[] = [];
+      if (!state.client || !state.connected || !state.currentScope) return {};
       try {
+        const status = (await state.client.request(
+          "agent.orchestrator.get",
+          {},
+        )) as ConnectionStateResponse;
+        applyConnectionStateResponse(status, activeContext);
+        if (!state.currentScope) return {};
         const response = (await state.client.request("agent.list", {
-          workspaceId: state.currentWorkspaceId,
+          herdrSessionName: state.currentScope.herdrSessionName,
+          workspaceId: state.currentScope.workspaceId,
         })) as { agents?: AgentListItem[] };
-        agents = response.agents ?? [];
+        const events = state.isOrchestrator ? [...state.pendingEvents] : [];
+        const content = [
+          formatHiddenAgentContext({
+            agents: response.agents ?? [],
+            workspaceId: state.currentScope.workspaceId,
+          }),
+          events.length > 0 ? formatHiddenAgentUpdates(events) : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        for (const event of events) {
+          try {
+            await state.client.request("agent.notifications.ack", { eventId: event.id });
+            state.pendingEvents = state.pendingEvents.filter((pending) => pending.id !== event.id);
+          } catch {
+            break;
+          }
+        }
+        setUnreadUi(activeContext);
+        return {
+          message: {
+            content,
+            customType: "shepherd-agent-context",
+            display: false,
+          },
+        };
       } catch {
         return {};
       }
-      const events = [...state.pendingEvents];
-      state.pendingEvents = [];
-      if (state.currentSubscriptionId) {
-        for (const event of events) {
-          await state.client.request("agent.notifications.ack", {
-            eventId: event.id,
-            subscriptionId: state.currentSubscriptionId,
-          });
-        }
-      }
-      return {
-        message: {
-          content: [
-            formatHiddenAgentContext({ agents, workspaceId: state.currentWorkspaceId }),
-            events.length > 0 ? formatHiddenAgentUpdates(events) : "",
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-          customType: "shepherd-agent-context",
-          display: false,
-        },
-      };
     });
   };
 }
 
 export default createShepherdPiExtension();
 
-export function formatHiddenAgentContext(input: { agents: AgentListItem[]; workspaceId: string }): string {
+export function formatHiddenAgentContext(input: {
+  agents: AgentListItem[];
+  workspaceId: string;
+}): string {
   return [
     "[SHEPHERD AGENT CONTEXT]",
     `Current Herdr workspace: ${input.workspaceId}`,
@@ -243,20 +532,32 @@ export function formatHiddenAgentUpdates(events: AgentEventWireRecord[]): string
   ].join("\n");
 }
 
-function handleAgentEvent(
-  event: AgentEventWireRecord,
-  ctx: PiContext | undefined,
-  pi: PiApi,
-  state: ShepherdState,
-  options: ExtensionOptions,
-): void {
-  state.pendingEvents.push(event);
-  ctx?.ui.setStatus?.("shepherd", `${state.pendingEvents.length} unread agent event${state.pendingEvents.length === 1 ? "" : "s"}`);
-  ctx?.ui.setWidget?.("shepherd", { unread: state.pendingEvents.length });
-  pi.appendEntry?.("shepherd.agent_event", event);
-  if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(event)) {
-    pi.sendUserMessage?.(`Shepherd agent notification: ${event.type} event ${event.id}`);
+function notifyStatus(response: ConnectionStateResponse, ctx: PiContext): void {
+  const scope = `${response.presence.herdrSessionName}/${response.presence.workspaceId}`;
+  if (!response.state?.owner) {
+    ctx.ui.notify?.(`No Shepherd orchestrator is set for ${scope}`, "info");
+    return;
   }
+  if (response.state.owner.terminalId === response.presence.terminalId) {
+    ctx.ui.notify?.(
+      `This Pi is the Shepherd orchestrator for ${scope} (${response.state.owner.paneId})`,
+      "info",
+    );
+    return;
+  }
+  ctx.ui.notify?.(
+    `Shepherd orchestrator for ${scope} is ${response.state.owner.paneId}`,
+    "info",
+  );
+}
+
+function herdrLaunchIdentity(environment: NodeJS.ProcessEnv): LaunchIdentity | undefined {
+  if (environment.HERDR_ENV !== "1") return undefined;
+  const herdrSocketPath = stringValue(environment.HERDR_SOCKET_PATH);
+  const paneId = stringValue(environment.HERDR_PANE_ID);
+  const workspaceId = stringValue(environment.HERDR_WORKSPACE_ID);
+  if (!herdrSocketPath || !paneId || !workspaceId) return undefined;
+  return { herdrSocketPath, paneId, workspaceId };
 }
 
 function shouldAutoResume(event: AgentEventWireRecord): boolean {
@@ -267,7 +568,13 @@ function sanitize(value: unknown): { redacted: boolean; text: string } {
   let text = typeof value === "string" ? value : JSON.stringify(value);
   if (text === undefined) text = String(value);
   let redacted = false;
-  for (const pattern of [/(Authorization:\s*Bearer\s+)[^\s]+/gi, /\b(token=)[^\s&]+/gi, /\b(password=)[^\s&]+/gi, /\b(secret=)[^\s&]+/gi, /\b(api_key=)[^\s&]+/gi]) {
+  for (const pattern of [
+    /(Authorization:\s*Bearer\s+)[^\s]+/gi,
+    /\b(token=)[^\s&]+/gi,
+    /\b(password=)[^\s&]+/gi,
+    /\b(secret=)[^\s&]+/gi,
+    /\b(api_key=)[^\s&]+/gi,
+  ]) {
     text = text.replace(pattern, (_match, prefix: string) => {
       redacted = true;
       return `${prefix}[REDACTED]`;
@@ -286,61 +593,4 @@ function record(value: unknown): Record<string, unknown> {
 
 function oneLine(value: string): string {
   return value.replace(/\s+/g, " ").slice(0, 240);
-}
-
-type Pending = { reject(error: Error): void; resolve(value: unknown): void };
-
-class JsonLineDaemonClient implements ShepherdDaemonClient {
-  onAgentEvent: ((event: AgentEventWireRecord) => void) | undefined;
-  readonly #pending = new Map<string, Pending>();
-  readonly #socket: Socket;
-  #buffer = "";
-  #nextId = 1;
-
-  constructor(socketPath: string) {
-    this.#socket = createConnection(socketPath);
-    this.#socket.on("data", (chunk) => this.#handleData(chunk.toString("utf8")));
-    this.#socket.on("error", (error) => this.#rejectAll(error));
-    this.#socket.on("close", () => this.#rejectAll(new Error("Shepherd daemon socket closed")));
-  }
-
-  close(): void {
-    this.#socket.destroy();
-  }
-
-  request(method: string, params: unknown): Promise<unknown> {
-    const id = `pi-${this.#nextId++}`;
-    return new Promise((resolve, reject) => {
-      this.#pending.set(id, { reject, resolve });
-      this.#socket.write(`${JSON.stringify({ id, method, params })}\n`);
-    });
-  }
-
-  #handleData(chunk: string): void {
-    this.#buffer += chunk;
-    let newline = this.#buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = this.#buffer.slice(0, newline).trim();
-      this.#buffer = this.#buffer.slice(newline + 1);
-      newline = this.#buffer.indexOf("\n");
-      if (!line) continue;
-      const message = JSON.parse(line) as { error?: { message?: string }; id?: string; method?: string; params?: unknown; result?: unknown };
-      if (message.method === "agent.event") {
-        const event = record(record(message.params).event) as AgentEventWireRecord;
-        if (typeof event.id === "number" && typeof event.type === "string") this.onAgentEvent?.(event);
-        continue;
-      }
-      if (!message.id) continue;
-      const pending = this.#pending.get(message.id);
-      if (!pending) continue;
-      this.#pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message ?? "Shepherd RPC failed"));
-      else pending.resolve(message.result);
-    }
-  }
-
-  #rejectAll(error: Error): void {
-    for (const pending of this.#pending.values()) pending.reject(error);
-    this.#pending.clear();
-  }
 }
