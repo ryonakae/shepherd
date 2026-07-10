@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Reconcile registered Pi connections and persisted orchestrator owners after Herdr index refreshes so the role follows the same terminal across pane/workspace movement.
 
@@ -82,7 +82,7 @@ reconcileAgentLocations(input: {
 - Produces: `onAgentIndexRefreshed` callback.
 - Consumes: terminal-stable `AgentStore.replaceForSession()`.
 
-- [ ] **Step 1: Write failing watch-manager tests**
+- [x] **Step 1: Write failing watch-manager tests**
 
 Add tests using a scripted async iterator:
 
@@ -104,23 +104,23 @@ expect(operations).toEqual([
 ]);
 ```
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/unit/herdr-session-watch-manager.test.ts`
 
 Expected: refresh returns void and the manager has no topology callback.
 
-- [ ] **Step 3: Return agents and invoke callback**
+- [x] **Step 3: Return agents and invoke callback**
 
 Return the `agents` array already produced by `replaceForSession()`. In every manager refresh site, await the result and synchronously call `onAgentIndexRefreshed` before deriving pane ids/subscribing. Provide a default no-op only if existing isolated tests need compatibility; daemon construction must pass the real callback explicitly.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `pnpm test test/unit/herdr-session-watch-manager.test.ts`
 
 Expected: ordering and reconnect tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/agent-index-service.ts src/daemon/herdr-session-watch-manager.ts test/unit/herdr-session-watch-manager.test.ts
@@ -140,7 +140,7 @@ git commit -m "feat(orchestrator): expose herdr topology refresh"
 - Consumes: `reconcileAgentLocations()` input and `PiPresence` registry.
 - Produces: updated presence returned by get/set/ack and role streams.
 
-- [ ] **Step 1: Write failing presence movement tests**
+- [x] **Step 1: Write failing presence movement tests**
 
 Register Pi A at `default/wA:p1/term_A`, replace the indexed agent snapshot with `default/wB:p3/term_A`, call `server.reconcileAgentLocations()`, then assert:
 
@@ -162,25 +162,25 @@ Also test:
 - a terminal absent from one refresh retains its last presence until disconnect handling;
 - another Herdr session with the same terminal id does not affect the connection.
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/integration/orchestrator-pane-move.test.ts`
 
 Expected: presence remains at launch-time scope.
 
-- [ ] **Step 3: Update presence registry from indexed terminals**
+- [x] **Step 3: Update presence registry from indexed terminals**
 
 Build a map keyed by exact `herdrSessionName + terminalId`. For each presence in that Herdr session, if an indexed record exists, replace `paneId` and `workspaceId` while retaining socket, subscriber id, autoResume, terminal id, and connection time. Do not update from agent name or cwd.
 
 Wire `HerdrSessionWatchManager.onAgentIndexRefreshed` in `src/daemon/service.ts` to `server.reconcileAgentLocations(input)`.
 
-- [ ] **Step 4: Run movement and RPC tests**
+- [x] **Step 4: Run movement and RPC tests**
 
 Run: `pnpm test test/integration/orchestrator-pane-move.test.ts test/integration/observability-rpc.test.ts`
 
 Expected: presence status reflects current Herdr topology.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts src/daemon/service.ts test/integration/orchestrator-pane-move.test.ts test/integration/observability-rpc.test.ts
@@ -199,7 +199,7 @@ git commit -m "feat(orchestrator): reconcile pi terminal location"
 - Consumes: `AgentOrchestratorService.move()` and updated presence registry.
 - Produces: old/new `agent.orchestrator.changed` streams.
 
-- [ ] **Step 1: Add failing owner movement cases**
+- [x] **Step 1: Add failing owner movement cases**
 
 Use registered sockets in `wA` and `wB` and assert:
 
@@ -213,13 +213,13 @@ Use registered sockets in `wA` and `wB` and assert:
 8. Repeating reconciliation with unchanged topology emits no duplicate role change.
 9. Events in old workspace stop reaching A; events in new workspace reach A; self-terminal events in new workspace remain excluded.
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/orchestrator-pane-move.test.ts`
 
 Expected: persistent owner remains in old scope or destination owner is not replaced.
 
-- [ ] **Step 3: Reconcile owner after presence locations**
+- [x] **Step 3: Reconcile owner after presence locations**
 
 For each persisted owner in the refreshed Herdr session:
 
@@ -231,13 +231,13 @@ For each persisted owner in the refreshed Herdr session:
 
 Update all presence locations before publishing changes so scope filtering reaches the moved owner and destination peers correctly.
 
-- [ ] **Step 4: Run all topology tests**
+- [x] **Step 4: Run all topology tests**
 
 Run: `pnpm test test/integration/orchestrator-pane-move.test.ts test/unit/herdr-session-watch-manager.test.ts test/integration/orchestrator-disconnect-grace.test.ts`
 
 Expected: all movement and grace behavior passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts test/integration/orchestrator-pane-move.test.ts
@@ -260,4 +260,4 @@ git commit -m "feat(orchestrator): follow moved herdr terminals"
 
 ## Next Steps
 
-After terminal movement tests pass, continue with [shepherd-pi extension and UX](04-pi-extension-ux.md).
+Completed. The shepherd-pi extension and UX were implemented and verified in child 04.

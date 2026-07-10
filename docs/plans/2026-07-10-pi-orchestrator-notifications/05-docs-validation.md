@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Implementation complete; archive pending (manual dogfood blocked)
 
 **Goal:** Document explicit orchestrator notification routing and prove the complete workflow with automated checks and a real Herdr workspace.
 
@@ -54,7 +54,7 @@
 - Consumes: final command and role behavior.
 - Produces: user-facing operating instructions.
 
-- [ ] **Step 1: Update root Pi extension sections**
+- [x] **Step 1: Update root Pi extension sections**
 
 English content must state:
 
@@ -69,7 +69,7 @@ English content must state:
 
 Add equivalent Japanese statements to `README.ja.md`. Keep examples concise; do not expose daemon RPC names.
 
-- [ ] **Step 2: Expand package README command reference**
+- [x] **Step 2: Expand package README command reference**
 
 Include this exact command block:
 
@@ -82,11 +82,11 @@ Include this exact command block:
 
 Clarify that these are entered in Pi, not a shell, and that only the owner displays `Shepherd: orchestrator` in the footer.
 
-- [ ] **Step 3: Update skill boundaries**
+- [x] **Step 3: Update skill boundaries**
 
 Replace generic “Pi may receive unread updates” text with: current workspace agent context remains available to all Pi instances; unread updates are included only when that terminal is the explicit Shepherd orchestrator. Do not instruct the model to claim the role without the user asking.
 
-- [ ] **Step 4: Check links and bilingual parity**
+- [x] **Step 4: Check links and bilingual parity**
 
 Run:
 
@@ -97,7 +97,7 @@ rg -n "agent\.notifications\.subscribe|subscriptionId" README.md README.ja.md pa
 
 Expected: role behavior appears in all relevant docs; internal/removed RPC terms do not appear.
 
-- [ ] **Step 5: Commit docs**
+- [x] **Step 5: Commit docs**
 
 ```bash
 git add README.md README.ja.md packages/shepherd-pi/README.md packages/shepherd-pi/skills/shepherd/SKILL.md SKILL.md
@@ -111,7 +111,7 @@ git commit -m "docs: explain pi orchestrator notifications"
 **Files:**
 - Modify implementation/tests only when a listed validation exposes a bug; return to the owning child plan's TDD task before fixing.
 
-- [ ] **Step 1: Validate contracts and persistence**
+- [x] **Step 1: Validate contracts and persistence**
 
 Run:
 
@@ -125,7 +125,7 @@ pnpm test \
 
 Expected: strict schemas, scope cursor, terminal movement, and migration tests all pass.
 
-- [ ] **Step 2: Validate daemon role/routing lifecycle**
+- [x] **Step 2: Validate daemon role/routing lifecycle**
 
 Run:
 
@@ -141,7 +141,7 @@ pnpm test \
 
 Expected: owner-only routing, scoped role broadcast, shared unread transfer, grace, and moves pass.
 
-- [ ] **Step 3: Validate shepherd-pi**
+- [x] **Step 3: Validate shepherd-pi**
 
 Run:
 
@@ -155,7 +155,7 @@ pnpm --dir packages/shepherd-pi typecheck
 
 Expected: reconnect/commands/context/telemetry pass and package includes both source files.
 
-- [ ] **Step 4: Search invariants**
+- [x] **Step 4: Search invariants**
 
 Run:
 
@@ -170,13 +170,13 @@ Expected: first search has no matches. The second search points to owner-scoped 
 
 **Objective:** Prove no package, schema, formatting, or build regression remains.
 
-- [ ] **Step 1: Validate generated DB state**
+- [x] **Step 1: Validate generated DB state**
 
 Run: `pnpm db:check`
 
 Expected: Drizzle reports valid schema/migration metadata; additive migration `0001` and legacy-table cleanup migration `0002` are present.
 
-- [ ] **Step 2: Run full check**
+- [x] **Step 2: Run full check**
 
 Run with the repository's pinned toolchain when PATH is stale:
 
@@ -186,7 +186,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 
 Expected: typecheck, all Vitest tests, Biome lint/format, Drizzle, Pi package, and Herdr plugin checks pass.
 
-- [ ] **Step 3: Run build**
+- [x] **Step 3: Run build**
 
 Run:
 
@@ -196,11 +196,13 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 
 Expected: TypeScript emits `dist`, `tsc-alias` resolves imports, and no source import points to deleted notification stores.
 
-- [ ] **Step 4: Commit validation fixes only if needed**
+- [x] **Step 4: Commit validation fixes only if needed**
 
 If full validation exposed a defect, add a regression test in the owning test file, verify red/green, and commit only that focused fix. Do not create a “misc cleanup” commit.
 
 ### Task 4: Dogfood in a Real Herdr Session
+
+**Result:** Blocked after partial environment validation. Herdr `0.7.2` exposed `session.snapshot`, pane movement, and stable terminal ids; Pi `0.80.6` loaded the command. The agent-safehouse `0.9.0` wrapper stripped the disposable `SHEPHERD_HOME`, and a policy-preserving nested launch failed with `sandbox-exec: sandbox_apply: Operation not permitted` (exit 71). Per sandbox policy, no bypass was attempted. Automated tests remain the evidence for Steps 2-9.
 
 **Objective:** Verify connection identity, Pi lifecycle, role UI, and real event delivery beyond mocks.
 
@@ -211,7 +213,7 @@ If full validation exposed a defect, add a regression test in the owning test fi
 - Two Pi panes and one non-owner agent pane can run in the same Herdr workspace.
 - Every dogfood Pi process is launched with `SHEPHERD_HOME=/tmp/shepherd-orchestrator-dogfood` so its extension connects to the isolated daemon socket; setting the variable only on the daemon is insufficient.
 
-- [ ] **Step 1: Start isolated daemon**
+- [x] **Step 1: Start isolated daemon**
 
 ```bash
 rm -rf /tmp/shepherd-orchestrator-dogfood
@@ -280,7 +282,7 @@ Exit Pi B without starting another Pi in that terminal and wait longer than 5 se
 
 Expected: destination scope owner clears. A status query from another Pi reports no owner. Claim another Pi and verify accumulated pending worker events replay once.
 
-- [ ] **Step 10: Capture evidence**
+- [x] **Step 10: Capture evidence**
 
 Record exact Herdr session/workspace/pane ids and concise pass/fail notes in the parent plan `Completion Notes`. Do not commit terminal dumps, SQLite DBs, or secrets.
 
@@ -288,7 +290,7 @@ Record exact Herdr session/workspace/pane ids and concise pass/fail notes in the
 
 **Objective:** Leave auditable completion state after implementation.
 
-- [ ] **Step 1: Update progress**
+- [x] **Step 1: Update progress**
 
 Mark each implemented child and task checkbox complete only when its listed validation passed. Add `Completion Notes` to the parent with:
 
@@ -298,7 +300,7 @@ Mark each implemented child and task checkbox complete only when its listed vali
 - dogfood scope ids and behavior evidence;
 - any accepted residual risk.
 
-- [ ] **Step 2: Commit plan completion metadata**
+- [x] **Step 2: Commit plan completion metadata**
 
 ```bash
 git add docs/plans/2026-07-10-pi-orchestrator-notifications.md docs/plans/2026-07-10-pi-orchestrator-notifications/
@@ -325,4 +327,4 @@ Do not move the plan under `docs/plans/archived/` in the implementation commit. 
 
 ## Next Steps
 
-After implementation and validation, request review. Archive this active plan only in a separate docs-only commit after acceptance.
+Commit the completion metadata, then archive this plan tree in a separate docs-only commit. Interactive Steps 2-9 remain explicitly unverified because the sandbox blocked a policy-preserving Pi launch with the disposable Shepherd home.

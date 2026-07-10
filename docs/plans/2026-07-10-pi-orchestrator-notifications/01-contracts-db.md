@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Replace subscriber-scoped notification persistence with one orchestrator assignment and unread cursor per Herdr session/workspace, and make agent events carry stable terminal identity.
 
@@ -186,7 +186,7 @@ export class AgentOrchestratorScopeStore {
 - Produces: all types and schemas listed above.
 - Consumes: existing TypeBox conventions and `AgentEventRecord`.
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Add tests that assert:
 
@@ -225,23 +225,23 @@ expect(
 
 Also add a compile-time fixture assigning an `AgentEventRecord` with `terminalId: "term_1"` and an `AgentOrchestratorChanged` with ISO `updatedAt` strings.
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: import/type failures for the new orchestrator schemas/contracts.
 
-- [ ] **Step 3: Add the contracts and schemas**
+- [x] **Step 3: Add the contracts and schemas**
 
 Implement the exact interfaces above. Keep legacy `agentNotificationAckInputSchema`, `AgentNotificationSubscriptionRecord`, and `AgentNotificationCursorRecord` temporarily so the old daemon compiles through child 01. Child 02 Task 3 must switch to `agentOrchestratorAckInputSchema` and remove those legacy contracts in the same commit that deletes their consumers.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `pnpm test test/unit/observability-contracts.test.ts`
 
 Expected: all contract tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/contracts.ts src/observability/schemas.ts test/unit/observability-contracts.test.ts
@@ -267,7 +267,7 @@ git commit -m "feat(orchestrator): define role contracts"
 - Consumes: `AgentOrchestratorState`, `AgentOrchestratorScopeKey`.
 - Produces: `AgentOrchestratorScopeStore`.
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 Cover these cases with a fresh DB harness:
 
@@ -294,13 +294,13 @@ expect(store.get({ herdrSessionName: "default", workspaceId: "wB" })).toMatchObj
 });
 ```
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/agent-orchestrator-scope-store.test.ts test/integration/sqlite-migrations.test.ts`
 
 Expected: the new store/table is missing and migration assertions still contain legacy notification tables.
 
-- [ ] **Step 3: Define the Drizzle table**
+- [x] **Step 3: Define the Drizzle table**
 
 Add nullable `terminalId: text("terminal_id")` to `agentEvents`, then add this table without removing the two legacy notification table declarations:
 
@@ -326,11 +326,11 @@ export const agentOrchestratorScopes = sqliteTable(
 
 Import `primaryKey` from `drizzle-orm/sqlite-core`. Do not add subscriber/session ids or auto-election fields.
 
-- [ ] **Step 4: Implement the store transactionally**
+- [x] **Step 4: Implement the store transactionally**
 
 Use `DatabaseSync.exec("begin immediate")`, `commit`, and rollback in a private transaction helper. `claim()` inserts when absent using `initialAckedEventId` and returns a synthetic ownerless `previous` with the insert timestamp; otherwise it updates only owner fields and `updated_at`. `moveOwner()` must mutate source and target within one transaction and return both externally visible changes. Validate the paired null invariant while mapping rows and throw on corrupt rows.
 
-- [ ] **Step 5: Update the harness and migration assertions**
+- [x] **Step 5: Update the harness and migration assertions**
 
 Expose `agentOrchestratorScopes: new AgentOrchestratorScopeStore(sqlite)` alongside `agentNotificationCursors` so the current daemon integration tests remain green. Update expected tables for migration `0001` to:
 
@@ -349,23 +349,23 @@ Expose `agentOrchestratorScopes: new AgentOrchestratorScopeStore(sqlite)` alongs
 
 Also assert `pragma table_info(agent_orchestrator_scopes)` contains `acked_event_id`, `herdr_session_name`, `owner_pane_id`, `owner_terminal_id`, and `workspace_id`, and `pragma table_info(agent_events)` contains nullable `terminal_id`.
 
-- [ ] **Step 6: Generate and inspect migration 0001**
+- [x] **Step 6: Generate and inspect migration 0001**
 
 Run: `pnpm db:generate`
 
 Expected: Drizzle creates migration index `0001`, creates `agent_orchestrator_scopes`, adds nullable `agent_events.terminal_id`, retains both legacy notification tables, and leaves migration `0000` unchanged. Inspect generated SQL and metadata; do not hand-rename the generated suffix.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `pnpm test test/integration/agent-orchestrator-scope-store.test.ts test/integration/sqlite-migrations.test.ts && pnpm db:check`
 
 Expected: store and migration tests pass; Drizzle reports no schema/migration inconsistency.
 
-- [ ] **Step 8: Keep legacy consumers compiling until child 02**
+- [x] **Step 8: Keep legacy consumers compiling until child 02**
 
 Do not delete `AgentNotificationCursorStore` or `AgentNotificationService` in this task: `ObservabilityRpcServer` still constructs them. Migration `0001` deliberately retains their backing tables, so the current daemon and full test suite remain runnable. Child 02 must migrate daemon construction, remove the old Drizzle declarations, generate migration `0002`, and delete both classes in one compiling commit.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/db/schema.ts src/db/agent-orchestrator-scopes.ts test/integration/agent-orchestrator-scope-store.test.ts test/integration/observability-db-harness.ts test/integration/sqlite-migrations.test.ts drizzle
@@ -389,7 +389,7 @@ git commit -m "feat(orchestrator): persist workspace owner"
 - Produces: `AgentStore.findByTerminal()` and `AgentEventRecord.terminalId` persistence.
 - Consumes: Herdr snapshot fields `terminal_id`, `pane_id`, and `workspace_id`.
 
-- [ ] **Step 1: Write failing terminal identity tests**
+- [x] **Step 1: Write failing terminal identity tests**
 
 Seed one Pi agent in `default/wA` with pane `wA:p1`, terminal `term_1`, capture its generated agent id, then call `replaceForSession()` with the same terminal at `wB:p3`. Assert:
 
@@ -405,17 +405,17 @@ expect(agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })).toBe
 
 Append an event with `terminalId: "term_1"`, close/reopen via store access, and assert `get(event.id).terminalId === "term_1"`. Add a null terminal test for migrated/unknown events.
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/agent-store-terminal-identity.test.ts`
 
 Expected: `findByTerminal` is missing, the moved snapshot conflicts or changes agent id, and event terminal identity is absent.
 
-- [ ] **Step 3: Add terminal id to event schema/store**
+- [x] **Step 3: Add terminal id to event schema/store**
 
 Add nullable `terminalId: text("terminal_id")` to `agentEvents`. Update `AgentEventRow`, `append()`, insert SQL, and `mapAgentEvent()`. Update every `AgentEventStore.append()` call in `AgentIndexService` to pass `current.terminalId`.
 
-- [ ] **Step 4: Make terminal id the preferred agent identity**
+- [x] **Step 4: Make terminal id the preferred agent identity**
 
 Add:
 
@@ -430,13 +430,13 @@ In `replaceForSession()`, choose an existing row by non-null terminal id first a
 
 Wrap the refresh in a DB transaction and add a temporary-pane update phase for any stable terminal whose destination pane currently conflicts, so multi-agent moves cannot violate `agents_session_pane_idx`. Temporary values must use an internal prefix such as `__shepherd_moving__:<agent-id>` and never escape the transaction.
 
-- [ ] **Step 5: Verify migration still matches the implemented event store**
+- [x] **Step 5: Verify migration still matches the implemented event store**
 
 Run: `pnpm db:check`
 
 Expected: the existing generated migration `0001` already includes nullable `agent_events.terminal_id`; Drizzle check passes without generating another migration.
 
-- [ ] **Step 6: Update fixtures and run tests**
+- [x] **Step 6: Update fixtures and run tests**
 
 Add `terminalId: null` or a concrete id to direct `AgentEventRecord` object literals in tests. Run:
 
@@ -444,7 +444,7 @@ Add `terminalId: null` or a concrete id to direct `AgentEventRecord` object lite
 
 Expected: all listed tests pass and the moved agent retains its original id.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/db/schema.ts src/db/agents.ts src/db/agent-events.ts src/observability/agent-index-service.ts test/integration/agent-store-terminal-identity.test.ts test drizzle
@@ -469,4 +469,4 @@ git commit -m "fix(index): preserve terminal identity on moves"
 
 ## Next Steps
 
-After all validation passes, continue with [daemon presence and routing](02-daemon-presence-routing.md).
+Completed. Daemon presence and routing were implemented and verified in child 02.

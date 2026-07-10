@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Make the daemon resolve each Pi connection to a stable Herdr terminal, enforce exclusive owner operations, route agent events only to the owner, and clear disconnected owners after deterministic grace periods.
 
@@ -131,7 +131,7 @@ Stream surface:
 - Consumes: child 01 stores/contracts.
 - Produces: `AgentOrchestratorService` API above.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Cover exact behavior:
 
@@ -173,13 +173,13 @@ expect(service.pending({
 expect(self.id).toBeLessThan(worker.id);
 ```
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/agent-orchestrator-service.test.ts`
 
 Expected: module/import failures for `AgentOrchestratorService`.
 
-- [ ] **Step 3: Implement minimal service**
+- [x] **Step 3: Implement minimal service**
 
 Rules:
 
@@ -189,13 +189,13 @@ Rules:
 - `move()` uses `latestEventId(to)` only if destination row is absent.
 - Map persistent `Date` values to ISO strings only at the RPC boundary, not in this service.
 
-- [ ] **Step 4: Run service tests**
+- [x] **Step 4: Run service tests**
 
 Run: `pnpm test test/integration/agent-orchestrator-service.test.ts`
 
 Expected: all service behavior passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/agent-orchestrator-service.ts test/integration/agent-orchestrator-service.test.ts
@@ -216,7 +216,7 @@ git commit -m "feat(orchestrator): add role service"
 - Produces: `HerdrSessionStore.findRunningBySocketPath(socketPath)`.
 - Consumes: `AgentStore.findByPane()` and terminal-stable records.
 
-- [ ] **Step 1: Write failing identity tests**
+- [x] **Step 1: Write failing identity tests**
 
 Add store/RPC tests for:
 
@@ -230,13 +230,13 @@ Add store/RPC tests for:
 - null terminal rejects with `Herdr pane has no terminal identity`;
 - `subscriberKind !== "pi"` fails schema validation.
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: `agent.orchestrator.register` is unknown and socket lookup is missing.
 
-- [ ] **Step 3: Add socket lookup and registration resolver**
+- [x] **Step 3: Add socket lookup and registration resolver**
 
 Implement:
 
@@ -262,13 +262,13 @@ In the server, make `#resolvePiPresence(input)` async. Use the indexed pane when
 
 Do not trust a `herdrSessionName` supplied by clients; the registration schema does not accept one.
 
-- [ ] **Step 4: Run focused test**
+- [x] **Step 4: Run focused test**
 
 Run: `pnpm test test/integration/herdr-pane-identity-resolver.test.ts test/integration/observability-rpc.test.ts`
 
 Expected: direct/indexed and stale-alias registration cases pass; later routing assertions may remain red until Task 3.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/db/herdr-sessions.ts src/herdr/pane-identity-resolver.ts src/daemon/observability-server.ts test/integration/herdr-pane-identity-resolver.test.ts test/integration/observability-rpc.test.ts
@@ -297,7 +297,7 @@ git commit -m "feat(orchestrator): bind pi presence"
 - Consumes: registration resolver and `AgentOrchestratorService`.
 - Produces: final RPC/stream surface listed above.
 
-- [ ] **Step 1: Write failing two-socket routing tests**
+- [x] **Step 1: Write failing two-socket routing tests**
 
 Open three real daemon sockets:
 
@@ -321,13 +321,13 @@ Assert:
 
 Decode JSONL by method and assert exact scope/owner values, not only method names.
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts`
 
 Expected: current broadcast sends events to all sockets and new role methods are unknown.
 
-- [ ] **Step 3: Make dispatch socket-aware**
+- [x] **Step 3: Make dispatch socket-aware**
 
 Change:
 
@@ -349,7 +349,7 @@ readonly #piPresenceBySocket = new Map<Socket, PiPresence>();
 
 Add `#requirePiPresence(socket)` for set/get/ack. Registration replaces any prior presence for the same socket. Build register/get/set responses with one helper that includes pending events only when the caller terminal currently owns the scope; this is the transfer path for a connected Pi that claims from another owner.
 
-- [ ] **Step 4: Implement role change and event routing**
+- [x] **Step 4: Implement role change and event routing**
 
 - `publishAgentEvent(event)` finds an exact scope owner, rejects null/mismatched `terminalId`, selects the newest connection for the owner terminal, and writes once.
 - `#publishOrchestratorChange(change)` sends to registered presences whose exact scope equals `change.previous` or `change.current` scope. This supports cross-scope move in child 03.
@@ -357,7 +357,7 @@ Add `#requirePiPresence(socket)` for set/get/ack. Registration replaces any prio
 - Set/get responses always include the caller's current presence and current scope state.
 - An idempotent owner claim may return `changed: false` without broadcasting.
 
-- [ ] **Step 5: Remove subscriber notification code**
+- [x] **Step 5: Remove subscriber notification code**
 
 Remove `AgentNotificationService` constructor injection and both old RPC cases. Delete the old store/service files now that no active consumer remains. Remove the two legacy Drizzle table declarations and `agentNotificationCursors` from the DB harness. Remove legacy `agentNotificationSubscribeInputSchema`, `agentNotificationAckInputSchema`, `AgentNotificationSubscriptionRecord`, and `AgentNotificationCursorRecord`; validate the remaining `agent.notifications.ack` case with `agentOrchestratorAckInputSchema`.
 
@@ -374,13 +374,13 @@ Run: `rg "agent\.notifications\.subscribe|subscriptionId|AgentNotification(Curso
 
 Expected: no daemon/source references; shepherd-pi and its old tests may still match until child 04.
 
-- [ ] **Step 6: Run routing and migration tests**
+- [x] **Step 6: Run routing and migration tests**
 
 Run: `pnpm test test/integration/observability-rpc.test.ts test/integration/agent-orchestrator-service.test.ts test/integration/sqlite-migrations.test.ts`
 
 Expected: all role/stream routing and final-schema tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts src/daemon/service.ts src/db/schema.ts src/observability/contracts.ts src/observability/schemas.ts test/integration/observability-rpc.test.ts test/integration/observability-db-harness.ts test/integration/sqlite-migrations.test.ts drizzle
@@ -401,7 +401,7 @@ git commit -m "feat(orchestrator): route owner notifications"
 - Consumes: connection registry and persisted owners.
 - Produces: deterministic owner expiry lifecycle.
 
-- [ ] **Step 1: Write fake-timer lifecycle tests**
+- [x] **Step 1: Write fake-timer lifecycle tests**
 
 Construct the server with `disconnectGraceMs: 50`, `startupReconnectGraceMs: 100`, and injected `now/setTimeout/clearTimeout` adapters or Vitest fake timers. Assert:
 
@@ -414,13 +414,13 @@ Construct the server with `disconnectGraceMs: 50`, `startupReconnectGraceMs: 100
 7. `server.stop()` cancels timers and closes sockets without clearing DB owner.
 8. Expiry broadcasts owner-null change only to still-connected Pi presences in the scope.
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run: `pnpm test test/integration/orchestrator-disconnect-grace.test.ts`
 
 Expected: owner never clears or clears immediately because grace lifecycle is absent.
 
-- [ ] **Step 3: Implement grace registries**
+- [x] **Step 3: Implement grace registries**
 
 Use terminal key:
 
@@ -440,13 +440,13 @@ Maintain one timer per terminal. On socket close/error:
 
 On register, cancel matching disconnect and startup timers. On `start()`, arm startup timers for `service.persistedOwners()`. On `stop()`, set `#stopping = true` before destroying sockets and clear all timers.
 
-- [ ] **Step 4: Run lifecycle and routing tests**
+- [x] **Step 4: Run lifecycle and routing tests**
 
 Run: `pnpm test test/integration/orchestrator-disconnect-grace.test.ts test/integration/observability-rpc.test.ts`
 
 Expected: all tests pass without real 5/10 second sleeps.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/daemon/observability-server.ts src/daemon/service.ts test/integration/orchestrator-disconnect-grace.test.ts
@@ -470,4 +470,4 @@ git commit -m "feat(orchestrator): expire disconnected owners"
 
 ## Next Steps
 
-After scoped routing and grace tests pass, continue with [Herdr terminal reconciliation](03-herdr-terminal-reconciliation.md).
+Completed. Herdr terminal reconciliation was implemented and verified in child 03.

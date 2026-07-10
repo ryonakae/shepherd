@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute the child plans task-by-task. Complete each checkbox step, run the listed validation, and commit after each task. This parent plan is the source of scope, terminology, invariants, and ordering.
 
-**Status:** Planned
+**Status:** Implementation complete; archive pending (manual Pi dogfood blocked by sandbox)
 
 **Goal:** Let one Pi terminal per Herdr session/workspace become the Shepherd orchestrator through `/shepherd orchestrator on|off|status`, and route durable agent notifications only to that orchestrator while every Pi continues to send telemetry and receive normal workspace agent context.
 
@@ -86,15 +86,27 @@
 
 ## Progress
 
-- [ ] Child plan 01 implemented and verified.
-- [ ] Child plan 02 implemented and verified.
-- [ ] Child plan 03 implemented and verified.
-- [ ] Child plan 04 implemented and verified.
-- [ ] Child plan 05 implemented and verified.
+- [x] Child plan 01 implemented and verified.
+- [x] Child plan 02 implemented and verified.
+- [x] Child plan 03 implemented and verified.
+- [x] Child plan 04 implemented and verified.
+- [x] Child plan 05 docs and automated validation completed; manual Pi dogfood constraint recorded.
 
 ## Next Steps
 
-Start with [child plan 01](2026-07-10-pi-orchestrator-notifications/01-contracts-db.md), execute its tests red-to-green, generate additive migration `0001`, and commit before beginning daemon routing. Child 02 generates cleanup migration `0002` in the same commit that removes legacy daemon consumers.
+Commit this completion metadata, then move the parent and child plan directory under `docs/plans/archived/` in a separate docs-only commit.
+
+## Completion Notes
+
+- Implementation commits: `99fec71` (contracts/DB/terminal identity), `7425941` (role service), `bc815d5` (presence/routing/grace and migration cleanup), `3f2f78a` (pane movement), `db4e9f4` (Pi reconnect/commands/UI), `5ce3ea7` (legacy invariant), `c60fc11` (public docs), and `1081ec9` (reviewed cursor/grace/null-event fixes). Each commit was pushed to `main`.
+- Migrations: `drizzle/0001_opposite_toxin.sql` adds scope ownership and event terminal identity; `drizzle/0002_worthless_energizer.sql` removes subscriber notification tables.
+- Targeted validation passed: contracts/persistence 14 tests, daemon lifecycle/topology 22 tests, and shepherd-pi 14 tests.
+- Final validation passed on 2026-07-10: `pnpm check` (29 files, 130 tests), `pnpm build`, and `pnpm db:check`.
+- A read-only implementation review found three P1 issues: skip/future ack, grace expiry after owner movement, and null-terminal delivery. Commit `1081ec9` added regression coverage and fixed all three; the repeated full check/build passed.
+- Pi package dry-run includes `src/index.ts`, `src/daemon-client.ts`, and `skills/shepherd/SKILL.md`; it excludes build output, dependencies, and SQLite data.
+- Real Herdr evidence: installed Herdr `0.7.2` returned `session.snapshot` with stable terminal ids; an isolated daemon migrated and indexed temporary workspace `default/wC`; direct JSONL registration resolved `wC:p1` / `term_6563c4179a105b` in scope `default/wC`.
+- Full interactive Pi dogfood remained unverified. Installed Pi `0.80.6` was launched through agent-safehouse `0.9.0`; its wrapper did not pass the disposable `SHEPHERD_HOME`. A policy-preserving nested launch ended with `sandbox-exec: sandbox_apply: Operation not permitted` (exit 71), so no bypass was attempted. The temporary workspace, daemon, socket, DB, and logs were removed; the pre-existing `w9` and `wB` workspaces remained.
+- Accepted residual risk: real footer/transient UI, `/new`/`/resume`/`/fork`, and live cross-workspace move behavior are covered by automated socket/Pi lifecycle tests but were not observed interactively in this sandboxed environment.
 
 ## Final Validation
 

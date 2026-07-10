@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Let users control and inspect the current Pi terminal's orchestrator role, survive daemon and Pi session replacement, and keep existing telemetry/hidden context behavior while consuming pushed updates only as owner.
 
@@ -112,7 +112,7 @@ type ShepherdState = {
 - Produces: `ReconnectingDaemonClient` API above.
 - Consumes: newline-delimited JSON protocol.
 
-- [ ] **Step 1: Write failing transport tests**
+- [x] **Step 1: Write failing transport tests**
 
 Use a temporary Unix socket path and real `net.createServer()` to test:
 
@@ -125,13 +125,13 @@ Use a temporary Unix socket path and real `net.createServer()` to test:
 7. Malformed JSON does not crash the process; it disconnects/retries with a parse error.
 8. Multiple `error`/`close` emissions schedule only one reconnect attempt.
 
-- [ ] **Step 2: Run test to verify red**
+- [x] **Step 2: Run test to verify red**
 
 Run: `pnpm test test/integration/shepherd-pi-daemon-client.test.ts`
 
 Expected: module/import failure because the client does not exist.
 
-- [ ] **Step 3: Implement the transport state machine**
+- [x] **Step 3: Implement the transport state machine**
 
 Implementation requirements:
 
@@ -144,13 +144,13 @@ Implementation requirements:
 - Guard all timer/socket callbacks with a connection generation number so stale callbacks cannot affect a newer socket.
 - `close()` marks terminal state before destroying the socket.
 
-- [ ] **Step 4: Run client tests and package typecheck**
+- [x] **Step 4: Run client tests and package typecheck**
 
 Run: `pnpm test test/integration/shepherd-pi-daemon-client.test.ts && pnpm --dir packages/shepherd-pi typecheck`
 
 Expected: all reconnect tests and package typecheck pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/daemon-client.ts packages/shepherd-pi/src/index.ts test/integration/shepherd-pi-daemon-client.test.ts
@@ -169,7 +169,7 @@ git commit -m "feat(pi): reconnect shepherd daemon client"
 - Consumes: `agent.orchestrator.register`.
 - Produces: authoritative `currentScope`, `isOrchestrator`, and owner-only pending events.
 
-- [ ] **Step 1: Replace old subscription expectations with failing registration tests**
+- [x] **Step 1: Replace old subscription expectations with failing registration tests**
 
 Test `session_start` in a complete Herdr env:
 
@@ -200,13 +200,13 @@ Add cases:
 
 Update test env helpers to include `HERDR_SOCKET_PATH` and `HERDR_PANE_ID` and restore them after each test.
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: extension still calls `agent.notifications.subscribe` and lacks role UI/state.
 
-- [ ] **Step 3: Implement connection registration**
+- [x] **Step 3: Implement connection registration**
 
 On `session_start`:
 
@@ -221,13 +221,13 @@ On `session_start`:
 
 On `session_shutdown`, call explicit client `close()`. The daemon handles terminal grace and replacement matching.
 
-- [ ] **Step 4: Run extension tests**
+- [x] **Step 4: Run extension tests**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: registration/lifecycle tests pass; command tests may still be absent.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts test/unit/shepherd-pi-extension.test.ts
@@ -246,7 +246,7 @@ git commit -m "feat(pi): register orchestrator presence"
 - Consumes: `agent.orchestrator.get` and `agent.orchestrator.set`.
 - Produces: Pi command `shepherd`.
 
-- [ ] **Step 1: Write failing command tests**
+- [x] **Step 1: Write failing command tests**
 
 Capture `registerCommand("shepherd", options)` and invoke its handler. Assert:
 
@@ -262,13 +262,13 @@ Capture `registerCommand("shepherd", options)` and invoke its handler. Assert:
 10. Owner status says `This Pi is the Shepherd orchestrator for <session>/<workspace> (<pane>)`.
 11. Owner-initiated `off` produces one command completion notification, not a second transient role-change notification.
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: no `shepherd` command is registered.
 
-- [ ] **Step 3: Implement strict parser and response application**
+- [x] **Step 3: Implement strict parser and response application**
 
 Register once during extension factory execution:
 
@@ -289,7 +289,7 @@ pi.registerCommand?.("shepherd", {
 
 Use one `applyConnectionStateResponse()` helper for register/get/set. It applies presence/state and dedupes returned `events` by id when self is owner. Never infer success from the requested action; use returned owner terminal. Wrap set RPC in `state.roleMutationInFlight = true` with `finally` reset so the initiating connection can suppress duplicate transient stream feedback while still applying stream state.
 
-- [ ] **Step 4: Handle role stream UI**
+- [x] **Step 4: Handle role stream UI**
 
 For `agent.orchestrator.changed`:
 
@@ -309,13 +309,13 @@ ctx.ui.notify(
 
 Do not notify a Pi that was neither previous nor current owner. Role stream data never enters LLM context or `appendEntry`.
 
-- [ ] **Step 5: Run command/UI tests**
+- [x] **Step 5: Run command/UI tests**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: all command aliases, no-op off, footer, and transient notification tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts test/unit/shepherd-pi-extension.test.ts
@@ -334,7 +334,7 @@ git commit -m "feat(pi): manage orchestrator role"
 - Consumes: owner-only `agent.event`, connection-bound `agent.notifications.ack`, authoritative current scope.
 - Produces: existing hidden context and telemetry behavior under new routing.
 
-- [ ] **Step 1: Write failing behavior matrix tests**
+- [x] **Step 1: Write failing behavior matrix tests**
 
 Add tests for:
 
@@ -350,13 +350,13 @@ Add tests for:
 - successful injection clears unread status/widget after acks;
 - `autoResume` triggers only for owner `agent.done|agent.blocked|agent.idle` events.
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts`
 
 Expected: old subscription id ack and unconditional event handling fail the new matrix.
 
-- [ ] **Step 3: Implement owner-only local event handling**
+- [x] **Step 3: Implement owner-only local event handling**
 
 - Route stream messages through one discriminated handler.
 - Before adding an event, require `state.isOrchestrator` and `event.terminalId !== state.currentScope.terminalId` when terminal id is present.
@@ -365,7 +365,7 @@ Expected: old subscription id ack and unconditional event handling fail the new 
 - In `before_agent_start`, apply get response, request `agent.list` for authoritative scope, build context, then ack each injected event in ascending order with `{ eventId }`.
 - Keep `formatHiddenAgentContext()` and `formatHiddenAgentUpdates()` public outputs unchanged.
 
-- [ ] **Step 4: Use authoritative scope everywhere**
+- [x] **Step 4: Use authoritative scope everywhere**
 
 Replace direct post-start use of `process.env.HERDR_WORKSPACE_ID` with `state.currentScope.workspaceId` for:
 
@@ -376,7 +376,7 @@ Replace direct post-start use of `process.env.HERDR_WORKSPACE_ID` with `state.cu
 
 Environment values remain only the initial registration input.
 
-- [ ] **Step 5: Remove old subscription symbols**
+- [x] **Step 5: Remove old subscription symbols**
 
 Run:
 
@@ -386,19 +386,19 @@ rg "currentSubscriptionId|agent\.notifications\.subscribe|subscriptionId" packag
 
 Expected: no matches.
 
-- [ ] **Step 6: Run Pi focused tests**
+- [x] **Step 6: Run Pi focused tests**
 
 Run: `pnpm test test/unit/shepherd-pi-extension.test.ts test/integration/shepherd-pi-daemon-client.test.ts && pnpm --dir packages/shepherd-pi typecheck`
 
 Expected: all tests/typecheck pass.
 
-- [ ] **Step 7: Verify package contents**
+- [x] **Step 7: Verify package contents**
 
 Run: `(cd packages/shepherd-pi && npm pack --dry-run --json)`
 
 Expected: output includes `src/index.ts`, `src/daemon-client.ts`, `skills/shepherd/SKILL.md`, and excludes `dist/`, `node_modules/`, and SQLite files.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/index.ts packages/shepherd-pi/src/daemon-client.ts test/unit/shepherd-pi-extension.test.ts test/integration/shepherd-pi-daemon-client.test.ts
@@ -422,4 +422,4 @@ git commit -m "fix(pi): deliver updates only to orchestrator"
 
 ## Next Steps
 
-After package tests and dry-run pass, continue with [documentation and validation](05-docs-validation.md).
+Completed. Documentation and automated validation were completed in child 05.
