@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Implementation complete; archive pending (manual dogfood blocked)
+**Status:** Completed and archived (manual dogfood blocked)
 
 **Goal:** Document explicit orchestrator notification routing and prove the complete workflow with automated checks and a real Herdr workspace.
 
@@ -307,7 +307,7 @@ git add docs/plans/2026-07-10-pi-orchestrator-notifications.md docs/plans/2026-0
 git commit -m "docs: record orchestrator validation"
 ```
 
-- [ ] **Step 3: Defer archive**
+- [x] **Step 3: Defer archive**
 
 Do not move the plan under `docs/plans/archived/` in the implementation commit. Archive in a later docs-only commit after review/acceptance.
 
@@ -327,4 +327,4 @@ Do not move the plan under `docs/plans/archived/` in the implementation commit. 
 
 ## Next Steps
 
-Commit the completion metadata, then archive this plan tree in a separate docs-only commit. Interactive Steps 2-9 remain explicitly unverified because the sandbox blocked a policy-preserving Pi launch with the disposable Shepherd home.
+Archived in a separate docs-only commit. Interactive Steps 2-9 remain explicitly unverified because the sandbox blocked a policy-preserving Pi launch with the disposable Shepherd home.

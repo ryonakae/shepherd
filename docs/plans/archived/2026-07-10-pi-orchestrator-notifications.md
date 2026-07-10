@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute the child plans task-by-task. Complete each checkbox step, run the listed validation, and commit after each task. This parent plan is the source of scope, terminology, invariants, and ordering.
 
-**Status:** Implementation complete; archive pending (manual Pi dogfood blocked by sandbox)
+**Status:** Completed and archived (manual Pi dogfood blocked by sandbox)
 
 **Goal:** Let one Pi terminal per Herdr session/workspace become the Shepherd orchestrator through `/shepherd orchestrator on|off|status`, and route durable agent notifications only to that orchestrator while every Pi continues to send telemetry and receive normal workspace agent context.
 
@@ -94,7 +94,7 @@
 
 ## Next Steps
 
-Commit this completion metadata, then move the parent and child plan directory under `docs/plans/archived/` in a separate docs-only commit.
+No further implementation work remains. Interactive Pi dogfood remains explicitly unverified for the sandbox reason recorded below.
 
 ## Completion Notes
 
