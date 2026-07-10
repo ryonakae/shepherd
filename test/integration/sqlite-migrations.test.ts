@@ -25,8 +25,6 @@ describe("SQLite migrations", () => {
     expect(tables).toEqual([
       "agent_events",
       "agent_history_cache",
-      "agent_notification_cursors",
-      "agent_notification_subscriptions",
       "agent_orchestrator_scopes",
       "agents",
       "herdr_sessions",

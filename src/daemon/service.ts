@@ -5,7 +5,7 @@ import { createAgentHistoryService } from "@/agent-history/service.js";
 import { resolveRuntime } from "@/config/runtime.js";
 import { AgentEventStore } from "@/db/agent-events.js";
 import { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
-import { AgentNotificationCursorStore } from "@/db/agent-notification-cursors.js";
+import { AgentOrchestratorScopeStore } from "@/db/agent-orchestrator-scopes.js";
 import { AgentStore } from "@/db/agents.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
@@ -13,7 +13,7 @@ import { HerdrSessionStore } from "@/db/herdr-sessions.js";
 import { HerdrWorkspaceStore } from "@/db/herdr-workspaces.js";
 import { createHerdrSessionListRunner } from "@/herdr/session-list.js";
 import { AgentIndexService } from "@/observability/agent-index-service.js";
-import { AgentNotificationService } from "@/observability/agent-notification-service.js";
+import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import { HerdrSessionWatchManager } from "./herdr-session-watch-manager.js";
 import { ObservabilityRpcServer } from "./observability-server.js";
 
@@ -33,12 +33,13 @@ export async function runObservabilityDaemonService(
   const agents = new AgentStore(sqlite);
   const agentEvents = new AgentEventStore(sqlite);
   const agentHistoryCache = new AgentHistoryCacheStore(sqlite);
-  const agentNotificationCursors = new AgentNotificationCursorStore({
-    events: agentEvents,
-    sqlite,
-  });
+  const agentOrchestratorScopes = new AgentOrchestratorScopeStore(sqlite);
   const history = createAgentHistoryService({ cache: agentHistoryCache });
-  const notifications = new AgentNotificationService({ cursors: agentNotificationCursors });
+  const orchestrator = new AgentOrchestratorService({
+    agentEvents,
+    agents,
+    scopes: agentOrchestratorScopes,
+  });
   const index = new AgentIndexService({
     history,
     stores: { agentEvents, agentHistoryCache, agents, herdrSessions, herdrWorkspaces },
@@ -46,9 +47,9 @@ export async function runObservabilityDaemonService(
 
   const server = new ObservabilityRpcServer({
     history,
-    notifications,
+    orchestrator,
     socketPath: runtime.paths.socketPath,
-    stores: { agentEvents, agents, herdrWorkspaces },
+    stores: { agentEvents, agents, herdrSessions, herdrWorkspaces },
   });
   const watchManager = new HerdrSessionWatchManager({
     agents,

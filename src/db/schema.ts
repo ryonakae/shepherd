@@ -117,35 +117,3 @@ export const agentHistoryCache = sqliteTable(
     ),
   ],
 );
-
-export const agentNotificationSubscriptions = sqliteTable(
-  "agent_notification_subscriptions",
-  {
-    autoResume: integer("auto_resume", { mode: "boolean" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    herdrSessionName: text("herdr_session_name"),
-    id: text("id").primaryKey(),
-    subscriberId: text("subscriber_id").notNull(),
-    subscriberKind: text("subscriber_kind").notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-    workspaceId: text("workspace_id"),
-  },
-  (table) => [
-    uniqueIndex("agent_notification_subscriptions_scope_subscriber_idx").on(
-      table.herdrSessionName,
-      table.workspaceId,
-      table.subscriberId,
-    ),
-  ],
-);
-
-export const agentNotificationCursors = sqliteTable("agent_notification_cursors", {
-  ackedEventId: integer("acked_event_id").notNull().default(0),
-  autoResumeEventId: integer("auto_resume_event_id").notNull().default(0),
-  deliveredEventId: integer("delivered_event_id").notNull().default(0),
-  hiddenContextEventId: integer("hidden_context_event_id").notNull().default(0),
-  subscriptionId: text("subscription_id")
-    .primaryKey()
-    .references(() => agentNotificationSubscriptions.id, { onDelete: "cascade" }),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});

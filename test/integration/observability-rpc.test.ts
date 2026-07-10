@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
-import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,13 +6,13 @@ import { afterEach, describe, expect, test } from "vitest";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 import { ObservabilityRpcClient } from "@/daemon/client.js";
 import { ObservabilityRpcServer } from "@/daemon/observability-server.js";
-import { AgentNotificationService } from "@/observability/agent-notification-service.js";
-import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
+import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import {
   cleanupTempDirs,
   openObservabilityDbHarness,
   tempDirs,
 } from "./observability-db-harness.js";
+import { RpcTestClient } from "./rpc-test-client.js";
 
 const servers: ObservabilityRpcServer[] = [];
 
@@ -49,19 +48,26 @@ describe("ObservabilityRpcServer", () => {
       events: [expect.objectContaining({ id: event.id, type: "agent.idle" })],
     });
 
-    const subscription = await client.request("agent.notifications.subscribe", {
-      subscriberId: "pi-session",
-      subscriberKind: "pi",
-      workspaceId: "wB",
-    });
-    expect(subscription).toMatchObject({
-      events: [expect.objectContaining({ id: event.id })],
-      subscription: { id: expect.stringMatching(/^ans_/) },
-    });
-    const subscriptionId = (subscription as { subscription: { id: string } }).subscription.id;
     await expect(
-      client.request("agent.notifications.ack", { eventId: event.id, subscriptionId }),
-    ).resolves.toEqual({ acknowledged: true });
+      client.request("agent.orchestrator.register", {
+        herdrSocketPath: "/tmp/herdr/herdr.sock",
+        paneId: "wB:p1",
+        subscriberId: "pi-session",
+        subscriberKind: "pi",
+        workspaceId: "wB",
+      }),
+    ).resolves.toMatchObject({ events: [], presence: { terminalId: "term_1" }, state: null });
+    await expect(
+      client.request("agent.orchestrator.set", { enabled: true }),
+    ).resolves.toMatchObject({
+      changed: true,
+      state: { owner: { terminalId: "term_1" } },
+    });
+    await expect(
+      client.request("agent.notifications.ack", { eventId: event.id }),
+    ).resolves.toMatchObject({
+      acknowledged: true,
+    });
 
     await expect(client.request("legacy.method", {})).rejects.toThrow("Unknown method");
     client.close();
@@ -140,31 +146,137 @@ describe("ObservabilityRpcServer", () => {
     harness.sqlite.close();
   });
 
-  test("streams agent.event notifications", async () => {
+  test("routes events to the newest owner socket and role changes to the exact scope", async () => {
     const { harness, server, socketPath } = await openServerWithoutClient();
-    const socket = createConnection(socketPath);
-    const decoder = new JsonLineDecoder();
-    const messages: unknown[] = [];
-    socket.on("data", (chunk) => messages.push(...decoder.push(chunk.toString("utf8"))));
-    socket.write(encodeJsonLine({ id: 1, method: "agent.events", params: {} }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    seedRoutingAgents(harness);
+    const [piA, piB, piC, generic] = await Promise.all([
+      RpcTestClient.connect(socketPath),
+      RpcTestClient.connect(socketPath),
+      RpcTestClient.connect(socketPath),
+      RpcTestClient.connect(socketPath),
+    ]);
+    await Promise.all([
+      register(piA, "wB:p-a", "pi-a", "wB"),
+      register(piB, "wB:p-b", "pi-b", "wB"),
+      register(piC, "wC:p-c", "pi-c", "wC"),
+      generic.request("agent.events", { workspaceId: "wB" }),
+    ]);
 
+    const beforeOwner = appendRoutedEvent(harness, "term_worker", "wB");
+    server.publishAgentEvent(beforeOwner);
+    await tick();
+    expect(piA.notifications).toEqual([]);
+    expect(piB.notifications).toEqual([]);
+
+    await expect(piA.request("agent.orchestrator.set", { enabled: true })).resolves.toMatchObject({
+      changed: true,
+      state: { owner: { paneId: "wB:p-a", terminalId: "term_a" } },
+    });
+    await expect(piA.waitForNotification("agent.orchestrator.changed")).resolves.toMatchObject({
+      params: { change: { reason: "claimed", current: { owner: { terminalId: "term_a" } } } },
+    });
+    await expect(piB.waitForNotification("agent.orchestrator.changed")).resolves.toBeDefined();
+    expect(piC.notifications).toEqual([]);
+    expect(generic.notifications).toEqual([]);
+
+    const worker = appendRoutedEvent(harness, "term_worker", "wB");
+    server.publishAgentEvent(worker);
+    await expect(piA.waitForNotification("agent.event")).resolves.toMatchObject({
+      params: { event: { id: worker.id } },
+    });
+    expect(piB.notifications).toEqual([]);
+
+    const self = appendRoutedEvent(harness, "term_a", "wB");
+    server.publishAgentEvent(self);
+    await tick();
+    expect(piA.notifications).toEqual([]);
+
+    const replacement = await piB.request("agent.orchestrator.set", { enabled: true });
+    expect(replacement).toMatchObject({
+      changed: true,
+      events: [
+        expect.objectContaining({ id: worker.id }),
+        expect.objectContaining({ id: self.id }),
+      ],
+      state: { owner: { terminalId: "term_b" } },
+    });
+    await Promise.all([
+      piA.waitForNotification("agent.orchestrator.changed"),
+      piB.waitForNotification("agent.orchestrator.changed"),
+    ]);
+
+    await expect(piA.request("agent.notifications.ack", { eventId: self.id })).rejects.toThrow(
+      "Only the current orchestrator",
+    );
+    await expect(
+      piB.request("agent.notifications.ack", { eventId: self.id }),
+    ).resolves.toMatchObject({
+      acknowledged: true,
+      state: { ackedEventId: self.id },
+    });
+    await expect(piA.request("agent.orchestrator.set", { enabled: false })).resolves.toMatchObject({
+      changed: false,
+      state: { owner: { terminalId: "term_b" } },
+    });
+    await expect(piB.request("agent.orchestrator.set", { enabled: false })).resolves.toMatchObject({
+      changed: true,
+      state: { owner: null },
+    });
+    await Promise.all([
+      piA.waitForNotification("agent.orchestrator.changed"),
+      piB.waitForNotification("agent.orchestrator.changed"),
+    ]);
+
+    piA.close();
+    piB.close();
+    piC.close();
+    generic.close();
+    harness.sqlite.close();
+  });
+
+  test("validates indexed presence and resolves a stale pane alias from live Herdr", async () => {
+    const { harness, socketPath } = await openServerWithoutClient({
+      resolvePaneIdentity: async () => ({
+        paneId: "wC:p2",
+        terminalId: "term_moved",
+        workspaceId: "wC",
+      }),
+    });
     harness.herdrSessions.upsertRunning({
       name: "default",
       sessionDir: "/tmp/herdr",
       socketPath: "/tmp/herdr/herdr.sock",
     });
-    const event = harness.agentEvents.append({
-      herdrSessionName: "default",
-      payload: {},
-      type: "agent.idle",
-      workspaceId: "wB",
-    });
-    server.publishAgentEvent(event);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const client = await RpcTestClient.connect(socketPath);
 
-    expect(messages).toContainEqual(expect.objectContaining({ method: "agent.event" }));
-    socket.destroy();
+    await expect(register(client, "wB:p-old", "pi-moved", "wB")).resolves.toMatchObject({
+      presence: {
+        herdrSessionName: "default",
+        paneId: "wC:p2",
+        terminalId: "term_moved",
+        workspaceId: "wC",
+      },
+    });
+    await expect(
+      client.request("agent.orchestrator.register", {
+        herdrSocketPath: "/tmp/unknown.sock",
+        paneId: "wB:p1",
+        subscriberId: "pi-unknown",
+        subscriberKind: "pi",
+        workspaceId: "wB",
+      }),
+    ).rejects.toThrow("running session");
+    await expect(
+      client.request("agent.orchestrator.register", {
+        herdrSocketPath: "/tmp/herdr/herdr.sock",
+        paneId: "wB:p1",
+        subscriberId: "bad-kind",
+        subscriberKind: "claude",
+        workspaceId: "wB",
+      }),
+    ).rejects.toThrow("Invalid RPC params");
+
+    client.close();
     harness.sqlite.close();
   });
 });
@@ -175,7 +287,15 @@ async function openServer() {
   return { client, dir, harness, server };
 }
 
-async function openServerWithoutClient() {
+async function openServerWithoutClient(
+  options: {
+    resolvePaneIdentity?: () => Promise<{
+      paneId: string;
+      terminalId: string;
+      workspaceId: string;
+    }>;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "shepherd-agent-rpc-"));
   tempDirs.push(dir);
   const socketPath = join(dir, "rpc.sock");
@@ -183,17 +303,72 @@ async function openServerWithoutClient() {
   const harness = openObservabilityDbHarness();
   const server = new ObservabilityRpcServer({
     history: createAgentHistoryService({ cache: harness.agentHistoryCache, homeDir: dir }),
-    notifications: new AgentNotificationService({ cursors: harness.agentNotificationCursors }),
+    orchestrator: new AgentOrchestratorService({
+      agentEvents: harness.agentEvents,
+      agents: harness.agents,
+      scopes: harness.agentOrchestratorScopes,
+    }),
+    ...(options.resolvePaneIdentity ? { resolvePaneIdentity: options.resolvePaneIdentity } : {}),
     socketPath,
     stores: {
       agentEvents: harness.agentEvents,
       agents: harness.agents,
+      herdrSessions: harness.herdrSessions,
       herdrWorkspaces: harness.herdrWorkspaces,
     },
   });
   servers.push(server);
   await server.start();
   return { dir, harness, server, socketPath };
+}
+
+function register(
+  client: RpcTestClient,
+  paneId: string,
+  subscriberId: string,
+  workspaceId: string,
+): Promise<unknown> {
+  return client.request("agent.orchestrator.register", {
+    herdrSocketPath: "/tmp/herdr/herdr.sock",
+    paneId,
+    subscriberId,
+    subscriberKind: "pi",
+    workspaceId,
+  });
+}
+
+function appendRoutedEvent(
+  harness: ReturnType<typeof openObservabilityDbHarness>,
+  terminalId: string,
+  workspaceId: string,
+) {
+  return harness.agentEvents.append({
+    herdrSessionName: "default",
+    payload: {},
+    terminalId,
+    type: "agent.done",
+    workspaceId,
+  });
+}
+
+function seedRoutingAgents(harness: ReturnType<typeof openObservabilityDbHarness>) {
+  harness.herdrSessions.upsertRunning({
+    name: "default",
+    sessionDir: "/tmp/herdr",
+    socketPath: "/tmp/herdr/herdr.sock",
+  });
+  harness.agents.replaceForSession({
+    agents: [
+      { agent: "pi", pane_id: "wB:p-a", terminal_id: "term_a", workspace_id: "wB" },
+      { agent: "pi", pane_id: "wB:p-b", terminal_id: "term_b", workspace_id: "wB" },
+      { agent: "pi", pane_id: "wC:p-c", terminal_id: "term_c", workspace_id: "wC" },
+    ],
+    herdrSessionName: "default",
+  });
+}
+
+async function tick(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 function seedAdditionalRuntimeAgents(harness: ReturnType<typeof openObservabilityDbHarness>) {

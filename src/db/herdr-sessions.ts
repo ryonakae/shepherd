@@ -54,6 +54,13 @@ export class HerdrSessionStore {
       .run(now, ...runningNames);
   }
 
+  findRunningBySocketPath(socketPath: string): HerdrSessionRecord | undefined {
+    const row = this.#sqlite
+      .prepare("select * from herdr_sessions where running = 1 and socket_path = ?")
+      .get(socketPath) as HerdrSessionRow | undefined;
+    return row ? mapHerdrSession(row) : undefined;
+  }
+
   listRunning(): HerdrSessionRecord[] {
     const rows = this.#sqlite
       .prepare("select * from herdr_sessions where running = 1 order by name")

@@ -15,6 +15,13 @@
       "when": 1783664492560,
       "tag": "0001_opposite_toxin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783665500194,
+      "tag": "0002_worthless_energizer",
+      "breakpoints": true
     }
   ]
 }

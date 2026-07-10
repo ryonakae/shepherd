@@ -178,26 +178,6 @@ export type PiPresenceRegistration = {
   workspaceId: string;
 };
 
-export type AgentNotificationSubscriptionRecord = {
-  autoResume: boolean;
-  createdAt: Date;
-  herdrSessionName: string | null;
-  id: string;
-  subscriberId: string;
-  subscriberKind: string;
-  updatedAt: Date;
-  workspaceId: string | null;
-};
-
-export type AgentNotificationCursorRecord = {
-  ackedEventId: number;
-  autoResumeEventId: number;
-  deliveredEventId: number;
-  hiddenContextEventId: number;
-  subscriptionId: string;
-  updatedAt: Date;
-};
-
 export type AgentTelemetryEvent =
   | {
       artifactRefs: string[];

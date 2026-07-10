@@ -48,25 +48,6 @@ export const agentEventsInputSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const agentNotificationSubscribeInputSchema = Type.Object(
-  {
-    autoResume: Type.Optional(Type.Boolean()),
-    herdrSessionName: Type.Optional(Type.String({ minLength: 1 })),
-    subscriberId: Type.String({ minLength: 1 }),
-    subscriberKind: Type.String({ minLength: 1 }),
-    workspaceId: Type.Optional(Type.String({ minLength: 1 })),
-  },
-  { additionalProperties: false },
-);
-
-export const agentNotificationAckInputSchema = Type.Object(
-  {
-    eventId: Type.Integer({ minimum: 1 }),
-    subscriptionId: Type.String({ minLength: 1 }),
-  },
-  { additionalProperties: false },
-);
-
 export const agentOrchestratorRegisterInputSchema = Type.Object(
   {
     autoResume: Type.Optional(Type.Boolean()),
