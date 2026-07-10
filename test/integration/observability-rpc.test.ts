@@ -188,6 +188,14 @@ describe("ObservabilityRpcServer", () => {
 
     const self = appendRoutedEvent(harness, "term_a", "wB");
     server.publishAgentEvent(self);
+    const unknownTerminal = harness.agentEvents.append({
+      herdrSessionName: "default",
+      payload: {},
+      terminalId: null,
+      type: "agent.done",
+      workspaceId: "wB",
+    });
+    server.publishAgentEvent(unknownTerminal);
     await tick();
     expect(piA.notifications).toEqual([]);
 
@@ -208,6 +216,12 @@ describe("ObservabilityRpcServer", () => {
     await expect(piA.request("agent.notifications.ack", { eventId: self.id })).rejects.toThrow(
       "Only the current orchestrator",
     );
+    await expect(
+      piB.request("agent.notifications.ack", { eventId: worker.id }),
+    ).resolves.toMatchObject({
+      acknowledged: true,
+      state: { ackedEventId: worker.id },
+    });
     await expect(
       piB.request("agent.notifications.ack", { eventId: self.id }),
     ).resolves.toMatchObject({

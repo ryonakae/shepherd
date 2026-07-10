@@ -64,8 +64,6 @@ type TimerHandle = ReturnType<typeof setTimeout>;
 
 type GraceTimer = {
   handle: TimerHandle;
-  scope: AgentScope;
-  terminalId: string;
 };
 
 export class ObservabilityRpcServer {
@@ -151,7 +149,7 @@ export class ObservabilityRpcServer {
   }
 
   publishAgentEvent(event: AgentEventRecord): void {
-    if (!event.workspaceId) return;
+    if (!event.workspaceId || !event.terminalId) return;
     const scope = { herdrSessionName: event.herdrSessionName, workspaceId: event.workspaceId };
     const owner = this.#orchestrator.status(scope)?.owner;
     if (!owner || event.terminalId === owner.terminalId) return;
@@ -430,13 +428,12 @@ export class ObservabilityRpcServer {
     const handle = this.#setTimeout(() => {
       this.#disconnectTimers.delete(key);
       if (this.#stopping || this.#hasTerminalPresence(presence)) return;
-      const change = this.#orchestrator.release({
+      this.#releaseCurrentOwnersForTerminal({
         ...presence,
         reason: "disconnected",
       });
-      if (change) this.#publishOrchestratorChange(toWireChange(change));
     }, this.#disconnectGraceMs);
-    this.#disconnectTimers.set(key, { handle, scope: presence, terminalId: presence.terminalId });
+    this.#disconnectTimers.set(key, { handle });
   }
 
   #armStartupGrace(): void {
@@ -451,18 +448,35 @@ export class ObservabilityRpcServer {
         ) {
           return;
         }
-        const change = this.#orchestrator.release({
-          ...state,
+        this.#releaseCurrentOwnersForTerminal({
+          herdrSessionName: state.herdrSessionName,
           reason: "startup_timeout",
           terminalId: state.owner?.terminalId ?? "",
         });
-        if (change) this.#publishOrchestratorChange(toWireChange(change));
       }, this.#startupReconnectGraceMs);
-      this.#startupTimers.set(key, {
-        handle,
-        scope: state,
-        terminalId: state.owner.terminalId,
+      this.#startupTimers.set(key, { handle });
+    }
+  }
+
+  #releaseCurrentOwnersForTerminal(input: {
+    herdrSessionName: string;
+    reason: "disconnected" | "startup_timeout";
+    terminalId: string;
+  }): void {
+    const owners = this.#orchestrator
+      .persistedOwners()
+      .filter(
+        (state) =>
+          state.herdrSessionName === input.herdrSessionName &&
+          state.owner?.terminalId === input.terminalId,
+      );
+    for (const owner of owners) {
+      const change = this.#orchestrator.release({
+        ...owner,
+        reason: input.reason,
+        terminalId: input.terminalId,
       });
+      if (change) this.#publishOrchestratorChange(toWireChange(change));
     }
   }
 

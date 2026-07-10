@@ -68,7 +68,7 @@ export class AgentOrchestratorService {
       scanned += batch.length;
       afterEventId = batch.at(-1)?.id ?? afterEventId;
       for (const event of batch) {
-        if (event.terminalId !== input.terminalId) pending.push(event);
+        if (event.terminalId !== null && event.terminalId !== input.terminalId) pending.push(event);
         if (pending.length === limit) break;
       }
     }
@@ -76,6 +76,19 @@ export class AgentOrchestratorService {
   }
 
   ack(input: AgentScope & { eventId: number; terminalId: string }): AgentOrchestratorState {
+    const state = this.#scopes.get(input);
+    if (!state?.owner || state.owner.terminalId !== input.terminalId) {
+      throw new Error("Only the current orchestrator can acknowledge notifications");
+    }
+    if (input.eventId <= state.ackedEventId) return state;
+    const next = this.#agentEvents.nextDeliverableAfter({
+      ...input,
+      afterEventId: state.ackedEventId,
+      ownerTerminalId: input.terminalId,
+    });
+    if (next?.id !== input.eventId) {
+      throw new Error("Only the next pending orchestrator event can be acknowledged");
+    }
     return this.#scopes.ack(input);
   }
 

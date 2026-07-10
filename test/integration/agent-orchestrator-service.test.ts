@@ -68,6 +68,13 @@ describe("AgentOrchestratorService", () => {
     for (let index = 0; index < 105; index += 1) {
       appendEvent(harness, { terminalId: "term_owner" });
     }
+    harness.agentEvents.append({
+      herdrSessionName: "default",
+      payload: {},
+      terminalId: null,
+      type: "agent.done",
+      workspaceId: "wB",
+    });
     const worker = appendEvent(harness, { terminalId: "term_worker" });
     appendEvent(harness, { terminalId: "term_other", workspaceId: "wC" });
 
@@ -82,15 +89,25 @@ describe("AgentOrchestratorService", () => {
     service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
     service.release({ ...scope, reason: "released", terminalId: "term_a" });
     const pending = appendEvent(harness, { terminalId: "term_worker" });
+    const later = appendEvent(harness, { terminalId: "term_worker_2" });
     service.claim({ ...scope, paneId: "wB:p2", terminalId: "term_b" });
 
-    expect(service.pending({ ...scope, terminalId: "term_b" })).toMatchObject([{ id: pending.id }]);
+    expect(service.pending({ ...scope, terminalId: "term_b" })).toMatchObject([
+      { id: pending.id },
+      { id: later.id },
+    ]);
+    expect(() => service.ack({ ...scope, eventId: later.id, terminalId: "term_b" })).toThrow(
+      "Only the next pending orchestrator event can be acknowledged",
+    );
+    expect(() =>
+      service.ack({ ...scope, eventId: later.id + 10_000, terminalId: "term_b" }),
+    ).toThrow("Only the next pending orchestrator event can be acknowledged");
     expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_b" }).ackedEventId).toBe(
       pending.id,
     );
-    expect(
-      service.ack({ ...scope, eventId: pending.id - 1, terminalId: "term_b" }).ackedEventId,
-    ).toBe(pending.id);
+    expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_b" }).ackedEventId).toBe(
+      pending.id,
+    );
     expect(() => service.ack({ ...scope, eventId: pending.id + 1, terminalId: "term_a" })).toThrow(
       "Only the current orchestrator can acknowledge notifications",
     );

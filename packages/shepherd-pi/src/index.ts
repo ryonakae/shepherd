@@ -190,8 +190,8 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     };
 
     const handleAgentEvent = (event: AgentEventWireRecord, ctx: PiContext | undefined) => {
-      if (!state.isOrchestrator || !state.currentScope) return;
-      if (event.terminalId && event.terminalId === state.currentScope.terminalId) return;
+      if (!state.isOrchestrator || !state.currentScope || !event.terminalId) return;
+      if (event.terminalId === state.currentScope.terminalId) return;
       addPendingEvents([event], ctx);
       pi.appendEntry?.("shepherd.agent_event", event);
       if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(event)) {

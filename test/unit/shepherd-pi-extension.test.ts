@@ -145,6 +145,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await client.connect();
       client.emitStream({ method: "agent.event", params: { event: event(43, "term_worker") } });
       client.emitStream({ method: "agent.event", params: { event: event(44, "term_pi") } });
+      client.emitStream({ method: "agent.event", params: { event: event(45, null) } });
 
       expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
       expect(pi.messages).toEqual([expect.stringContaining("agent.done")]);
@@ -547,7 +548,7 @@ function connectionResponse(
   };
 }
 
-function event(id: number, terminalId: string): AgentEventWireRecord {
+function event(id: number, terminalId: string | null): AgentEventWireRecord {
   return {
     compactHistory: { lastAssistantMessage: { text: "done" } },
     id,

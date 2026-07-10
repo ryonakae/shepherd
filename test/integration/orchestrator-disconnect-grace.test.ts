@@ -76,6 +76,25 @@ describe("orchestrator connection grace", () => {
     harness.sqlite.close();
   });
 
+  test("disconnect expiry follows an owner moved during the grace window", async () => {
+    const scheduler = new ManualScheduler();
+    const { harness, orchestrator, server, socketPath } = await openServer(scheduler);
+    const owner = await RpcTestClient.connect(socketPath);
+    await register(owner, "owner");
+    await owner.request("agent.orchestrator.set", { enabled: true });
+
+    owner.close();
+    await socketTick();
+    const agents = moveOwnerAgent(harness);
+    server.reconcileAgentLocations({ agents, herdrSessionName: "default" });
+    const destination = { herdrSessionName: "default", workspaceId: "wC" };
+    expect(orchestrator.status(destination)?.owner?.terminalId).toBe("term_owner");
+    scheduler.advance(50);
+    expect(orchestrator.status(destination)?.owner).toBeNull();
+
+    harness.sqlite.close();
+  });
+
   test("startup grace preserves a matching reconnect and expires an absent owner", async () => {
     const scheduler = new ManualScheduler();
     const setup = createHarness();
@@ -98,8 +117,12 @@ describe("orchestrator connection grace", () => {
     const absentOrchestrator = createOrchestrator(absentSetup.harness);
     absentOrchestrator.claim({ ...scope, paneId: "wB:p-owner", terminalId: "term_owner" });
     const absent = await startServer(absentSetup, absentOrchestrator, scheduler);
+    const movedAgents = moveOwnerAgent(absentSetup.harness);
+    absent.server.reconcileAgentLocations({ agents: movedAgents, herdrSessionName: "default" });
+    const movedScope = { herdrSessionName: "default", workspaceId: "wC" };
+    expect(absentOrchestrator.status(movedScope)?.owner?.terminalId).toBe("term_owner");
     scheduler.advance(100);
-    expect(absentOrchestrator.status(scope)?.owner).toBeNull();
+    expect(absentOrchestrator.status(movedScope)?.owner).toBeNull();
     absentSetup.harness.sqlite.close();
     await absent.server.stop();
     servers.splice(servers.indexOf(absent.server), 1);
@@ -156,6 +179,26 @@ function createHarness() {
     herdrSessionName: "default",
   });
   return { dir, harness, socketPath };
+}
+
+function moveOwnerAgent(harness: ReturnType<typeof openObservabilityDbHarness>) {
+  return harness.agents.replaceForSession({
+    agents: [
+      {
+        agent: "pi",
+        pane_id: "wC:p-owner",
+        terminal_id: "term_owner",
+        workspace_id: "wC",
+      },
+      {
+        agent: "pi",
+        pane_id: "wB:p-observer",
+        terminal_id: "term_observer",
+        workspace_id: "wB",
+      },
+    ],
+    herdrSessionName: "default",
+  });
 }
 
 function createOrchestrator(harness: ReturnType<typeof openObservabilityDbHarness>) {

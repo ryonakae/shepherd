@@ -88,6 +88,29 @@ export class AgentEventStore {
     return rows.map(mapAgentEvent);
   }
 
+  nextDeliverableAfter(input: {
+    afterEventId: number;
+    herdrSessionName: string;
+    ownerTerminalId: string;
+    workspaceId: string;
+  }): AgentEventRecord | undefined {
+    const row = this.#sqlite
+      .prepare(
+        `select * from agent_events
+         where id > ?
+           and herdr_session_name = ?
+           and workspace_id = ?
+           and terminal_id is not null
+           and terminal_id != ?
+         order by id asc
+         limit 1`,
+      )
+      .get(input.afterEventId, input.herdrSessionName, input.workspaceId, input.ownerTerminalId) as
+      | AgentEventRow
+      | undefined;
+    return row ? mapAgentEvent(row) : undefined;
+  }
+
   latestEventId(scope: AgentQueryScope = {}): number {
     const clauses: string[] = [];
     const params: Array<number | string | null> = [];
