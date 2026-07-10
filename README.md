@@ -64,7 +64,11 @@ shepherd agent read wB:p2 --workspace wB --limit 20 --json
 
 ## Pi extension
 
-The `shepherd-pi` extension connects to the Shepherd daemon when Pi runs inside Herdr. Before a Pi turn, it injects current-workspace compact agent history as hidden context. It also receives unread agent updates from the daemon and includes them in the next turn.
+The `shepherd-pi` extension connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn. Pushed unread agent updates go only to the terminal explicitly selected as that workspace's Shepherd orchestrator.
+
+Enter `/shepherd orchestrator on` in Pi to claim the role. Use `/shepherd orchestrator` or `/shepherd orchestrator status` to inspect it, and `/shepherd orchestrator off` from the owner to release it. Claiming from another Pi in the same Herdr session/workspace transfers the role atomically. With no owner, no Pi receives pushed updates.
+
+The role follows the Herdr terminal across Pi session replacement and pane movement. It clears when that terminal remains disconnected beyond the grace period. Only the owner shows `Shepherd: orchestrator` in the Pi footer.
 
 ## Herdr plugin
 

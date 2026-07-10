@@ -52,6 +52,6 @@ Use `--session <name>` when workspace ids or agent names are ambiguous across ru
 ## Boundaries
 
 - Use Herdr for workspace, tab, pane, terminal output, wait, send, focus, and attach operations.
-- Use Shepherd for compact agent history and agent updates.
+- Use Shepherd for compact agent history and agent updates. The `shepherd-pi` extension gives every Pi current-workspace compact context, but includes unread updates only for the explicitly selected Shepherd orchestrator terminal. Do not claim that role unless the user asks.
 - Do not assume target names; read them from `shepherd agent list --json`.
 - Do not expect stopped Herdr sessions to be indexed.

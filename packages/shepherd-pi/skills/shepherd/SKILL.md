@@ -30,4 +30,4 @@ shepherd agent get claude --workspace wB --json
 
 Use Herdr for pane/tab/terminal control. Use Shepherd for compact agent history.
 
-When the `shepherd-pi` extension is active, Pi may receive current-workspace compact agent history and unread agent updates as hidden context before a turn.
+When the `shepherd-pi` extension is active, current-workspace compact agent history remains available to every Pi instance before a turn. Unread agent updates are included only when that terminal is the explicit Shepherd orchestrator. Do not claim the orchestrator role unless the user asks.

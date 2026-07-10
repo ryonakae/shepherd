@@ -64,7 +64,11 @@ shepherd agent read wB:p2 --workspace wB --limit 20 --json
 
 ## Pi extension
 
-`shepherd-pi` extension は、Pi が Herdr 内で動くと Shepherd daemon に接続します。Pi の turn 前に、current workspace の compact agent history を hidden context として注入します。daemon から unread agent update も受け取り、次の turn に含めます。
+`shepherd-pi` extension は、Pi が Herdr 内で動くと Shepherd daemon に接続します。接続中のすべての Pi は、turn 前に current workspace の compact agent history を hidden context として受け取ります。push される unread agent update を受け取るのは、その workspace の Shepherd オーケストレーターとして明示的に選んだ terminal だけです。
+
+Pi で `/shepherd orchestrator on` を入力すると role を取得できます。状態確認には `/shepherd orchestrator` または `/shepherd orchestrator status`、owner からの解除には `/shepherd orchestrator off` を使います。同じ Herdr session/workspace の別 Pi で `on` を実行すると role はその Pi へ即座に移ります。owner がいない間、どの Pi にも update は push されません。
+
+role は Pi session の切り替えや pane の移動後も同じ Herdr terminal に追従します。その terminal が grace period を超えて切断された場合は解除されます。Pi footer に `Shepherd: orchestrator` を表示するのは owner だけです。
 
 ## Herdr plugin
 
