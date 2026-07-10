@@ -36,6 +36,17 @@ export class AgentOrchestratorScopeStore {
     return row ? mapScope(row) : undefined;
   }
 
+  listOwned(): AgentOrchestratorState[] {
+    const rows = this.#sqlite
+      .prepare(
+        `select * from agent_orchestrator_scopes
+         where owner_terminal_id is not null
+         order by herdr_session_name, workspace_id`,
+      )
+      .all() as ScopeRow[];
+    return rows.map(mapScope);
+  }
+
   listOwnedForSession(herdrSessionName: string): AgentOrchestratorState[] {
     const rows = this.#sqlite
       .prepare(
