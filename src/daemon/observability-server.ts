@@ -159,17 +159,55 @@ export class ObservabilityRpcServer {
     if (socket) this.#write(socket, { method: "agent.event", params: { event } });
   }
 
-  publishOrchestratorChanges(changes: AgentOrchestratorChanged[]): void {
-    for (const change of changes) this.#publishOrchestratorChange(change);
-  }
+  reconcileAgentLocations(input: { agents: AgentIndexRecord[]; herdrSessionName: string }): void {
+    const byTerminal = new Map(
+      input.agents.flatMap((agent) =>
+        agent.terminalId ? ([[agent.terminalId, agent]] as const) : [],
+      ),
+    );
+    const owners = this.#orchestrator
+      .persistedOwners()
+      .filter((state) => state.herdrSessionName === input.herdrSessionName);
 
-  updateTerminalPresence(input: PiPresence): void {
     for (const [socket, presence] of this.#piPresenceBySocket) {
-      if (
-        presence.herdrSessionName === input.herdrSessionName &&
-        presence.terminalId === input.terminalId
-      ) {
-        this.#piPresenceBySocket.set(socket, { ...presence, ...input });
+      if (presence.herdrSessionName !== input.herdrSessionName) continue;
+      const agent = byTerminal.get(presence.terminalId);
+      if (!agent) continue;
+      this.#piPresenceBySocket.set(socket, {
+        ...presence,
+        paneId: agent.paneId,
+        workspaceId: agent.workspaceId,
+      });
+    }
+
+    for (const ownerState of owners) {
+      const owner = ownerState.owner;
+      if (!owner) continue;
+      const current = this.#orchestrator.status(ownerState);
+      if (current?.owner?.terminalId !== owner.terminalId) continue;
+      const agent = byTerminal.get(owner.terminalId);
+      if (!agent) continue;
+      if (agent.workspaceId === ownerState.workspaceId) {
+        if (agent.paneId === owner.paneId) continue;
+        const change = this.#orchestrator.claim({
+          ...ownerState,
+          paneId: agent.paneId,
+          terminalId: owner.terminalId,
+        });
+        this.#publishOrchestratorChange(toWireChange({ ...change, reason: "moved" }));
+        continue;
+      }
+      const changes = this.#orchestrator.move({
+        from: ownerState,
+        paneId: agent.paneId,
+        terminalId: owner.terminalId,
+        to: {
+          herdrSessionName: input.herdrSessionName,
+          workspaceId: agent.workspaceId,
+        },
+      });
+      for (const change of changes) {
+        this.#publishOrchestratorChange(toWireChange(change));
       }
     }
   }

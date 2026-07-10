@@ -48,7 +48,7 @@ export class AgentIndexService {
     herdrSessionName: string;
     sessionDir: string;
     socketPath: string;
-  }): Promise<void> {
+  }): Promise<AgentIndexRecord[]> {
     const client = this.#clientFactory({ socketPath: input.socketPath });
     try {
       const snapshot = normalizeHerdrSessionSnapshot(await client.sessionSnapshot());
@@ -68,6 +68,7 @@ export class AgentIndexService {
       for (const agent of agents) {
         await this.#compactHistory(agent);
       }
+      return agents;
     } finally {
       client.close();
     }

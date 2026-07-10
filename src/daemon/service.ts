@@ -56,6 +56,7 @@ export async function runObservabilityDaemonService(
     herdrSessions,
     index,
     onAgentEvent: (event) => server.publishAgentEvent(event),
+    onAgentIndexRefreshed: (refreshed) => server.reconcileAgentLocations(refreshed),
     sessionList: createHerdrSessionListRunner({ env: runtime.environment }),
   });
 

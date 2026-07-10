@@ -3,7 +3,7 @@ import type { HerdrSessionStore } from "@/db/herdr-sessions.js";
 import type { HerdrSessionListEntry, HerdrSessionListRunner } from "@/herdr/session-list.js";
 import { HerdrSocketClient } from "@/herdr/socket-client.js";
 import type { AgentIndexService } from "@/observability/agent-index-service.js";
-import type { AgentEventRecord } from "@/observability/contracts.js";
+import type { AgentEventRecord, AgentIndexRecord } from "@/observability/contracts.js";
 
 type Watcher = {
   abort: AbortController;
@@ -13,7 +13,6 @@ type Watcher = {
 };
 
 export class HerdrSessionWatchManager {
-  readonly #agents: AgentStore;
   readonly #clientFactory: (input: {
     socketPath: string;
   }) => Pick<HerdrSocketClient, "close" | "subscribeEvents">;
@@ -21,6 +20,10 @@ export class HerdrSessionWatchManager {
   readonly #index: AgentIndexService;
   readonly #intervalMs: number;
   readonly #onAgentEvent: (event: AgentEventRecord) => void;
+  readonly #onAgentIndexRefreshed: (input: {
+    agents: AgentIndexRecord[];
+    herdrSessionName: string;
+  }) => void;
   readonly #reconnectDelayMs: number;
   readonly #sessionList: HerdrSessionListRunner;
   readonly #watchers = new Map<string, Watcher>();
@@ -35,15 +38,16 @@ export class HerdrSessionWatchManager {
     index: AgentIndexService;
     intervalMs?: number;
     onAgentEvent(event: AgentEventRecord): void;
+    onAgentIndexRefreshed?(input: { agents: AgentIndexRecord[]; herdrSessionName: string }): void;
     reconnectDelayMs?: number;
     sessionList: HerdrSessionListRunner;
   }) {
-    this.#agents = options.agents;
     this.#clientFactory = options.clientFactory ?? ((input) => new HerdrSocketClient(input));
     this.#herdrSessions = options.herdrSessions;
     this.#index = options.index;
     this.#intervalMs = options.intervalMs ?? 60_000;
     this.#onAgentEvent = options.onAgentEvent;
+    this.#onAgentIndexRefreshed = options.onAgentIndexRefreshed ?? (() => undefined);
     this.#reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
     this.#sessionList = options.sessionList;
   }
@@ -112,12 +116,8 @@ export class HerdrSessionWatchManager {
     signal: AbortSignal,
   ): Promise<void> {
     while (!signal.aborted) {
-      await this.#index.refreshHerdrSession({
-        herdrSessionName: entry.name,
-        sessionDir: entry.sessionDir,
-        socketPath: entry.socketPath,
-      });
-      const paneIds = this.#agents.listForHerdrSession(entry.name).map((agent) => agent.paneId);
+      const agents = await this.#refresh(entry);
+      const paneIds = agents.map((agent) => agent.paneId);
       let restart = false;
       for await (const event of client.subscribeEvents({ paneIds }, { signal })) {
         if (signal.aborted) return;
@@ -127,11 +127,7 @@ export class HerdrSessionWatchManager {
             event,
             herdrSessionName: entry.name,
             refresh: async () => {
-              await this.#index.refreshHerdrSession({
-                herdrSessionName: entry.name,
-                sessionDir: entry.sessionDir,
-                socketPath: entry.socketPath,
-              });
+              await this.#refresh(entry);
             },
           });
           if (agentEvent) this.#onAgentEvent(agentEvent);
@@ -146,6 +142,16 @@ export class HerdrSessionWatchManager {
         await delay(this.#reconnectDelayMs, signal);
       }
     }
+  }
+
+  async #refresh(entry: HerdrSessionListEntry): Promise<AgentIndexRecord[]> {
+    const agents = await this.#index.refreshHerdrSession({
+      herdrSessionName: entry.name,
+      sessionDir: entry.sessionDir,
+      socketPath: entry.socketPath,
+    });
+    this.#onAgentIndexRefreshed({ agents, herdrSessionName: entry.name });
+    return agents;
   }
 }
 
