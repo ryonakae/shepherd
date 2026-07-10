@@ -1,8 +1,13 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, test } from "vitest";
+import type { AgentEventRecord, AgentOrchestratorChanged } from "@/observability/contracts.js";
 import {
   agentGetInputSchema,
   agentListInputSchema,
+  agentOrchestratorAckInputSchema,
+  agentOrchestratorGetInputSchema,
+  agentOrchestratorRegisterInputSchema,
+  agentOrchestratorSetInputSchema,
   agentReadInputSchema,
   agentTelemetryInputSchema,
 } from "@/observability/schemas.js";
@@ -22,6 +27,73 @@ describe("agent observability contracts", () => {
     expect(Value.Check(agentReadInputSchema, { limit: 10, target: "wB:p2" })).toBe(true);
     expect(Value.Check(agentReadInputSchema, { limit: 0, target: "wB:p2" })).toBe(false);
     expect(Value.Check(agentReadInputSchema, { limit: 501, target: "wB:p2" })).toBe(false);
+  });
+
+  test("validates orchestrator connection-bound RPC inputs", () => {
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        autoResume: false,
+        herdrSocketPath: "/tmp/herdr.sock",
+        paneId: "wB:p1",
+        subscriberId: "pi-session-1",
+        subscriberKind: "pi",
+        workspaceId: "wB",
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        herdrSocketPath: "/tmp/herdr.sock",
+        paneId: "wB:p1",
+        subscriberId: "pi-session-1",
+        subscriberKind: "claude",
+        workspaceId: "wB",
+      }),
+    ).toBe(false);
+    expect(Value.Check(agentOrchestratorSetInputSchema, { enabled: true })).toBe(true);
+    expect(Value.Check(agentOrchestratorSetInputSchema, { enabled: false })).toBe(true);
+    expect(Value.Check(agentOrchestratorSetInputSchema, {})).toBe(false);
+    expect(Value.Check(agentOrchestratorGetInputSchema, {})).toBe(true);
+    expect(Value.Check(agentOrchestratorAckInputSchema, { eventId: 42 })).toBe(true);
+    expect(
+      Value.Check(agentOrchestratorAckInputSchema, {
+        eventId: 42,
+        subscriptionId: "ans_legacy",
+      }),
+    ).toBe(false);
+  });
+
+  test("keeps terminal identity in orchestrator contracts", () => {
+    const event: AgentEventRecord = {
+      agentId: null,
+      compactHistory: null,
+      createdAt: new Date(),
+      herdrSessionName: "default",
+      id: 1,
+      paneId: "wB:p1",
+      payload: {},
+      terminalId: "term_1",
+      type: "agent.done",
+      workspaceId: "wB",
+    };
+    const change: AgentOrchestratorChanged = {
+      current: {
+        ackedEventId: 1,
+        herdrSessionName: "default",
+        owner: { paneId: "wB:p1", terminalId: "term_1" },
+        updatedAt: "2026-07-10T00:00:00.000Z",
+        workspaceId: "wB",
+      },
+      previous: {
+        ackedEventId: 1,
+        herdrSessionName: "default",
+        owner: null,
+        updatedAt: "2026-07-10T00:00:00.000Z",
+        workspaceId: "wB",
+      },
+      reason: "claimed",
+    };
+    expect(event.terminalId).toBe("term_1");
+    expect(change.current.updatedAt).toMatch(/Z$/);
   });
 
   test("validates agent telemetry", () => {

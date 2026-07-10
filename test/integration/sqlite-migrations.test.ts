@@ -27,11 +27,30 @@ describe("SQLite migrations", () => {
       "agent_history_cache",
       "agent_notification_cursors",
       "agent_notification_subscriptions",
+      "agent_orchestrator_scopes",
       "agents",
       "herdr_sessions",
       "herdr_workspaces",
     ]);
     expect(tables).not.toContain("observed_workspaces");
+    const scopeColumns = sqlite
+      .prepare("pragma table_info(agent_orchestrator_scopes)")
+      .all()
+      .map((row) => row as { name: string });
+    expect(scopeColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "acked_event_id",
+        "herdr_session_name",
+        "owner_pane_id",
+        "owner_terminal_id",
+        "workspace_id",
+      ]),
+    );
+    const eventColumns = sqlite
+      .prepare("pragma table_info(agent_events)")
+      .all()
+      .map((row) => row as { name: string; notnull: number });
+    expect(eventColumns.find((column) => column.name === "terminal_id")?.notnull).toBe(0);
     sqlite.close();
   });
 });

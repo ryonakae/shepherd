@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { AgentEventStore } from "@/db/agent-events.js";
 import { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import { AgentNotificationCursorStore } from "@/db/agent-notification-cursors.js";
+import { AgentOrchestratorScopeStore } from "@/db/agent-orchestrator-scopes.js";
 import { AgentStore } from "@/db/agents.js";
 import { applyMigrations } from "@/db/apply-migrations.js";
 import { openSqlite } from "@/db/client.js";
@@ -22,6 +23,7 @@ export function openObservabilityDbHarness() {
     agentEvents,
     agentHistoryCache: new AgentHistoryCacheStore(sqlite),
     agentNotificationCursors: new AgentNotificationCursorStore({ events: agentEvents, sqlite }),
+    agentOrchestratorScopes: new AgentOrchestratorScopeStore(sqlite),
     agents: new AgentStore(sqlite),
     herdrSessions: new HerdrSessionStore(sqlite),
     herdrWorkspaces: new HerdrWorkspaceStore(sqlite),

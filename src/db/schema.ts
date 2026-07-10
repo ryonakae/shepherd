@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const agentStatusValues = ["blocked", "done", "idle", "unknown", "working"] as const;
 
@@ -70,6 +70,7 @@ export const agentEvents = sqliteTable(
     idempotencyKey: text("idempotency_key"),
     paneId: text("pane_id"),
     payloadJson: text("payload_json").notNull(),
+    terminalId: text("terminal_id"),
     type: text("type").notNull(),
     workspaceId: text("workspace_id"),
   },
@@ -79,6 +80,22 @@ export const agentEvents = sqliteTable(
       table.idempotencyKey,
     ),
   ],
+);
+
+export const agentOrchestratorScopes = sqliteTable(
+  "agent_orchestrator_scopes",
+  {
+    ackedEventId: integer("acked_event_id").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    herdrSessionName: text("herdr_session_name")
+      .notNull()
+      .references(() => herdrSessions.name, { onDelete: "cascade" }),
+    ownerPaneId: text("owner_pane_id"),
+    ownerTerminalId: text("owner_terminal_id"),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.herdrSessionName, table.workspaceId] })],
 );
 
 export const agentHistoryCache = sqliteTable(

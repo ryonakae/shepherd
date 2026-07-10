@@ -67,6 +67,30 @@ export const agentNotificationAckInputSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const agentOrchestratorRegisterInputSchema = Type.Object(
+  {
+    autoResume: Type.Optional(Type.Boolean()),
+    herdrSocketPath: Type.String({ minLength: 1 }),
+    paneId: Type.String({ minLength: 1 }),
+    subscriberId: Type.String({ minLength: 1 }),
+    subscriberKind: Type.Literal("pi"),
+    workspaceId: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+export const agentOrchestratorSetInputSchema = Type.Object(
+  { enabled: Type.Boolean() },
+  { additionalProperties: false },
+);
+
+export const agentOrchestratorGetInputSchema = Type.Object({}, { additionalProperties: false });
+
+export const agentOrchestratorAckInputSchema = Type.Object(
+  { eventId: Type.Integer({ minimum: 1 }) },
+  { additionalProperties: false },
+);
+
 const agentToolTelemetryEventSchema = Type.Object(
   {
     artifactRefs: Type.Array(Type.String()),

@@ -39,64 +39,96 @@ export class AgentStore {
     herdrSessionName: string;
   }): AgentIndexRecord[] {
     const now = Date.now();
-    const seenPaneIds: string[] = [];
-    for (const agent of input.agents) {
+    const snapshots = input.agents.flatMap((agent) => {
       const paneId = stringValue(agent.pane_id) ?? stringValue(agent.paneId);
       const workspaceId = stringValue(agent.workspace_id) ?? stringValue(agent.workspaceId);
-      if (!paneId || !workspaceId) continue;
-      seenPaneIds.push(paneId);
-      const existing = this.findByPane({ herdrSessionName: input.herdrSessionName, paneId });
-      const id = existing?.id ?? `ag_${randomUUID()}`;
-      const firstSeenAt = existing?.firstSeenAt.getTime() ?? now;
-      this.#sqlite
-        .prepare(
-          `insert into agents
-           (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, agent_status, agent_session_json, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           on conflict(herdr_session_name, pane_id) do update set
-             terminal_id = excluded.terminal_id,
-             tab_id = excluded.tab_id,
-             workspace_id = excluded.workspace_id,
-             agent = excluded.agent,
-             agent_status = excluded.agent_status,
-             agent_session_json = excluded.agent_session_json,
-             cwd = excluded.cwd,
-             foreground_cwd = excluded.foreground_cwd,
-             focused = excluded.focused,
-             last_seen_at = excluded.last_seen_at`,
-        )
-        .run(
-          id,
-          input.herdrSessionName,
+      if (!paneId || !workspaceId) return [];
+      return [
+        {
+          agent,
           paneId,
-          stringValue(agent.terminal_id) ?? stringValue(agent.terminalId),
-          stringValue(agent.tab_id) ?? stringValue(agent.tabId),
+          terminalId: stringValue(agent.terminal_id) ?? stringValue(agent.terminalId),
           workspaceId,
-          stringValue(agent.agent),
-          parseAgentStatus(agent.agent_status),
-          agentSessionJson(agent.agent_session),
-          stringValue(agent.cwd),
-          stringValue(agent.foreground_cwd) ?? stringValue(agent.foregroundCwd),
-          agent.focused === true ? 1 : 0,
-          firstSeenAt,
+        },
+      ];
+    });
+
+    return this.#transaction(() => {
+      const existing = this.listForHerdrSession(input.herdrSessionName);
+      const byPane = new Map(existing.map((agent) => [agent.paneId, agent]));
+      const byTerminal = new Map(
+        existing.flatMap((agent) => (agent.terminalId ? [[agent.terminalId, agent] as const] : [])),
+      );
+      const matched = snapshots.map((snapshot) => ({
+        existing:
+          (snapshot.terminalId ? byTerminal.get(snapshot.terminalId) : undefined) ??
+          byPane.get(snapshot.paneId),
+        snapshot,
+      }));
+      const temporaryPaneIds = new Set<string>();
+      for (const { existing: current, snapshot } of matched) {
+        if (current && current.paneId !== snapshot.paneId) temporaryPaneIds.add(current.id);
+        const occupant = byPane.get(snapshot.paneId);
+        if (occupant && occupant.id !== current?.id) temporaryPaneIds.add(occupant.id);
+      }
+      for (const id of temporaryPaneIds) {
+        this.#sqlite
+          .prepare("update agents set pane_id = ? where id = ?")
+          .run(`__shepherd_moving__:${id}`, id);
+      }
+
+      const retainedIds: string[] = [];
+      for (const { existing: current, snapshot } of matched) {
+        const id = current?.id ?? `ag_${randomUUID()}`;
+        retainedIds.push(id);
+        const values = [
+          snapshot.paneId,
+          snapshot.terminalId,
+          stringValue(snapshot.agent.tab_id) ?? stringValue(snapshot.agent.tabId),
+          snapshot.workspaceId,
+          stringValue(snapshot.agent.agent),
+          parseAgentStatus(snapshot.agent.agent_status),
+          agentSessionJson(snapshot.agent.agent_session),
+          stringValue(snapshot.agent.cwd),
+          stringValue(snapshot.agent.foreground_cwd) ?? stringValue(snapshot.agent.foregroundCwd),
+          snapshot.agent.focused === true ? 1 : 0,
           now,
-        );
-    }
+        ];
+        if (current) {
+          this.#sqlite
+            .prepare(
+              `update agents
+               set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?,
+                   agent_status = ?, agent_session_json = ?, cwd = ?, foreground_cwd = ?,
+                   focused = ?, last_seen_at = ?
+               where id = ?`,
+            )
+            .run(...values, id);
+        } else {
+          this.#sqlite
+            .prepare(
+              `insert into agents
+               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, agent_status, agent_session_json, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(id, input.herdrSessionName, ...values, now);
+        }
+      }
 
-    if (seenPaneIds.length === 0) {
-      this.#sqlite
-        .prepare("delete from agents where herdr_session_name = ?")
-        .run(input.herdrSessionName);
-    } else {
-      const placeholders = seenPaneIds.map(() => "?").join(", ");
-      this.#sqlite
-        .prepare(
-          `delete from agents where herdr_session_name = ? and pane_id not in (${placeholders})`,
-        )
-        .run(input.herdrSessionName, ...seenPaneIds);
-    }
-
-    return this.list({ herdrSessionName: input.herdrSessionName });
+      if (retainedIds.length === 0) {
+        this.#sqlite
+          .prepare("delete from agents where herdr_session_name = ?")
+          .run(input.herdrSessionName);
+      } else {
+        const placeholders = retainedIds.map(() => "?").join(", ");
+        this.#sqlite
+          .prepare(
+            `delete from agents where herdr_session_name = ? and id not in (${placeholders})`,
+          )
+          .run(input.herdrSessionName, ...retainedIds);
+      }
+      return this.listForHerdrSession(input.herdrSessionName);
+    });
   }
 
   updateStatus(input: {
@@ -146,6 +178,16 @@ export class AgentStore {
     return row ? mapAgent(row) : undefined;
   }
 
+  findByTerminal(input: {
+    herdrSessionName: string;
+    terminalId: string;
+  }): AgentIndexRecord | undefined {
+    const row = this.#sqlite
+      .prepare("select * from agents where herdr_session_name = ? and terminal_id = ?")
+      .get(input.herdrSessionName, input.terminalId) as AgentRow | undefined;
+    return row ? mapAgent(row) : undefined;
+  }
+
   get(id: string): AgentIndexRecord {
     const row = this.#sqlite.prepare("select * from agents where id = ?").get(id) as
       | AgentRow
@@ -172,6 +214,18 @@ export class AgentStore {
         )
         .join("; ")}`,
     );
+  }
+
+  #transaction<T>(operation: () => T): T {
+    this.#sqlite.exec("begin immediate");
+    try {
+      const result = operation();
+      this.#sqlite.exec("commit");
+      return result;
+    } catch (error) {
+      this.#sqlite.exec("rollback");
+      throw error;
+    }
   }
 }
 

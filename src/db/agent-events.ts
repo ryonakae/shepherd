@@ -15,6 +15,7 @@ type AgentEventRow = {
   idempotency_key: string | null;
   pane_id: string | null;
   payload_json: string;
+  terminal_id: string | null;
   type: AgentEventType;
   workspace_id: string | null;
 };
@@ -33,6 +34,7 @@ export class AgentEventStore {
     idempotencyKey?: string | null;
     paneId?: string | null;
     payload: unknown;
+    terminalId?: string | null;
     type: AgentEventType;
     workspaceId?: string | null;
   }): AgentEventRecord {
@@ -48,14 +50,15 @@ export class AgentEventStore {
     const result = this.#sqlite
       .prepare(
         `insert into agent_events
-         (herdr_session_name, agent_id, pane_id, workspace_id, type, payload_json, compact_history_json, idempotency_key, created_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (herdr_session_name, agent_id, pane_id, workspace_id, terminal_id, type, payload_json, compact_history_json, idempotency_key, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.herdrSessionName,
         input.agentId ?? null,
         input.paneId ?? null,
         input.workspaceId ?? null,
+        input.terminalId ?? null,
         input.type,
         JSON.stringify(input.payload),
         input.compactHistory ? JSON.stringify(input.compactHistory) : null,
@@ -121,6 +124,7 @@ export function mapAgentEvent(row: AgentEventRow): AgentEventRecord {
     id: row.id,
     paneId: row.pane_id,
     payload: parseJson<unknown>(row.payload_json) ?? {},
+    terminalId: row.terminal_id,
     type: row.type,
     workspaceId: row.workspace_id,
   };

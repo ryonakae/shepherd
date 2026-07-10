@@ -129,8 +129,53 @@ export type AgentEventRecord = {
   id: number;
   paneId: string | null;
   payload: unknown;
+  terminalId: string | null;
   type: AgentEventType;
   workspaceId: string | null;
+};
+
+export type AgentScope = {
+  herdrSessionName: string;
+  workspaceId: string;
+};
+
+export type AgentOrchestratorOwner = {
+  paneId: string;
+  terminalId: string;
+};
+
+export type AgentOrchestratorState = AgentScope & {
+  ackedEventId: number;
+  owner: AgentOrchestratorOwner | null;
+  updatedAt: Date;
+};
+
+export type AgentOrchestratorWireState = AgentScope & {
+  ackedEventId: number;
+  owner: AgentOrchestratorOwner | null;
+  updatedAt: string;
+};
+
+export type AgentOrchestratorChangeReason =
+  | "claimed"
+  | "disconnected"
+  | "moved"
+  | "released"
+  | "startup_timeout";
+
+export type AgentOrchestratorChanged = {
+  current: AgentOrchestratorWireState;
+  previous: AgentOrchestratorWireState;
+  reason: AgentOrchestratorChangeReason;
+};
+
+export type PiPresenceRegistration = {
+  autoResume: boolean;
+  herdrSocketPath: string;
+  paneId: string;
+  subscriberId: string;
+  subscriberKind: "pi";
+  workspaceId: string;
 };
 
 export type AgentNotificationSubscriptionRecord = {

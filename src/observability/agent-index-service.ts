@@ -109,6 +109,7 @@ export class AgentIndexService {
         idempotencyKey: idempotencyKey("agent.status.changed", current, from, to, event),
         paneId,
         payload: payload(current, from, to),
+        terminalId: current.terminalId,
         type: "agent.status.changed",
         workspaceId: current.workspaceId,
       });
@@ -122,6 +123,7 @@ export class AgentIndexService {
         idempotencyKey: idempotencyKey(statusType, current, from, to, event),
         paneId,
         payload: payload(current, from, to),
+        terminalId: current.terminalId,
         type: statusType,
         workspaceId: current.workspaceId,
       });
