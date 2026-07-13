@@ -1,6 +1,6 @@
 {
   "name": "shepherd",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agent history daemon and runtime bridges for Herdr-managed coding agents.",
   "type": "module",
   "bin": {
