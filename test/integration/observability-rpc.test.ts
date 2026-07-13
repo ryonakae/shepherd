@@ -74,6 +74,30 @@ describe("ObservabilityRpcServer", () => {
     harness.sqlite.close();
   });
 
+  test("hides retained agents after their Herdr session stops", async () => {
+    const { client, harness } = await openServer();
+    seedAgent(harness);
+
+    harness.herdrSessions.markStoppedMissingFrom([]);
+
+    expect(
+      harness.agents.findByPane({ herdrSessionName: "default", paneId: "wB:p1" }),
+    ).toBeDefined();
+    await expect(client.request("agent.list", { workspaceId: "wB" })).resolves.toEqual({
+      agents: [],
+    });
+    await expect(client.request("agent.list", { all: true })).resolves.toEqual({ agents: [] });
+    await expect(client.request("agent.get", { target: "pi", workspaceId: "wB" })).rejects.toThrow(
+      "agent target not found: pi",
+    );
+    await expect(
+      client.request("agent.read", { limit: 20, target: "pi", workspaceId: "wB" }),
+    ).rejects.toThrow("agent target not found: pi");
+
+    client.close();
+    harness.sqlite.close();
+  });
+
   test("reads additional runtime histories through agent.read", async () => {
     const { client, dir, harness } = await openServer();
     seedAdditionalRuntimeAgents(harness);

@@ -146,23 +146,30 @@ export class AgentStore {
   }
 
   list(scope: AgentQueryScope = {}): AgentIndexRecord[] {
-    const clauses: string[] = [];
+    const clauses = ["sessions.running = 1"];
     const params: Array<number | string | null> = [];
     if (!scope.all && scope.herdrSessionName) {
-      clauses.push("herdr_session_name = ?");
+      clauses.push("agents.herdr_session_name = ?");
       params.push(scope.herdrSessionName);
     }
     if (!scope.all && scope.workspaceId) {
-      clauses.push("workspace_id = ?");
+      clauses.push("agents.workspace_id = ?");
       params.push(scope.workspaceId);
     }
     if (scope.all && scope.herdrSessionName) {
-      clauses.push("herdr_session_name = ?");
+      clauses.push("agents.herdr_session_name = ?");
       params.push(scope.herdrSessionName);
     }
-    const where = clauses.length > 0 ? ` where ${clauses.join(" and ")}` : "";
+    const where = ` where ${clauses.join(" and ")}`;
     const rows = this.#sqlite
-      .prepare(`select * from agents${where} order by herdr_session_name, workspace_id, pane_id`)
+      .prepare(
+        `select agents.*
+         from agents
+         inner join herdr_sessions as sessions
+           on sessions.name = agents.herdr_session_name
+         ${where}
+         order by agents.herdr_session_name, agents.workspace_id, agents.pane_id`,
+      )
       .all(...params) as AgentRow[];
     return rows.map(mapAgent);
   }
