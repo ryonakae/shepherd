@@ -62,6 +62,22 @@ shepherd agent read wB:p2 --workspace wB --limit 20 --json
 
 `<target>` can be a pane id, terminal id, or agent name that is unique in the selected scope, following Herdr conventions where possible. Use `--session <name>` when the same workspace id or agent name exists in multiple running Herdr sessions.
 
+## Agent Skill
+
+Install the Shepherd CLI and start its daemon before adding the Agent Skill. Then add the Shepherd instructions to supported coding agents:
+
+```bash
+npx skills add ryonakae/shepherd --skill shepherd -g
+```
+
+The Shepherd skill reads structured agent status, compact history, and recent tool results. Use it alone for agent inspection.
+
+Add the official Herdr skill when an agent needs to control workspaces, tabs, panes, terminal input/output, or waits:
+
+```bash
+npx skills add ogulcancelik/herdr --skill herdr -g
+```
+
 ## Pi extension
 
 The `shepherd-pi` extension connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn. Pushed unread agent updates go only to the terminal explicitly selected as that workspace's Shepherd orchestrator.

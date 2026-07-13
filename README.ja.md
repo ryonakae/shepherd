@@ -62,6 +62,22 @@ shepherd agent read wB:p2 --workspace wB --limit 20 --json
 
 `<target>` には、Herdr の慣例に合わせて pane id、terminal id、または scope 内で一意な agent name を指定できます。同じ workspace id や agent name が複数の running Herdr session にある場合は `--session <name>` を付けます。
 
+## Agent Skill
+
+Agent Skill を追加する前に、Shepherd CLI をインストールして daemon を起動します。次のコマンドで、対応する coding agent に Shepherd の手順を追加します。
+
+```bash
+npx skills add ryonakae/shepherd --skill shepherd -g
+```
+
+Shepherd skill は agent の status、compact history、直近の tool result を構造化データとして読み取ります。agent の確認だけなら、Shepherd skill を単独で使えます。
+
+workspace、tab、pane、terminal input/output、wait も agent から操作する場合は、公式 Herdr skill を追加します。
+
+```bash
+npx skills add ogulcancelik/herdr --skill herdr -g
+```
+
 ## Pi extension
 
 `shepherd-pi` extension は、Pi が Herdr 内で動くと Shepherd daemon に接続します。接続中のすべての Pi は、turn 前に current workspace の compact agent history を hidden context として受け取ります。push される unread agent update を受け取るのは、その workspace の Shepherd オーケストレーターとして明示的に選んだ terminal だけです。
