@@ -38,6 +38,24 @@ describe("daemon process manager", () => {
     });
   });
 
+  test("reports orphaned when the pid file is missing but the daemon socket is reachable", async () => {
+    const dir = tempDir();
+    const pidPath = join(dir, "missing.pid");
+
+    await expect(
+      getDaemonStatus({
+        deps: { connectSocket: async () => true },
+        pidPath,
+        socketPath: "/tmp/shepherd.sock",
+      }),
+    ).resolves.toEqual({
+      pidPath,
+      socketPath: "/tmp/shepherd.sock",
+      socketReachable: true,
+      state: "orphaned",
+    });
+  });
+
   test("reports running when the pid file contains a live process", async () => {
     const dir = tempDir();
     const pidPath = join(dir, "shepherd.pid");
@@ -58,6 +76,29 @@ describe("daemon process manager", () => {
       socketPath: "/tmp/shepherd.sock",
       socketReachable: true,
       state: "running",
+    });
+  });
+
+  test("reports orphaned when the pid is stale but the daemon socket is reachable", async () => {
+    const dir = tempDir();
+    const pidPath = join(dir, "shepherd.pid");
+    writeFileSync(pidPath, "1234\n");
+
+    await expect(
+      getDaemonStatus({
+        deps: {
+          connectSocket: async () => true,
+          isProcessRunning: () => false,
+        },
+        pidPath,
+        socketPath: "/tmp/shepherd.sock",
+      }),
+    ).resolves.toEqual({
+      pidPath,
+      socketPath: "/tmp/shepherd.sock",
+      socketReachable: true,
+      stalePid: 1234,
+      state: "orphaned",
     });
   });
 
@@ -130,6 +171,35 @@ describe("daemon process manager", () => {
         socketPath: "/tmp/shepherd.sock",
       }),
     ).rejects.toThrow("Shepherd daemon is already running with pid 1234");
+  });
+
+  test("refuses to start when an orphaned daemon socket is reachable", async () => {
+    const dir = tempDir();
+    const pidPath = join(dir, "shepherd.pid");
+    writeFileSync(pidPath, "1234\n");
+    let spawned = false;
+
+    await expect(
+      startDaemonProcess({
+        deps: {
+          connectSocket: async () => true,
+          isProcessRunning: () => false,
+          spawnProcess: () => {
+            spawned = true;
+            return { pid: 5678, unref() {} };
+          },
+        },
+        entrypointPath: "/repo/dist/src/cli/shepherd-daemon.js",
+        env: {},
+        logPath: join(dir, "shepherd.log"),
+        nodePath: "/usr/bin/node",
+        pidPath,
+        runtimeRecord: runtimeRecord(dir),
+        runtimeRecordPath: join(dir, "runtime.json"),
+        socketPath: "/tmp/shepherd.sock",
+      }),
+    ).rejects.toThrow("Shepherd daemon socket is reachable but its PID is stale");
+    expect(spawned).toBe(false);
   });
 
   test("starts a detached daemon process and writes its pid and runtime record", async () => {

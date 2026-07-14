@@ -23,6 +23,13 @@ export type DaemonRuntimeRecord = {
 };
 
 export type DaemonStatus =
+  | {
+      pidPath: string;
+      socketPath: string;
+      socketReachable: true;
+      stalePid?: number;
+      state: "orphaned";
+    }
   | { pidPath: string; socketPath: string; state: "stopped"; stalePid?: number }
   | {
       pid: number;
@@ -107,11 +114,28 @@ export async function getDaemonStatus(input: {
   const connectSocket = input.deps?.connectSocket ?? defaultConnectSocket;
 
   if (!existsSync(input.pidPath)) {
+    if (await connectSocket(input.socketPath)) {
+      return {
+        pidPath: input.pidPath,
+        socketPath: input.socketPath,
+        socketReachable: true,
+        state: "orphaned",
+      };
+    }
     return { pidPath: input.pidPath, socketPath: input.socketPath, state: "stopped" };
   }
 
   const pid = Number(readFileSync(input.pidPath, "utf8").trim());
   if (!Number.isInteger(pid) || pid <= 0 || !isProcessRunning(pid)) {
+    if (await connectSocket(input.socketPath)) {
+      return {
+        pidPath: input.pidPath,
+        socketPath: input.socketPath,
+        socketReachable: true,
+        stalePid: pid,
+        state: "orphaned",
+      };
+    }
     return {
       pidPath: input.pidPath,
       socketPath: input.socketPath,
@@ -147,6 +171,11 @@ export async function startDaemonProcess(input: {
   });
   if (status.state === "running") {
     throw new Error(`Shepherd daemon is already running with pid ${status.pid}`);
+  }
+  if (status.state === "orphaned") {
+    throw new Error(
+      `Shepherd daemon socket is reachable but its PID is stale: ${status.socketPath}`,
+    );
   }
 
   mkdirSync(dirname(input.pidPath), { mode: 0o700, recursive: true });
@@ -201,6 +230,11 @@ export async function stopDaemonProcess(input: {
   if (status.state === "stopped") {
     rmSync(input.pidPath, { force: true });
     return { alreadyStopped: true };
+  }
+  if (status.state === "orphaned") {
+    throw new Error(
+      `Shepherd daemon socket is reachable but its PID is stale: ${status.socketPath}`,
+    );
   }
 
   const killProcess = deps.killProcess ?? ((pid, signal) => process.kill(pid, signal));

@@ -64,6 +64,102 @@ describe("HerdrSessionWatchManager", () => {
     expect(received).toContainEqual(expect.objectContaining({ type: "agent.idle" }));
   });
 
+  test("reconnects when the Herdr event stream fails", async () => {
+    const harness = openObservabilityDbHarness();
+    let subscribeCalls = 0;
+    let handled = 0;
+    const manager = new HerdrSessionWatchManager({
+      agents: harness.agents,
+      clientFactory: () => ({
+        close() {},
+        async *subscribeEvents() {
+          subscribeCalls += 1;
+          if (subscribeCalls === 1) throw new Error("stream failed");
+          yield { agent_status: "idle", pane_id: "wB:p2", type: "pane.agent_status_changed" };
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        },
+      }),
+      herdrSessions: harness.herdrSessions,
+      index: {
+        async handleHerdrEvent() {
+          handled += 1;
+          return undefined;
+        },
+        async refreshHerdrSession() {
+          return [];
+        },
+      } as unknown as ConstructorParameters<typeof HerdrSessionWatchManager>[0]["index"],
+      intervalMs: 60_000,
+      onAgentEvent() {},
+      reconnectDelayMs: 0,
+      sessionList: async () => [
+        {
+          name: "default",
+          running: true,
+          sessionDir: "/tmp/herdr",
+          socketPath: "/tmp/herdr.sock",
+        },
+      ],
+    });
+
+    await manager.start();
+    await waitFor(() => handled > 0);
+    await manager.stop();
+    harness.sqlite.close();
+
+    expect(subscribeCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  test("refreshes an active session during rescan when a lifecycle event was missed", async () => {
+    const harness = openObservabilityDbHarness();
+    const refreshedPaneIds: string[] = [];
+    let currentPaneId = "wB:p2";
+    const manager = new HerdrSessionWatchManager({
+      agents: harness.agents,
+      clientFactory: () => ({
+        close() {},
+        async *subscribeEvents(_params, options) {
+          await new Promise<void>((resolve) => {
+            options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        },
+      }),
+      herdrSessions: harness.herdrSessions,
+      index: {
+        async handleHerdrEvent() {
+          return undefined;
+        },
+        async refreshHerdrSession() {
+          return [agentRecord(currentPaneId, currentPaneId.split(":")[0] ?? "unknown")];
+        },
+      } as unknown as ConstructorParameters<typeof HerdrSessionWatchManager>[0]["index"],
+      intervalMs: 60_000,
+      onAgentEvent() {},
+      onAgentIndexRefreshed: ({ agents }) => {
+        const paneId = agents[0]?.paneId;
+        if (paneId) refreshedPaneIds.push(paneId);
+      },
+      sessionList: async () => [
+        {
+          name: "default",
+          running: true,
+          sessionDir: "/tmp/herdr",
+          socketPath: "/tmp/herdr.sock",
+        },
+      ],
+    });
+
+    await manager.start();
+    await waitFor(() => refreshedPaneIds.length === 1);
+    currentPaneId = "wJ:p2";
+    await manager.rescanNow();
+    await waitFor(() => refreshedPaneIds.includes("wJ:p2"));
+    await manager.stop();
+    harness.sqlite.close();
+
+    expect(refreshedPaneIds).toEqual(["wB:p2", "wJ:p2"]);
+  });
+
   test("reconciles each refreshed snapshot before subscribing again after a pane move", async () => {
     const harness = openObservabilityDbHarness();
     const operations: string[] = [];

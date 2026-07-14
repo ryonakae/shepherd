@@ -13,7 +13,9 @@ type PendingRequest = {
 };
 
 type HerdrResponse = {
+  data?: unknown;
   error?: { message?: string };
+  event?: string;
   id?: string;
   method?: string;
   params?: unknown;
@@ -21,6 +23,7 @@ type HerdrResponse = {
 };
 
 type EventSubscriber = {
+  fail(error: Error): void;
   push(event: unknown): void;
 };
 
@@ -226,8 +229,14 @@ export class HerdrSocketClient {
     options: { signal?: AbortSignal } = {},
   ): AsyncIterable<unknown> {
     const queue: unknown[] = [];
+    let failure: Error | undefined;
     let wake: (() => void) | undefined;
     const subscriber: EventSubscriber = {
+      fail(error) {
+        failure ??= error;
+        wake?.();
+        wake = undefined;
+      },
       push(event) {
         queue.push(event);
         wake?.();
@@ -237,32 +246,20 @@ export class HerdrSocketClient {
     this.#subscribers.add(subscriber);
     try {
       await this.request("events.subscribe", {
-        subscriptions: [
-          { type: "workspace.updated" },
-          { type: "workspace.renamed" },
-          { type: "workspace.moved" },
-          { type: "workspace.closed" },
-          { type: "tab.created" },
-          { type: "tab.closed" },
-          { type: "tab.moved" },
-          { type: "pane.created" },
-          { type: "pane.closed" },
-          { type: "pane.moved" },
-          { type: "pane.exited" },
-          { type: "pane.agent_detected" },
-          ...(params.paneIds ?? []).map((pane_id) => ({
-            pane_id,
-            type: "pane.agent_status_changed" as const,
-          })),
-        ],
+        subscriptions: (params.paneIds ?? []).map((pane_id) => ({
+          pane_id,
+          type: "pane.agent_status_changed" as const,
+        })),
       });
       while (!options.signal?.aborted) {
+        if (failure) throw failure;
         if (queue.length === 0) {
           await new Promise<void>((resolve) => {
             wake = resolve;
             options.signal?.addEventListener("abort", () => resolve(), { once: true });
           });
         }
+        if (failure) throw failure;
         while (queue.length > 0) {
           yield queue.shift();
         }
@@ -347,15 +344,39 @@ export class HerdrSocketClient {
       pending.reject(error);
     }
     this.#pending.clear();
+    for (const subscriber of this.#subscribers) {
+      subscriber.fail(error);
+    }
   }
 }
 
 function notificationEvent(message: HerdrResponse): unknown {
-  if (typeof message.params === "object" && message.params !== null) {
-    const params = message.params as { event?: unknown };
-    return params.event ?? message.params;
+  if (typeof message.event === "string" && isRecord(message.data)) {
+    return {
+      ...message.data,
+      type: normalizeEventName(message.event),
+    };
   }
-  return message.result ?? message;
+  if (isRecord(message.params)) {
+    return notificationPayload(message.params.event ?? message.params);
+  }
+  return notificationPayload(message.result ?? message);
+}
+
+function notificationPayload(value: unknown): unknown {
+  if (!isRecord(value) || typeof value.event !== "string" || !isRecord(value.data)) return value;
+  return {
+    ...value.data,
+    type: normalizeEventName(value.event),
+  };
+}
+
+function normalizeEventName(value: string): string {
+  return value.includes(".") ? value : value.replace("_", ".");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isUnsupportedSessionSnapshotError(error: unknown): boolean {

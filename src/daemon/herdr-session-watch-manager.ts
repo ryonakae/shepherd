@@ -88,11 +88,11 @@ export class HerdrSessionWatchManager {
 
     for (const entry of running) {
       const existing = this.#watchers.get(entry.name);
-      if (existing && existing.entry.socketPath === entry.socketPath) continue;
       if (existing) {
         existing.abort.abort();
         existing.client.close();
         this.#watchers.delete(entry.name);
+        await existing.loop.catch(() => undefined);
       }
       await this.#startWatcher(entry);
     }
@@ -116,27 +116,31 @@ export class HerdrSessionWatchManager {
     signal: AbortSignal,
   ): Promise<void> {
     while (!signal.aborted) {
-      const agents = await this.#refresh(entry);
-      const paneIds = agents.map((agent) => agent.paneId);
       let restart = false;
-      for await (const event of client.subscribeEvents({ paneIds }, { signal })) {
+      try {
+        const agents = await this.#refresh(entry);
+        const paneIds = agents.map((agent) => agent.paneId);
+        for await (const event of client.subscribeEvents({ paneIds }, { signal })) {
+          if (signal.aborted) return;
+          const eventRecord = record(event);
+          if (eventRecord.type === "pane.agent_status_changed") {
+            const agentEvent = await this.#index.handleHerdrEvent({
+              event,
+              herdrSessionName: entry.name,
+              refresh: async () => {
+                await this.#refresh(entry);
+              },
+            });
+            if (agentEvent) this.#onAgentEvent(agentEvent);
+            continue;
+          }
+          if (shouldRestartSubscription(eventRecord.type)) {
+            restart = true;
+            break;
+          }
+        }
+      } catch {
         if (signal.aborted) return;
-        const eventRecord = record(event);
-        if (eventRecord.type === "pane.agent_status_changed") {
-          const agentEvent = await this.#index.handleHerdrEvent({
-            event,
-            herdrSessionName: entry.name,
-            refresh: async () => {
-              await this.#refresh(entry);
-            },
-          });
-          if (agentEvent) this.#onAgentEvent(agentEvent);
-          continue;
-        }
-        if (shouldRestartSubscription(eventRecord.type)) {
-          restart = true;
-          break;
-        }
       }
       if (!restart) {
         await delay(this.#reconnectDelayMs, signal);
@@ -147,6 +151,7 @@ export class HerdrSessionWatchManager {
   async #refresh(entry: HerdrSessionListEntry): Promise<AgentIndexRecord[]> {
     const agents = await this.#index.refreshHerdrSession({
       herdrSessionName: entry.name,
+      onAgentEvent: this.#onAgentEvent,
       sessionDir: entry.sessionDir,
       socketPath: entry.socketPath,
     });

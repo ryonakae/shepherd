@@ -148,6 +148,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       client.emitStream({ method: "agent.event", params: { event: event(45, null) } });
 
       expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
+      expect(ctx.widgets.get("shepherd")).toEqual(["3 unread agent events"]);
       expect(pi.messages).toEqual([expect.stringContaining("agent.done")]);
       expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
         "[SHEPHERD AGENT CONTEXT]",
@@ -170,6 +171,7 @@ describe("shepherd-pi orchestrator bridge", () => {
         ["agent.notifications.ack", { eventId: 43 }],
       ]);
       expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(ctx.widgets.get("shepherd")).toBeUndefined();
     } finally {
       restoreEnv(previous);
     }
@@ -495,6 +497,7 @@ function fakeCtx(options: { idle?: boolean; sessionId?: string } = {}) {
       getSessionId: () => options.sessionId ?? "pi-session",
     },
     statuses: new Map<string, string | undefined>(),
+    widgets: new Map<string, string[] | undefined>(),
     ui: {
       notify(message: string, level?: string) {
         ctx.notifications.push([message, level]);
@@ -502,7 +505,12 @@ function fakeCtx(options: { idle?: boolean; sessionId?: string } = {}) {
       setStatus(key: string, value?: string) {
         ctx.statuses.set(key, value);
       },
-      setWidget() {},
+      setWidget(key: string, value?: string[]) {
+        if (value?.some((line) => typeof line !== "string")) {
+          throw new Error("widget lines must be strings");
+        }
+        ctx.widgets.set(key, value);
+      },
     },
   };
   return ctx;

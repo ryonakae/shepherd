@@ -225,8 +225,14 @@ describe("HerdrSocketClient", () => {
       socket.write(encodeJsonLine({ id: request.id, result: { subscribed: true } }));
       socket.write(
         encodeJsonLine({
-          method: "events.event",
-          params: { event: { id: "evt-1", type: "pane.agent_status_changed" } },
+          data: { agent_status: "idle", pane_id: "w1:p1", workspace_id: "w1" },
+          event: "pane.agent_status_changed",
+        }),
+      );
+      socket.write(
+        encodeJsonLine({
+          data: { pane_id: "w1:p2", workspace_id: "w1" },
+          event: "pane_created",
         }),
       );
     });
@@ -238,7 +244,16 @@ describe("HerdrSocketClient", () => {
       [Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
-      value: { id: "evt-1", type: "pane.agent_status_changed" },
+      value: {
+        agent_status: "idle",
+        pane_id: "w1:p1",
+        type: "pane.agent_status_changed",
+        workspace_id: "w1",
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { pane_id: "w1:p2", type: "pane.created", workspace_id: "w1" },
     });
     controller.abort();
     client.close();
@@ -246,12 +261,27 @@ describe("HerdrSocketClient", () => {
     expect(requests[0]).toMatchObject({
       method: "events.subscribe",
       params: {
-        subscriptions: expect.arrayContaining([
-          { type: "workspace.updated" },
-          { type: "pane.agent_status_changed", pane_id: "w1:p1" },
-        ]),
+        subscriptions: [{ type: "pane.agent_status_changed", pane_id: "w1:p1" }],
       },
     });
+  });
+
+  test("rejects the event stream when the Herdr socket closes", async () => {
+    const { socketPath } = await openFakeHerdrServer((socket, request) => {
+      socket.end(encodeJsonLine({ id: request.id, result: { subscribed: true } }));
+    });
+
+    const client = new HerdrSocketClient({ socketPath });
+    const iterator = client.subscribeEvents()[Symbol.asyncIterator]();
+    const nextEvent = Promise.race([
+      iterator.next(),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("event stream did not close")), 100);
+      }),
+    ]);
+
+    await expect(nextEvent).rejects.toThrow("Herdr socket closed");
+    client.close();
   });
 
   test("uses list/get/focus socket methods for Herdr inspection", async () => {

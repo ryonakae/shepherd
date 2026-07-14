@@ -10,6 +10,7 @@ import {
   type AgentEventRecord,
   type AgentIndexRecord,
   type AgentStatus,
+  type CompactAgentHistory,
   parseAgentStatus,
 } from "@/observability/contracts.js";
 
@@ -46,11 +47,19 @@ export class AgentIndexService {
 
   async refreshHerdrSession(input: {
     herdrSessionName: string;
+    onAgentEvent?(event: AgentEventRecord): void;
     sessionDir: string;
     socketPath: string;
   }): Promise<AgentIndexRecord[]> {
     const client = this.#clientFactory({ socketPath: input.socketPath });
     try {
+      const previous = this.#stores.agents.listForHerdrSession(input.herdrSessionName);
+      const previousByPane = new Map(previous.map((agent) => [agent.paneId, agent]));
+      const previousByTerminal = new Map(
+        previous.flatMap((agent) =>
+          agent.terminalId ? ([[agent.terminalId, agent]] as const) : [],
+        ),
+      );
       const snapshot = normalizeHerdrSessionSnapshot(await client.sessionSnapshot());
       this.#stores.herdrSessions.upsertRunning({
         name: input.herdrSessionName,
@@ -66,7 +75,19 @@ export class AgentIndexService {
         herdrSessionName: input.herdrSessionName,
       });
       for (const agent of agents) {
-        await this.#compactHistory(agent);
+        const compactHistory = await this.#compactHistory(agent);
+        const prior =
+          (agent.terminalId ? previousByTerminal.get(agent.terminalId) : undefined) ??
+          previousByPane.get(agent.paneId);
+        if (!prior || prior.agentStatus === agent.agentStatus) continue;
+        const event = this.#appendStatusEvents({
+          agent,
+          compactHistory,
+          evidence: { id: `snapshot:${agent.lastSeenAt.getTime()}` },
+          from: prior.agentStatus,
+          to: agent.agentStatus,
+        });
+        if (event) input.onAgentEvent?.(event);
       }
       return agents;
     } finally {
@@ -101,32 +122,60 @@ export class AgentIndexService {
     });
     const current = updated ?? { ...agent, agentStatus: to };
     const compactHistory = await this.#compactHistory(current);
+    return this.#appendStatusEvents({
+      agent: current,
+      compactHistory,
+      evidence: event,
+      from,
+      to,
+    });
+  }
+
+  #appendStatusEvents(input: {
+    agent: AgentIndexRecord;
+    compactHistory: CompactAgentHistory;
+    evidence: Record<string, unknown>;
+    from: AgentStatus;
+    to: AgentStatus;
+  }): AgentEventRecord | undefined {
     let lastEvent: AgentEventRecord | undefined;
-    if (from !== to) {
+    if (input.from !== input.to) {
       lastEvent = this.#stores.agentEvents.append({
-        agentId: current.id,
-        compactHistory,
-        herdrSessionName: input.herdrSessionName,
-        idempotencyKey: idempotencyKey("agent.status.changed", current, from, to, event),
-        paneId,
-        payload: payload(current, from, to),
-        terminalId: current.terminalId,
+        agentId: input.agent.id,
+        compactHistory: input.compactHistory,
+        herdrSessionName: input.agent.herdrSessionName,
+        idempotencyKey: idempotencyKey(
+          "agent.status.changed",
+          input.agent,
+          input.from,
+          input.to,
+          input.evidence,
+        ),
+        paneId: input.agent.paneId,
+        payload: payload(input.agent, input.from, input.to),
+        terminalId: input.agent.terminalId,
         type: "agent.status.changed",
-        workspaceId: current.workspaceId,
+        workspaceId: input.agent.workspaceId,
       });
     }
-    const statusType = statusEventType(to);
+    const statusType = statusEventType(input.to);
     if (statusType) {
       lastEvent = this.#stores.agentEvents.append({
-        agentId: current.id,
-        compactHistory,
-        herdrSessionName: input.herdrSessionName,
-        idempotencyKey: idempotencyKey(statusType, current, from, to, event),
-        paneId,
-        payload: payload(current, from, to),
-        terminalId: current.terminalId,
+        agentId: input.agent.id,
+        compactHistory: input.compactHistory,
+        herdrSessionName: input.agent.herdrSessionName,
+        idempotencyKey: idempotencyKey(
+          statusType,
+          input.agent,
+          input.from,
+          input.to,
+          input.evidence,
+        ),
+        paneId: input.agent.paneId,
+        payload: payload(input.agent, input.from, input.to),
+        terminalId: input.agent.terminalId,
         type: statusType,
-        workspaceId: current.workspaceId,
+        workspaceId: input.agent.workspaceId,
       });
     }
     return lastEvent;

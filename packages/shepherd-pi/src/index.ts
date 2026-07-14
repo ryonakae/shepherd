@@ -81,7 +81,7 @@ type PiContext = {
   ui: {
     notify?: (message: string, level?: "error" | "info" | "warning") => void;
     setStatus?: (key: string, value?: string) => void;
-    setWidget?: (key: string, value?: unknown) => void;
+    setWidget?: (key: string, value?: string[]) => void;
   };
 };
 
@@ -145,11 +145,9 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
 
     const setUnreadUi = (ctx: PiContext | undefined) => {
       const count = state.pendingEvents.length;
-      ctx?.ui.setStatus?.(
-        "shepherd",
-        count > 0 ? `${count} unread agent event${count === 1 ? "" : "s"}` : undefined,
-      );
-      ctx?.ui.setWidget?.("shepherd", count > 0 ? { unread: count } : undefined);
+      const label = count > 0 ? `${count} unread agent event${count === 1 ? "" : "s"}` : undefined;
+      ctx?.ui.setStatus?.("shepherd", label);
+      ctx?.ui.setWidget?.("shepherd", label ? [label] : undefined);
     };
 
     const loseRole = (ctx: PiContext | undefined) => {

@@ -1,6 +1,7 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { env, exit } from "node:process";
+import { fileURLToPath } from "node:url";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 import { resolveRuntime } from "@/config/runtime.js";
 import { AgentEventStore } from "@/db/agent-events.js";
@@ -26,7 +27,9 @@ export async function runObservabilityDaemonService(
   mkdirSync(dirname(runtime.paths.socketPath), { recursive: true });
 
   const { sqlite } = openSqlite(runtime.paths.dbPath);
-  applyMigrations(sqlite, { migrationsFolder: "drizzle" });
+  applyMigrations(sqlite, {
+    migrationsFolder: resolveMigrationsFolder(dirname(fileURLToPath(import.meta.url))),
+  });
 
   const herdrSessions = new HerdrSessionStore(sqlite);
   const herdrWorkspaces = new HerdrWorkspaceStore(sqlite);
@@ -72,6 +75,21 @@ export async function runObservabilityDaemonService(
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+}
+
+export function resolveMigrationsFolder(startDir: string): string {
+  let current = resolve(startDir);
+  while (true) {
+    const migrationsFolder = resolve(current, "drizzle");
+    if (existsSync(resolve(migrationsFolder, "meta", "_journal.json"))) {
+      return migrationsFolder;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error(`Cannot find Shepherd migrations above ${startDir}`);
+    }
+    current = parent;
+  }
 }
 
 function applyEnvironment(environment: NodeJS.ProcessEnv): void {
