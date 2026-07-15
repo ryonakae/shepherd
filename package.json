@@ -11,7 +11,7 @@
     "access": "public"
   },
   "bin": {
-    "shepherd": "./dist/src/cli/shepherd.js"
+    "shepherd": "dist/src/cli/shepherd.js"
   },
   "keywords": [
     "herdr",

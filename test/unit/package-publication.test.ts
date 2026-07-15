@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 
 type PackageManifest = {
+  bin?: Record<string, string>;
   files?: string[];
   name: string;
   private?: boolean;
@@ -29,6 +30,7 @@ describe("npm publication metadata", () => {
     const pluginVersion = /^version = "([^"]+)"$/m.exec(pluginToml)?.[1];
 
     expect(root.name).toBe("@ryonakae/shepherd");
+    expect(root.bin).toEqual({ shepherd: "dist/src/cli/shepherd.js" });
     expect(root.files).toEqual(["dist", "drizzle"]);
     expect(root.publishConfig?.access).toBe("public");
     expect(root.scripts).toMatchObject({
