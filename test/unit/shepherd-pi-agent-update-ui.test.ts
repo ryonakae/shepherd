@@ -103,7 +103,7 @@ describe("Shepherd Pi agent update UI", () => {
   test("renders legacy event-only details without exposing old content", () => {
     const text = renderAgentUpdateMessage(
       {
-        content: "Shepherd received 2 worker updates.",
+        content: "legacy raw message",
         details: { eventIds: [71, 72] },
       },
       { expanded: false },
@@ -113,7 +113,7 @@ describe("Shepherd Pi agent update UI", () => {
       .join("\n");
 
     expect(text).toContain("◆ Shepherd · 2 agent updates");
-    expect(text).not.toContain("worker");
+    expect(text).not.toContain("legacy raw message");
     expect(text).not.toContain("to expand");
   });
 
