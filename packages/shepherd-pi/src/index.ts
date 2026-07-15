@@ -5,7 +5,11 @@ import {
   type DaemonStreamMessage,
   ReconnectingDaemonClient,
 } from "./daemon-client.js";
-import { formatWorkerOutcomeUpdates, projectWorkerOutcomes } from "./wake.js";
+import {
+  formatWorkerOutcomeUpdates,
+  projectWorkerOutcomes,
+  WAKE_SETTLE_MS,
+} from "./wake.js";
 
 type AgentListItem = {
   agent?: string | null;
@@ -85,6 +89,7 @@ type ShepherdState = {
   toolStartTimes: Map<string, { inputPreview?: string; startedAt: number; toolName: string }>;
   wakeDeferredUntilSettled: boolean;
   wakeRequested: boolean;
+  wakeRequestedThroughEventId: number;
   wakeTimer: ReturnType<typeof setTimeout> | undefined;
 };
 
@@ -153,9 +158,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       toolStartTimes: new Map(),
       wakeDeferredUntilSettled: false,
       wakeRequested: false,
+      wakeRequestedThroughEventId: 0,
       wakeTimer: undefined,
     };
     let activeContext: PiContext | undefined;
+    let wakeGeneration = 0;
 
     const setRoleUi = (ctx: PiContext | undefined) => {
       ctx?.ui.setStatus?.(
@@ -164,29 +171,118 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       );
     };
 
-    const setUnreadUi = (ctx: PiContext | undefined) => {
-      const count = state.pendingEvents.length;
-      const label = count > 0 ? `${count} unread agent event${count === 1 ? "" : "s"}` : undefined;
+    const setPendingUi = (ctx: PiContext | undefined) => {
+      const count = projectWorkerOutcomes(state.pendingEvents).outcomes.length;
+      const label =
+        count > 0 ? `${count} pending worker update${count === 1 ? "" : "s"}` : undefined;
       ctx?.ui.setStatus?.("shepherd", label);
       ctx?.ui.setWidget?.("shepherd", label ? [label] : undefined);
+    };
+
+    const cancelWakeTimer = () => {
+      wakeGeneration += 1;
+      if (state.wakeTimer) clearTimeout(state.wakeTimer);
+      state.wakeTimer = undefined;
+      state.wakeDeferredUntilSettled = false;
+    };
+
+    const cancelWake = () => {
+      cancelWakeTimer();
+      state.wakeRequested = false;
+      state.wakeRequestedThroughEventId = 0;
+    };
+
+    const wakeLabel = (count: number) =>
+      `Shepherd received ${count} worker update${count === 1 ? "" : "s"}.`;
+
+    const scheduleWake = (ctx: PiContext | undefined) => {
+      if (!ctx || !state.isOrchestrator || !state.currentScope || !pi.sendMessage) return;
+      const outcomes = projectWorkerOutcomes(state.pendingEvents).outcomes;
+      const wakeable = outcomes.filter(
+        (outcome) => outcome.eventId > state.failedWakeThroughEventId,
+      );
+      if (wakeable.length === 0 || state.wakeTimer || state.wakeRequested) return;
+      if (state.deliveredBatch || ctx.isIdle?.() === false) {
+        state.wakeDeferredUntilSettled = true;
+        return;
+      }
+      const generation = wakeGeneration;
+      const ownerHerdrSessionName = state.currentScope.herdrSessionName;
+      const ownerTerminalId = state.currentScope.terminalId;
+      const ownerWorkspaceId = state.currentScope.workspaceId;
+      state.wakeTimer = setTimeout(() => {
+        state.wakeTimer = undefined;
+        if (
+          generation !== wakeGeneration ||
+          !state.isOrchestrator ||
+          state.currentScope?.herdrSessionName !== ownerHerdrSessionName ||
+          state.currentScope?.terminalId !== ownerTerminalId ||
+          state.currentScope?.workspaceId !== ownerWorkspaceId
+        ) {
+          return;
+        }
+        if (ctx.isIdle?.() === false) {
+          state.wakeDeferredUntilSettled = true;
+          return;
+        }
+        const current = projectWorkerOutcomes(state.pendingEvents).outcomes.filter(
+          (outcome) => outcome.eventId > state.failedWakeThroughEventId,
+        );
+        if (current.length === 0) return;
+        state.wakeRequested = true;
+        state.wakeRequestedThroughEventId = current.at(-1)?.eventId ?? 0;
+        pi.sendMessage?.(
+          {
+            content: wakeLabel(current.length),
+            customType: "shepherd-wake",
+            details: { eventIds: current.map((outcome) => outcome.eventId) },
+            display: true,
+          },
+          { deliverAs: "followUp", triggerTurn: true },
+        );
+      }, WAKE_SETTLE_MS);
     };
 
     const loseRole = (ctx: PiContext | undefined) => {
       if (state.deliveredBatch) {
         state.deliveredBatch.invalidated = true;
+        const lastEventId = state.deliveredBatch.events.at(-1)?.id;
+        if (lastEventId !== undefined) {
+          state.failedWakeThroughEventId = Math.max(
+            state.failedWakeThroughEventId,
+            lastEventId,
+          );
+        }
         if (state.deliveredBatch.shepherdTriggered) ctx?.abort?.();
       }
+      if (state.wakeRequestedThroughEventId > 0) {
+        state.failedWakeThroughEventId = Math.max(
+          state.failedWakeThroughEventId,
+          state.wakeRequestedThroughEventId,
+        );
+      }
+      cancelWake();
       state.isOrchestrator = false;
       state.pendingEvents = [];
       setRoleUi(ctx);
-      setUnreadUi(ctx);
+      setPendingUi(ctx);
+    };
+
+    const resetForScopeChange = (ctx: PiContext | undefined) => {
+      if (state.deliveredBatch?.shepherdTriggered) ctx?.abort?.();
+      if (state.deliveredBatch) state.deliveredBatch.invalidated = true;
+      state.deliveredBatch = undefined;
+      cancelWake();
+      state.failedWakeThroughEventId = 0;
+      state.pendingEvents = [];
+      setPendingUi(ctx);
     };
 
     const addPendingEvents = (events: AgentEventWireRecord[], ctx: PiContext | undefined) => {
       const byId = new Map(state.pendingEvents.map((event) => [event.id, event]));
       for (const event of events) byId.set(event.id, event);
       state.pendingEvents = [...byId.values()].sort((left, right) => left.id - right.id);
-      setUnreadUi(ctx);
+      setPendingUi(ctx);
     };
 
     const applyConnectionStateResponse = (
@@ -210,6 +306,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       state.isOrchestrator = true;
       setRoleUi(ctx);
       addPendingEvents(response.events ?? [], ctx);
+      scheduleWake(ctx);
     };
 
     const handleAgentEvent = (event: AgentEventWireRecord, ctx: PiContext | undefined) => {
@@ -217,6 +314,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       if (event.terminalId === state.currentScope.terminalId) return;
       addPendingEvents([event], ctx);
       pi.appendEntry?.("shepherd.agent_event", event);
+      scheduleWake(ctx);
     };
 
     const refreshAfterRoleGain = async (ctx: PiContext | undefined) => {
@@ -241,6 +339,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         const scopeChanged =
           state.currentScope?.herdrSessionName !== change.current.herdrSessionName ||
           state.currentScope?.workspaceId !== change.current.workspaceId;
+        if (scopeChanged) resetForScopeChange(ctx);
         state.currentScope = {
           herdrSessionName: change.current.herdrSessionName,
           paneId: change.current.owner.paneId,
@@ -399,6 +498,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     pi.on("session_shutdown", () => {
       state.connected = false;
       loseRole(activeContext);
+      state.deliveredBatch = undefined;
       state.client?.close();
       state.client = undefined;
       activeContext = undefined;
@@ -478,7 +578,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
 
     pi.on("agent_settled", async (_event: unknown, ctx: PiContext) => {
       const batch = state.deliveredBatch;
-      if (!batch) return;
+      if (!batch) {
+        state.wakeDeferredUntilSettled = false;
+        scheduleWake(ctx);
+        return;
+      }
       state.deliveredBatch = undefined;
       const stillOwner =
         state.isOrchestrator && state.currentScope?.terminalId === batch.ownerTerminalId;
@@ -495,6 +599,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
           "warning",
         );
       };
+      const finishBatch = () => {
+        state.wakeDeferredUntilSettled = false;
+        setPendingUi(ctx);
+        scheduleWake(ctx);
+      };
 
       if (
         !batch.assistantFinalSucceeded ||
@@ -504,7 +613,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         !state.connected
       ) {
         failBatch();
-        setUnreadUi(ctx);
+        finishBatch();
         return;
       }
 
@@ -517,17 +626,20 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
           break;
         }
       }
-      setUnreadUi(ctx);
+      finishBatch();
     });
 
     pi.on("before_agent_start", async (_event: unknown, ctx: PiContext) => {
       if (!state.client || !state.connected || !state.currentScope) return {};
+      const shepherdTriggered = state.wakeRequested;
+      cancelWakeTimer();
       try {
         const status = (await state.client.request(
           "agent.orchestrator.get",
           {},
         )) as ConnectionStateResponse;
         applyConnectionStateResponse(status, ctx);
+        cancelWakeTimer();
         if (!state.currentScope) return {};
         const response = (await state.client.request("agent.list", {
           herdrSessionName: state.currentScope.herdrSessionName,
@@ -539,10 +651,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             events: [...state.pendingEvents].sort((left, right) => left.id - right.id),
             invalidated: false,
             ownerTerminalId: state.currentScope.terminalId,
-            shepherdTriggered: state.wakeRequested,
+            shepherdTriggered,
           };
-          state.wakeRequested = false;
         }
+        state.wakeRequested = false;
+        state.wakeRequestedThroughEventId = 0;
         const outcomes = state.deliveredBatch
           ? projectWorkerOutcomes(state.deliveredBatch.events).outcomes
           : [];
@@ -555,7 +668,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         ]
           .filter(Boolean)
           .join("\n\n");
-        setUnreadUi(ctx);
+        setPendingUi(ctx);
         return {
           message: {
             content,

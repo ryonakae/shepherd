@@ -686,7 +686,7 @@ git commit -m "fix(pi): acknowledge worker updates after settled turns"
 - Consumes: Task 1 projection, Task 4 delivered batches, Pi custom messages, owner change stream, and reconnect response events.
 - Produces: automatic owner-only wake with visible `shepherd-wake` message and stable failure/transfer behavior.
 
-- [ ] **Step 1: Add fake-timer wake tests**
+- [x] **Step 1: Add fake-timer wake tests**
 
 Use `vi.useFakeTimers()`/`vi.useRealTimers()` around wake tests. Add these cases:
 
@@ -719,7 +719,7 @@ expect(pi.customMessages).toEqual([
 ]);
 ```
 
-- [ ] **Step 2: Run wake/lifecycle tests to verify RED**
+- [x] **Step 2: Run wake/lifecycle tests to verify RED**
 
 Run:
 
@@ -729,7 +729,7 @@ pnpm test test/unit/shepherd-pi-extension.test.ts test/unit/shepherd-pi-wake.tes
 
 Expected: wake scheduling, busy deferral, reconnect, and abort assertions fail because the scheduler is not implemented.
 
-- [ ] **Step 3: Implement the one-wake scheduler**
+- [x] **Step 3: Implement the one-wake scheduler**
 
 Import the Task 1 exports. Replace raw unread UI with outcome UI:
 
@@ -802,7 +802,7 @@ In `loseRole()` and `session_shutdown`, call `cancelWake()`. If role loss sees a
 
 Use a generation counter or equivalent owner-terminal guard if needed to ensure a stale timer callback cannot send after role loss/reclaim. Do not move timer or wake policy into the daemon.
 
-- [ ] **Step 4: Verify focused lifecycle behavior**
+- [x] **Step 4: Verify focused lifecycle behavior**
 
 Run:
 
@@ -815,7 +815,7 @@ pnpm test test/integration/shepherd-pi-daemon-client.test.ts \
 
 Expected: pure and extension tests pass; existing real-socket reconnect, grace, and pane-move tests remain green.
 
-- [ ] **Step 5: Commit automatic wake behavior**
+- [x] **Step 5: Commit automatic wake behavior**
 
 Mark Task 5 complete in this plan, then run:
 
@@ -1052,7 +1052,7 @@ Do not archive the plan in this commit. Archive completed plans later in a separ
 - [x] Task 2: Remove the obsolete auto-resume contract.
 - [x] Task 3: Drop events created during ownerless periods.
 - [x] Task 4: Acknowledge delivered updates only after Pi settles.
-- [ ] Task 5: Wake the selected Pi orchestrator.
+- [x] Task 5: Wake the selected Pi orchestrator.
 - [ ] Task 6: Document and dogfood active orchestration.
 
 ## Completion Notes

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type {
   AgentEventWireRecord,
   DaemonStreamMessage,
@@ -148,8 +148,8 @@ describe("shepherd-pi orchestrator bridge", () => {
       client.emitStream({ method: "agent.event", params: { event: event(44, "term_pi") } });
       client.emitStream({ method: "agent.event", params: { event: event(45, null) } });
 
-      expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
-      expect(ctx.widgets.get("shepherd")).toEqual(["3 unread agent events"]);
+      expect(ctx.statuses.get("shepherd")).toBe("3 pending worker updates");
+      expect(ctx.widgets.get("shepherd")).toEqual(["3 pending worker updates"]);
       expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
         "[SHEPHERD AGENT CONTEXT]",
       );
@@ -166,7 +166,7 @@ describe("shepherd-pi orchestrator bridge", () => {
         },
       });
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
+      expect(ctx.statuses.get("shepherd")).toBe("3 pending worker updates");
 
       await pi.emit("message_end", assistantMessage("stop"), ctx);
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
@@ -213,7 +213,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await pi.emit("agent_settled", {}, ctx);
 
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("1 unread agent event");
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
       expect(ctx.notifications.at(-1)).toEqual([
         "Shepherd could not acknowledge worker updates; they remain pending",
         "warning",
@@ -252,8 +252,8 @@ describe("shepherd-pi orchestrator bridge", () => {
         ["agent.notifications.ack", { eventId: 61 }],
         ["agent.notifications.ack", { eventId: 62 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 unread agent event");
-      expect(ctx.widgets.get("shepherd")).toEqual(["1 unread agent event"]);
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
+      expect(ctx.widgets.get("shepherd")).toEqual(["1 pending worker update"]);
     } finally {
       restoreEnv(previous);
     }
@@ -285,7 +285,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
         ["agent.notifications.ack", { eventId: 63 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("2 unread agent events");
+      expect(ctx.statuses.get("shepherd")).toBe("2 pending worker updates");
     } finally {
       restoreEnv(previous);
     }
@@ -523,8 +523,461 @@ describe("shepherd-pi orchestrator bridge", () => {
       await tick();
 
       expect(client.calls).toContainEqual(["agent.orchestrator.get", {}]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 unread agent event");
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
     } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test.each([
+    ["agent.done", {}],
+    ["agent.blocked", {}],
+    ["agent.idle", { from: "working", to: "idle" }],
+  ])("wakes once at 500 ms for %s", async (type, payload) => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({
+        method: "agent.event",
+        params: { event: event(43, "term_worker", { payload, type }) },
+      });
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(pi.customMessages).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pi.customMessages).toEqual([
+        [
+          {
+            content: "Shepherd received 1 worker update.",
+            customType: "shepherd-wake",
+            details: { eventIds: [43] },
+            display: true,
+          },
+          { deliverAs: "followUp", triggerTurn: true },
+        ],
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("ignores non-outcomes, done-to-idle duplicates, null-terminal, and self events", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      for (const candidate of [
+        event(44, "term_worker", { type: "agent.status.changed" }),
+        event(45, "term_worker", { type: "agent.tool.failed" }),
+        event(46, "term_worker", { payload: { from: "done", to: "idle" }, type: "agent.idle" }),
+        event(47, null),
+        event(48, "term_pi"),
+      ]) {
+        client.emitStream({ method: "agent.event", params: { event: candidate } });
+      }
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(pi.customMessages).toEqual([]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("coalesces multiple outcomes into one visible wake", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(51, "term_worker") } });
+      client.emitStream({
+        method: "agent.event",
+        params: { event: event(52, "term_other", { type: "agent.blocked" }) },
+      });
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages).toEqual([
+        [
+          {
+            content: "Shepherd received 2 worker updates.",
+            customType: "shepherd-wake",
+            details: { eventIds: [51, 52] },
+            display: true,
+          },
+          { deliverAs: "followUp", triggerTurn: true },
+        ],
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("defers a busy wake until Pi settles idle", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: false });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(61, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pi.customMessages).toEqual([]);
+
+      ctx.setIdle(true);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toHaveLength(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("schedules a later wake for events arriving during a delivered batch", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(71, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("before_agent_start", {}, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(72, "term_other") } });
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
+        { eventIds: [71] },
+        { eventIds: [72] },
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("does not retry a failed batch until a newer outcome arrives", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(81, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("aborted"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pi.customMessages).toHaveLength(1);
+
+      client.emitStream({ method: "agent.event", params: { event: event(82, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toHaveLength(2);
+      expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [82] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("suppresses automatic retry after acknowledgement failure until a newer outcome", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const baseResponse = client.response;
+    client.response = (method, params) => {
+      if (method === "agent.notifications.ack") throw new Error("ack failed");
+      return baseResponse(method, params);
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(86, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pi.customMessages).toHaveLength(1);
+
+      client.emitStream({ method: "agent.event", params: { event: event(87, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toHaveLength(2);
+      expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [87] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("does not replay a sent-but-not-started wake after reconnect", async () => {
+    vi.useFakeTimers();
+    const pending = event(88, "term_worker");
+    const client = createFakeClient();
+    let registrations = 0;
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") {
+        registrations += 1;
+        return connectionResponse({ events: registrations === 1 ? [] : [pending] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: pending } });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toHaveLength(1);
+
+      client.disconnect();
+      await client.connect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pi.customMessages).toHaveLength(1);
+
+      client.emitStream({ method: "agent.event", params: { event: event(89, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toHaveLength(2);
+      expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [89] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("wakes replayed pending outcomes after registration", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient([event(91, "term_worker")]);
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages).toHaveLength(1);
+      expect(pi.customMessages[0]?.[0]).toMatchObject({ details: { eventIds: [91] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("lets a replacement Pi wake the previous owner's unacknowledged batch", async () => {
+    vi.useFakeTimers();
+    const pending = event(96, "term_worker");
+    const firstClient = createWakeClient();
+    const firstPi = createFakePi();
+    const firstCtx = fakeCtx({ idle: true });
+    const secondClient = createWakeClient([pending]);
+    const secondPi = createFakePi();
+    const secondCtx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(firstClient, firstPi, firstCtx);
+      firstClient.emitStream({ method: "agent.event", params: { event: pending } });
+      await vi.advanceTimersByTimeAsync(500);
+      await firstPi.emit("before_agent_start", {}, firstCtx);
+      firstClient.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: roleChange("term_pi", "term_other", "wB:p-other") },
+      });
+      expect(firstCtx.aborts).toBe(1);
+
+      await startExtension(secondClient, secondPi, secondCtx);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(secondPi.customMessages).toHaveLength(1);
+      expect(secondPi.customMessages[0]?.[0]).toMatchObject({ details: { eventIds: [96] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("lets a normal user turn consume pending updates before the timer fires", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(101, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(250);
+      const before = await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(before).toMatchObject({
+        message: { content: expect.stringContaining("[SHEPHERD WORKER UPDATES]") },
+      });
+      expect(pi.customMessages).toEqual([]);
+      expect(client.calls).toContainEqual(["agent.notifications.ack", { eventId: 101 }]);
+      expect(ctx.aborts).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("drops a stale timer when the same terminal moves workspaces", async () => {
+    vi.useFakeTimers();
+    const target = event(108, "term_worker", {
+      paneId: "wC:p-worker",
+      workspaceId: "wC",
+    });
+    const client = createFakeClient();
+    let moved = false;
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") return connectionResponse();
+      if (method === "agent.orchestrator.get") {
+        return moved
+          ? connectionResponse({ events: [target], paneId: "wC:p1", workspaceId: "wC" })
+          : connectionResponse();
+      }
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(107, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(250);
+      moved = true;
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: movedRoleChange() },
+      });
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages).toHaveLength(1);
+      expect(pi.customMessages[0]?.[0]).toMatchObject({ details: { eventIds: [108] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("invalidates and aborts a delivered Shepherd batch on same-terminal workspace move", async () => {
+    vi.useFakeTimers();
+    const target = event(110, "term_worker", {
+      paneId: "wC:p-worker",
+      workspaceId: "wC",
+    });
+    const client = createFakeClient();
+    let moved = false;
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") return connectionResponse();
+      if (method === "agent.orchestrator.get") {
+        return moved
+          ? connectionResponse({ events: [target], paneId: "wC:p1", workspaceId: "wC" })
+          : connectionResponse();
+      }
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(109, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("before_agent_start", {}, ctx);
+      moved = true;
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: movedRoleChange() },
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+
+      expect(ctx.aborts).toBe(1);
+      expect(client.calls).not.toContainEqual(["agent.notifications.ack", { eventId: 109 }]);
+      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
+        { eventIds: [109] },
+        { eventIds: [110] },
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("cancels pending wake and aborts only a Shepherd-triggered turn on role loss", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(111, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(250);
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: roleChange("term_pi", "term_other", "wB:p-other") },
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(pi.customMessages).toEqual([]);
+      expect(ctx.aborts).toBe(0);
+
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: roleChange("term_other", "term_pi") },
+      });
+      await vi.runAllTimersAsync();
+      client.emitStream({ method: "agent.event", params: { event: event(112, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await pi.emit("before_agent_start", {}, ctx);
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: roleChange("term_pi", "term_other", "wB:p-other") },
+      });
+
+      expect(ctx.aborts).toBe(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
       restoreEnv(previous);
     }
   });
@@ -557,6 +1010,30 @@ describe("shepherd-pi orchestrator bridge", () => {
 
 const USAGE = "Usage: /shepherd orchestrator [on|off|status]";
 const UNAVAILABLE = "Shepherd orchestrator is unavailable until this Pi reconnects to the daemon";
+
+function createWakeClient(replayedEvents: AgentEventWireRecord[] = []) {
+  const client = createFakeClient();
+  client.response = (method) => {
+    if (method === "agent.orchestrator.register") {
+      return connectionResponse({ events: replayedEvents });
+    }
+    if (method === "agent.orchestrator.get") return connectionResponse();
+    if (method === "agent.list") return agentListResponse();
+    return { acknowledged: true };
+  };
+  return client;
+}
+
+async function startExtension(
+  client: FakeClient,
+  pi: FakePi,
+  ctx: ReturnType<typeof fakeCtx>,
+): Promise<void> {
+  const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+  createShepherdPiExtension({ clientFactory: () => client })(pi);
+  await pi.emit("session_start", {}, ctx);
+  await client.connect();
+}
 
 function createFakeClient() {
   let connected: (() => Promise<void> | void) | undefined;
@@ -715,15 +1192,24 @@ function connectionResponse(
   };
 }
 
-function event(id: number, terminalId: string | null): AgentEventWireRecord {
+function event(
+  id: number,
+  terminalId: string | null,
+  options: {
+    paneId?: string;
+    payload?: Record<string, unknown>;
+    type?: string;
+    workspaceId?: string;
+  } = {},
+): AgentEventWireRecord {
   return {
     compactHistory: { lastAssistantMessage: { text: "done" } },
     id,
-    paneId: "wB:p-worker",
-    payload: { agent: "worker" },
+    paneId: options.paneId ?? "wB:p-worker",
+    payload: { agent: "worker", ...options.payload },
     terminalId,
-    type: "agent.done",
-    workspaceId: "wB",
+    type: options.type ?? "agent.done",
+    workspaceId: options.workspaceId ?? "wB",
   };
 }
 
@@ -775,6 +1261,14 @@ function roleChange(
       workspaceId: "wB",
     },
     reason: "claimed" as const,
+  };
+}
+
+function movedRoleChange() {
+  const change = roleChange("term_pi", "term_pi", "wC:p1");
+  return {
+    ...change,
+    current: { ...change.current, workspaceId: "wC" },
   };
 }
 
