@@ -53,7 +53,7 @@ describe("shepherd-pi orchestrator bridge", () => {
 
     await pi.emit("session_start", {}, ctx);
     expect(clients).toBe(0);
-    expect(ctx.statuses.get("shepherd-orchestrator")).toBeUndefined();
+    expect(ctx.statuses.get("shepherd")).toBeUndefined();
     await pi.command("", ctx);
     expect(ctx.notifications.at(-1)).toEqual(["Shepherd requires a Herdr workspace", "error"]);
 
@@ -93,7 +93,7 @@ describe("shepherd-pi orchestrator bridge", () => {
           workspaceId: "wB",
         },
       ]);
-      expect(ctx.statuses.get("shepherd-orchestrator")).toBe("Shepherd: orchestrator");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd");
 
       await pi.emit("tool_result", {
         content: "failed token=abc",
@@ -152,8 +152,8 @@ describe("shepherd-pi orchestrator bridge", () => {
       client.emitStream({ method: "agent.event", params: { event: event(44, "term_pi") } });
       client.emitStream({ method: "agent.event", params: { event: event(45, null) } });
 
-      expect(ctx.statuses.get("shepherd")).toBe("3 pending agent updates");
-      expect(ctx.widgets.get("shepherd")).toEqual(["3 pending agent updates"]);
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 3 agent updates");
+      expect(ctx.widgets.size).toBe(0);
       expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
         "[SHEPHERD AGENT CONTEXT]",
       );
@@ -170,7 +170,7 @@ describe("shepherd-pi orchestrator bridge", () => {
         },
       });
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("3 pending agent updates");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 3 agent updates");
 
       await pi.emit("message_end", assistantMessage("stop"), ctx);
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
@@ -181,8 +181,8 @@ describe("shepherd-pi orchestrator bridge", () => {
         ["agent.notifications.ack", { eventId: 42 }],
         ["agent.notifications.ack", { eventId: 43 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBeUndefined();
-      expect(ctx.widgets.get("shepherd")).toBeUndefined();
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd");
+      expect(ctx.widgets.size).toBe(0);
     } finally {
       restoreEnv(previous);
     }
@@ -217,7 +217,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await pi.emit("agent_settled", {}, ctx);
 
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 1 agent update");
       expect(ctx.notifications.at(-1)).toEqual([
         "Shepherd couldn’t acknowledge agent updates · updates remain pending",
         "warning",
@@ -256,8 +256,48 @@ describe("shepherd-pi orchestrator bridge", () => {
         ["agent.notifications.ack", { eventId: 61 }],
         ["agent.notifications.ack", { eventId: 62 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
-      expect(ctx.widgets.get("shepherd")).toEqual(["1 pending agent update"]);
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 1 agent update");
+      expect(ctx.widgets.size).toBe(0);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("refreshes the footer after each successful acknowledgement", async () => {
+    let releaseSecondAck: (() => void) | undefined;
+    const secondAck = new Promise<void>((resolve) => {
+      releaseSecondAck = resolve;
+    });
+    const client = createFakeClient();
+    client.response = (method, params) => {
+      if (method === "agent.orchestrator.register") {
+        return connectionResponse({ events: [event(61, "term_agent"), event(62, "term_agent")] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      if (method === "agent.notifications.ack" && (params as { eventId: number }).eventId === 62) {
+        return secondAck;
+      }
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
+    const previous = withHerdrEnv();
+    try {
+      await pi.emit("session_start", {}, ctx);
+      await client.connect();
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      const settling = pi.emit("agent_settled", {}, ctx);
+      await tick();
+
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 1 agent update");
+
+      releaseSecondAck?.();
+      await settling;
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd");
     } finally {
       restoreEnv(previous);
     }
@@ -289,7 +329,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
         ["agent.notifications.ack", { eventId: 63 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("2 pending agent updates");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 2 agent updates");
     } finally {
       restoreEnv(previous);
     }
@@ -473,10 +513,8 @@ describe("shepherd-pi orchestrator bridge", () => {
         method: "agent.orchestrator.changed",
         params: { change: roleChange("term_pi", "term_other", "wB:p-other") },
       });
-      expect(ctx.notifications.at(-1)).toEqual([
-        "Shepherd orchestrator moved to wB:p-other",
-        "info",
-      ]);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off · moved to wB:p-other", "info"]);
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
 
       current = connectionResponse();
       client.emitStream({
@@ -487,6 +525,9 @@ describe("shepherd-pi orchestrator bridge", () => {
       ctx.notifications.length = 0;
       await pi.command("off", ctx);
       expect(ctx.notifications).toEqual([["Shepherd is off", "info"]]);
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(ctx.statuses.has("shepherd-connection")).toBe(false);
+      expect(ctx.statuses.has("shepherd-orchestrator")).toBe(false);
     } finally {
       restoreEnv(previous);
     }
@@ -505,8 +546,108 @@ describe("shepherd-pi orchestrator bridge", () => {
     try {
       await expect(pi.emit("session_start", {}, ctx)).resolves.toBeUndefined();
       await expect(client.connect()).resolves.toBeUndefined();
-      expect(ctx.statuses.get("shepherd-connection")).toBe("Shepherd: reconnecting");
-      expect(ctx.statuses.get("shepherd-orchestrator")).toBeUndefined();
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(ctx.statuses.has("shepherd-connection")).toBe(false);
+      expect(ctx.statuses.has("shepherd-orchestrator")).toBe(false);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("shows reconnecting only for a previous owner and restores it without feedback", async () => {
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd");
+
+      client.disconnect();
+      expect(ctx.statuses.get("shepherd")).toBe("◇ Shepherd · reconnecting");
+      expect(ctx.statuses.has("shepherd-connection")).toBe(false);
+      expect(ctx.statuses.has("shepherd-orchestrator")).toBe(false);
+
+      await client.connect();
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd");
+      expect(ctx.notifications).toEqual([]);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("keeps a previous owner reconnecting across repeated registration failure callbacks", async () => {
+    let registrations = 0;
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") {
+        registrations += 1;
+        if (registrations > 1) throw new Error("registration failed");
+        return connectionResponse();
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.disconnect();
+      expect(ctx.statuses.get("shepherd")).toBe("◇ Shepherd · reconnecting");
+
+      await client.connect();
+
+      expect(ctx.statuses.get("shepherd")).toBe("◇ Shepherd · reconnecting");
+      expect(ctx.notifications).toEqual([]);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("keeps the footer absent when a non-owner disconnects", async () => {
+    const client = createFakeClient();
+    client.response = (method) =>
+      method === "agent.orchestrator.register" || method === "agent.orchestrator.get"
+        ? connectionResponse({ ownerTerminalId: "term_other" })
+        : { acknowledged: true };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+
+      client.disconnect();
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test.each([
+    ["term_other", "Shepherd is off · moved to wB:p-other"],
+    [null, "Shepherd is off"],
+  ])("reports ownership loss discovered on reconnect to %s", async (ownerTerminalId, message) => {
+    let current = connectionResponse();
+    const client = createFakeClient();
+    client.response = (method) =>
+      method === "agent.orchestrator.register" || method === "agent.orchestrator.get"
+        ? current
+        : { acknowledged: true };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.disconnect();
+      expect(ctx.statuses.get("shepherd")).toBe("◇ Shepherd · reconnecting");
+
+      current = connectionResponse({ ownerTerminalId });
+      await client.connect();
+
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(ctx.notifications.at(-1)).toEqual([message, "info"]);
     } finally {
       restoreEnv(previous);
     }
@@ -545,7 +686,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await tick();
 
       expect(client.calls).toContainEqual(["agent.orchestrator.get", {}]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 1 agent update");
     } finally {
       restoreEnv(previous);
     }
@@ -691,7 +832,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await vi.advanceTimersByTimeAsync(500);
 
       expect(pi.customMessages).toEqual([]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
+      expect(ctx.statuses.get("shepherd")).toBe("◆ Shepherd · 1 agent update");
       expect(ctx.notifications.at(-1)).toEqual([
         "Shepherd couldn’t load agent updates · updates remain pending",
         "warning",
@@ -1135,6 +1276,53 @@ describe("shepherd-pi orchestrator bridge", () => {
     }
   });
 
+  test("clears reconnecting UI on shutdown", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(113, "term_agent") } });
+      await vi.advanceTimersByTimeAsync(250);
+      client.disconnect();
+      expect(ctx.statuses.get("shepherd")).toBe("◇ Shepherd · reconnecting");
+
+      await pi.emit("session_shutdown");
+
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(ctx.notifications).toEqual([]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("cancels an owner wake timer on shutdown", async () => {
+    vi.useFakeTimers();
+    const client = createWakeClient();
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(114, "term_agent") } });
+      await vi.advanceTimersByTimeAsync(250);
+
+      await pi.emit("session_shutdown");
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      expect(pi.customMessages).toEqual([]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
   test("closes on shutdown and a fresh Pi session registers with its own subscriber id", async () => {
     const first = createFakeClient();
     const second = createFakeClient();
@@ -1302,6 +1490,11 @@ function fakeCtx(options: { idle?: boolean; sessionId?: string } = {}) {
     statuses: new Map<string, string | undefined>(),
     widgets: new Map<string, string[] | undefined>(),
     ui: {
+      theme: {
+        bg: (_color: string, text: string) => text,
+        bold: (text: string) => text,
+        fg: (_color: string, text: string) => text,
+      },
       notify(message: string, level?: string) {
         ctx.notifications.push([message, level]);
       },

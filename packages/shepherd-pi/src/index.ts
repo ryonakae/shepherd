@@ -7,7 +7,9 @@ import {
 } from "./daemon-client.js";
 import {
   type AgentUpdateMessageDetails,
+  formatShepherdFooterStatus,
   renderAgentUpdateMessage,
+  type ShepherdFooterState,
 } from "./agent-update-ui.js";
 import {
   formatAgentOutcomeUpdates,
@@ -86,6 +88,7 @@ type ShepherdState = {
   isOrchestrator: boolean;
   launchIdentity: LaunchIdentity | undefined;
   pendingEvents: AgentEventWireRecord[];
+  reconnectingFromOn: boolean;
   registrationInFlight: Promise<void> | undefined;
   roleMutationInFlight: boolean;
   sessionRef: AgentSessionRef | undefined;
@@ -104,7 +107,11 @@ type PiContext = {
   ui: {
     notify?: (message: string, level?: "error" | "info" | "warning") => void;
     setStatus?: (key: string, value?: string) => void;
-    setWidget?: (key: string, value?: string[]) => void;
+    theme: {
+      bg(color: string, text: string): string;
+      bold(text: string): string;
+      fg(color: string, text: string): string;
+    };
   };
 };
 
@@ -161,6 +168,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       isOrchestrator: false,
       launchIdentity: undefined,
       pendingEvents: [],
+      reconnectingFromOn: false,
       registrationInFlight: undefined,
       roleMutationInFlight: false,
       sessionRef: undefined,
@@ -174,19 +182,20 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     let activeContext: PiContext | undefined;
     let wakeGeneration = 0;
 
-    const setRoleUi = (ctx: PiContext | undefined) => {
-      ctx?.ui.setStatus?.(
-        "shepherd-orchestrator",
-        state.isOrchestrator ? "Shepherd: orchestrator" : undefined,
+    const setShepherdUi = (ctx: PiContext | undefined) => {
+      if (!ctx) return;
+      const footerState: ShepherdFooterState = state.reconnectingFromOn
+        ? { kind: "reconnecting" }
+        : state.isOrchestrator
+          ? {
+              kind: "on",
+              updateCount: projectAgentOutcomes(state.pendingEvents).outcomes.length,
+            }
+          : { kind: "off" };
+      ctx.ui.setStatus?.(
+        "shepherd",
+        formatShepherdFooterStatus(footerState, ctx.ui.theme),
       );
-    };
-
-    const setPendingUi = (ctx: PiContext | undefined) => {
-      const count = projectAgentOutcomes(state.pendingEvents).outcomes.length;
-      const label =
-        count > 0 ? `${count} pending agent update${count === 1 ? "" : "s"}` : undefined;
-      ctx?.ui.setStatus?.("shepherd", label);
-      ctx?.ui.setWidget?.("shepherd", label ? [label] : undefined);
     };
 
     const cancelWakeTimer = () => {
@@ -346,8 +355,15 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       cancelWake();
       state.isOrchestrator = false;
       state.pendingEvents = [];
-      setRoleUi(ctx);
-      setPendingUi(ctx);
+      state.reconnectingFromOn = false;
+      setShepherdUi(ctx);
+    };
+
+    const markDisconnected = (ctx: PiContext | undefined) => {
+      const reconnectingFromOn = state.reconnectingFromOn || state.isOrchestrator;
+      loseRole(ctx);
+      state.reconnectingFromOn = reconnectingFromOn;
+      setShepherdUi(ctx);
     };
 
     const resetForScopeChange = (ctx: PiContext | undefined) => {
@@ -357,20 +373,22 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       cancelWake();
       state.failedWakeThroughEventId = 0;
       state.pendingEvents = [];
-      setPendingUi(ctx);
+      setShepherdUi(ctx);
     };
 
     const addPendingEvents = (events: AgentEventWireRecord[], ctx: PiContext | undefined) => {
       const byId = new Map(state.pendingEvents.map((event) => [event.id, event]));
       for (const event of events) byId.set(event.id, event);
       state.pendingEvents = [...byId.values()].sort((left, right) => left.id - right.id);
-      setPendingUi(ctx);
+      setShepherdUi(ctx);
     };
 
     const applyConnectionStateResponse = (
       response: ConnectionStateResponse,
       ctx: PiContext | undefined,
+      options: { notifyReconnectLoss?: boolean } = {},
     ) => {
+      const reconnectingOwner = options.notifyReconnectLoss && state.reconnectingFromOn;
       const scopeChanged =
         state.currentScope !== undefined &&
         (state.currentScope.herdrSessionName !== response.presence.herdrSessionName ||
@@ -385,10 +403,19 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       const isOwner = isLocalOwner(response);
       if (!isOwner) {
         loseRole(ctx);
+        if (reconnectingOwner) {
+          ctx?.ui.notify?.(
+            response.state?.owner
+              ? `Shepherd is off · moved to ${response.state.owner.paneId}`
+              : "Shepherd is off",
+            "info",
+          );
+        }
         return;
       }
       state.isOrchestrator = true;
-      setRoleUi(ctx);
+      state.reconnectingFromOn = false;
+      setShepherdUi(ctx);
       addPendingEvents(response.events ?? [], ctx);
       scheduleWake(ctx);
     };
@@ -432,7 +459,8 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         };
         const gainedRole = !state.isOrchestrator;
         state.isOrchestrator = true;
-        setRoleUi(ctx);
+        state.reconnectingFromOn = false;
+        setShepherdUi(ctx);
         if (gainedRole || scopeChanged) void refreshAfterRoleGain(ctx);
         return;
       }
@@ -447,8 +475,8 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       if (!state.roleMutationInFlight) {
         ctx?.ui.notify?.(
           change.current.owner
-            ? `Shepherd orchestrator moved to ${change.current.owner.paneId}`
-            : "Shepherd orchestrator is now off for this workspace",
+            ? `Shepherd is off · moved to ${change.current.owner.paneId}`
+            : "Shepherd is off",
           "info",
         );
       }
@@ -478,13 +506,13 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         })
         .then((response) => {
           state.connected = true;
-          ctx.ui.setStatus?.("shepherd-connection", undefined);
-          applyConnectionStateResponse(response as ConnectionStateResponse, ctx);
+          applyConnectionStateResponse(response as ConnectionStateResponse, ctx, {
+            notifyReconnectLoss: true,
+          });
         })
         .catch((error) => {
           state.connected = false;
-          loseRole(ctx);
-          ctx.ui.setStatus?.("shepherd-connection", "Shepherd: reconnecting");
+          markDisconnected(ctx);
           throw error;
         })
         .finally(() => {
@@ -562,8 +590,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       client.onConnected = () => registerPresence(ctx);
       client.onDisconnected = () => {
         state.connected = false;
-        loseRole(activeContext);
-        activeContext?.ui.setStatus?.("shepherd-connection", "Shepherd: reconnecting");
+        markDisconnected(activeContext);
       };
       client.onStreamMessage = handleStreamMessage;
     });
@@ -674,7 +701,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       };
       const finishBatch = () => {
         state.wakeDeferredUntilSettled = false;
-        setPendingUi(ctx);
+        setShepherdUi(ctx);
         scheduleWake(ctx);
       };
 
@@ -694,6 +721,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         try {
           await state.client.request("agent.notifications.ack", { eventId: event.id });
           state.pendingEvents = state.pendingEvents.filter((pending) => pending.id !== event.id);
+          setShepherdUi(ctx);
         } catch {
           failBatch();
           break;
@@ -741,7 +769,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         ]
           .filter(Boolean)
           .join("\n\n");
-        setPendingUi(ctx);
+        setShepherdUi(ctx);
         return {
           message: {
             content,
