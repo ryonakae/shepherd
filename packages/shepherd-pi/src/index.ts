@@ -6,6 +6,10 @@ import {
   ReconnectingDaemonClient,
 } from "./daemon-client.js";
 import {
+  type AgentUpdateMessageDetails,
+  renderAgentUpdateMessage,
+} from "./agent-update-ui.js";
+import {
   formatAgentOutcomeUpdates,
   projectAgentOutcomes,
   WAKE_SETTLE_MS,
@@ -114,6 +118,10 @@ type PiApi = {
   appendEntry?: (customType: string, data: unknown) => void;
   on: (eventName: string, handler: (...args: any[]) => unknown) => void;
   registerCommand?: (name: string, options: CommandOptions) => void;
+  registerMessageRenderer?: (
+    customType: string,
+    renderer: typeof renderAgentUpdateMessage,
+  ) => void;
   registerTool?: (tool: unknown) => void;
   sendMessage?: (
     message: { content: string; customType: string; details?: unknown; display: boolean },
@@ -142,6 +150,8 @@ export function defaultSocketPath() {
 
 export function createShepherdPiExtension(options: ExtensionOptions = {}) {
   return function shepherdPiExtension(pi: PiApi): void {
+    pi.registerMessageRenderer?.("shepherd-wake", renderAgentUpdateMessage);
+
     const state: ShepherdState = {
       client: undefined,
       connected: false,
@@ -300,7 +310,10 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             {
               content: wakeLabel(current.length),
               customType: "shepherd-wake",
-              details: { eventIds: current.map((outcome) => outcome.eventId) },
+              details: {
+                eventIds: current.map((outcome) => outcome.eventId),
+                outcomes: current,
+              } satisfies AgentUpdateMessageDetails,
               display: true,
             },
             { deliverAs: "followUp", triggerTurn: true },

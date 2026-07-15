@@ -136,6 +136,7 @@ describe("Pi agent wake projection", () => {
     ]).outcomes;
 
     expect(outcome).toMatchObject({ text: "red response", truncated: false });
-    expect(formatAgentOutcomeUpdates([outcome!])).not.toContain("\u001b");
+    if (!outcome) throw new Error("expected one agent outcome");
+    expect(formatAgentOutcomeUpdates([outcome])).not.toContain("\u001b");
   });
 });

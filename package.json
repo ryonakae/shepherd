@@ -51,6 +51,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@earendil-works/pi-tui": "^0.80.6",
     "@types/node": "^24.13.2",
     "drizzle-kit": "^0.31.10",
     "husky": "^9.1.7",

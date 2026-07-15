@@ -541,6 +541,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
+      expect(pi.messageRenderers.has("shepherd-wake")).toBe(true);
       client.emitStream({
         method: "agent.event",
         params: { event: event(43, "term_agent", { payload, type }) },
@@ -554,7 +555,20 @@ describe("shepherd-pi orchestrator bridge", () => {
           {
             content: "Shepherd received 1 agent update.",
             customType: "shepherd-wake",
-            details: { eventIds: [43] },
+            details: {
+              eventIds: [43],
+              outcomes: [
+                {
+                  agent: "claude",
+                  eventId: 43,
+                  kind: type === "agent.blocked" ? "blocked" : "completed",
+                  paneId: "wB:p-agent",
+                  terminalId: "term_agent",
+                  text: "done",
+                  truncated: false,
+                },
+              ],
+            },
             display: true,
           },
           { deliverAs: "followUp", triggerTurn: true },
@@ -620,12 +634,12 @@ describe("shepherd-pi orchestrator bridge", () => {
       });
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(pi.customMessages).toEqual([
+      expect(pi.customMessages).toMatchObject([
         [
           {
             content: "Shepherd received 2 agent updates.",
             customType: "shepherd-wake",
-            details: { eventIds: [51, 52] },
+            details: { eventIds: [51, 52], outcomes: [{ eventId: 51 }, { eventId: 52 }] },
             display: true,
           },
           { deliverAs: "followUp", triggerTurn: true },
@@ -677,10 +691,9 @@ describe("shepherd-pi orchestrator bridge", () => {
       await pi.emit("agent_settled", {}, ctx);
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
-        { eventIds: [71] },
-        { eventIds: [72] },
-      ]);
+      expect(
+        pi.customMessages.map(([message]) => (message.details as { eventIds: number[] }).eventIds),
+      ).toEqual([[71], [72]]);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
@@ -934,10 +947,9 @@ describe("shepherd-pi orchestrator bridge", () => {
       await vi.advanceTimersByTimeAsync(500);
 
       expect(client.calls).not.toContainEqual(["agent.notifications.ack", { eventId: 105 }]);
-      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
-        { eventIds: [105] },
-        { eventIds: [106] },
-      ]);
+      expect(
+        pi.customMessages.map(([message]) => (message.details as { eventIds: number[] }).eventIds),
+      ).toEqual([[105], [106]]);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
@@ -1023,10 +1035,9 @@ describe("shepherd-pi orchestrator bridge", () => {
 
       expect(ctx.aborts).toBe(1);
       expect(client.calls).not.toContainEqual(["agent.notifications.ack", { eventId: 109 }]);
-      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
-        { eventIds: [109] },
-        { eventIds: [110] },
-      ]);
+      expect(
+        pi.customMessages.map(([message]) => (message.details as { eventIds: number[] }).eventIds),
+      ).toEqual([[109], [110]]);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
@@ -1195,6 +1206,7 @@ function createFakePi() {
         { deliverAs?: string; triggerTurn?: boolean } | undefined,
       ]
     >,
+    messageRenderers: new Map<string, Handler>(),
     appendEntry(customType: string, data: unknown) {
       this.entries.push([customType, data]);
     },
@@ -1205,6 +1217,9 @@ function createFakePi() {
     on: (name: string, handler: Handler) => handlers.set(name, handler),
     registerCommand(name: string, options: Command) {
       commands.set(name, options);
+    },
+    registerMessageRenderer(customType: string, renderer: Handler) {
+      this.messageRenderers.set(customType, renderer);
     },
     registerTool() {},
     sendMessage(message: unknown, options?: unknown) {
