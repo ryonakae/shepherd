@@ -75,7 +75,7 @@ describe("orchestrator pane movement", () => {
       register(piB, "wB:p-b", "pi-b", "wB"),
     ]);
     const sourceBaseline = appendEvent(harness, "term_peer", "wA");
-    const targetBaseline = appendEvent(harness, "term_worker", "wB");
+    const targetBaseline = appendEvent(harness, "term_agent", "wB");
     await piA.request("agent.orchestrator.set", { enabled: true });
     await piB.request("agent.orchestrator.set", { enabled: true });
     await Promise.all([
@@ -84,7 +84,7 @@ describe("orchestrator pane movement", () => {
       piB.waitForNotification("agent.orchestrator.changed"),
     ]);
     const sourceAck = appendEvent(harness, "term_peer", "wA");
-    const targetAck = appendEvent(harness, "term_worker", "wB");
+    const targetAck = appendEvent(harness, "term_agent", "wB");
     await piA.request("agent.notifications.ack", { eventId: sourceAck.id });
     await piB.request("agent.notifications.ack", { eventId: targetAck.id });
     piA.clearNotifications();

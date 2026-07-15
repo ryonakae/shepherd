@@ -38,7 +38,7 @@ function appendEvent(
 describe("AgentOrchestratorService", () => {
   test("initializes once, replaces owners, and releases only the current owner", () => {
     const { harness, service } = openService();
-    const baseline = appendEvent(harness, { terminalId: "term_worker" });
+    const baseline = appendEvent(harness, { terminalId: "term_agent" });
 
     expect(service.status(scope)).toBeUndefined();
     const first = service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
@@ -75,28 +75,28 @@ describe("AgentOrchestratorService", () => {
       type: "agent.done",
       workspaceId: "wB",
     });
-    const worker = appendEvent(harness, { terminalId: "term_worker" });
+    const agentEvent = appendEvent(harness, { terminalId: "term_agent" });
     appendEvent(harness, { terminalId: "term_other", workspaceId: "wC" });
 
     expect(service.pending({ ...scope, terminalId: "term_owner" })).toEqual([
-      expect.objectContaining({ id: worker.id }),
+      expect.objectContaining({ id: agentEvent.id }),
     ]);
-    expect(service.pending({ ...scope, terminalId: "term_worker" })).toEqual([]);
+    expect(service.pending({ ...scope, terminalId: "term_agent" })).toEqual([]);
   });
 
   test("drops ownerless events but preserves direct replacement events", () => {
     const { harness, service } = openService();
     service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
     service.release({ ...scope, reason: "released", terminalId: "term_a" });
-    appendEvent(harness, { terminalId: "term_worker" });
-    const ownerlessLater = appendEvent(harness, { terminalId: "term_worker_2" });
+    appendEvent(harness, { terminalId: "term_agent" });
+    const ownerlessLater = appendEvent(harness, { terminalId: "term_agent_2" });
     const reclaimed = service.claim({ ...scope, paneId: "wB:p2", terminalId: "term_b" });
 
     expect(reclaimed.current.ackedEventId).toBe(ownerlessLater.id);
     expect(service.pending({ ...scope, terminalId: "term_b" })).toEqual([]);
 
-    const pending = appendEvent(harness, { terminalId: "term_worker" });
-    const later = appendEvent(harness, { terminalId: "term_worker_2" });
+    const pending = appendEvent(harness, { terminalId: "term_agent" });
+    const later = appendEvent(harness, { terminalId: "term_agent_2" });
     service.claim({ ...scope, paneId: "wB:p3", terminalId: "term_c" });
     expect(service.pending({ ...scope, terminalId: "term_c" })).toMatchObject([
       { id: pending.id },
@@ -122,13 +122,13 @@ describe("AgentOrchestratorService", () => {
   test("moves ownership with target ownerless-drop and active-owner preservation", () => {
     const { harness, service } = openService();
     service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
-    const sourceEvent = appendEvent(harness, { terminalId: "term_worker" });
+    const sourceEvent = appendEvent(harness, { terminalId: "term_agent" });
     service.ack({ ...scope, eventId: sourceEvent.id, terminalId: "term_a" });
     const target = { herdrSessionName: "default", workspaceId: "wC" };
     service.claim({ ...target, paneId: "wC:p1", terminalId: "term_c" });
     service.release({ ...target, reason: "released", terminalId: "term_c" });
     const ownerlessTargetEvent = appendEvent(harness, {
-      terminalId: "term_worker",
+      terminalId: "term_agent",
       workspaceId: "wC",
     });
 
@@ -155,7 +155,7 @@ describe("AgentOrchestratorService", () => {
     const ownedTarget = { herdrSessionName: "default", workspaceId: "wD" };
     service.claim({ ...ownedTarget, paneId: "wD:p1", terminalId: "term_d" });
     const pendingTargetEvent = appendEvent(harness, {
-      terminalId: "term_worker",
+      terminalId: "term_agent",
       workspaceId: "wD",
     });
     service.move({ from: target, paneId: "wD:p2", terminalId: "term_a", to: ownedTarget });
@@ -164,7 +164,7 @@ describe("AgentOrchestratorService", () => {
     ]);
 
     const unseen = { herdrSessionName: "default", workspaceId: "wE" };
-    const unseenBaseline = appendEvent(harness, { terminalId: "term_worker", workspaceId: "wE" });
+    const unseenBaseline = appendEvent(harness, { terminalId: "term_agent", workspaceId: "wE" });
     service.move({ from: ownedTarget, paneId: "wE:p1", terminalId: "term_a", to: unseen });
     expect(service.status(unseen)).toMatchObject({ ackedEventId: unseenBaseline.id });
   });

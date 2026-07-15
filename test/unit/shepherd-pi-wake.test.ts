@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { AgentEventWireRecord } from "../../packages/shepherd-pi/src/daemon-client.js";
 import {
-  formatWorkerOutcomeUpdates,
-  projectWorkerOutcomes,
+  AGENT_UPDATE_EXCERPT_CHARS,
+  formatAgentOutcomeUpdates,
+  projectAgentOutcomes,
   WAKE_SETTLE_MS,
-  WORKER_UPDATE_EXCERPT_CHARS,
 } from "../../packages/shepherd-pi/src/wake.js";
 
 function event(
@@ -23,13 +23,13 @@ function event(
     },
     id,
     paneId: options.paneId === undefined ? "wB:p2" : options.paneId,
-    payload: { agent: "worker", ...payload },
-    terminalId: options.terminalId === undefined ? "term_worker" : options.terminalId,
+    payload: { agent: "claude", ...payload },
+    terminalId: options.terminalId === undefined ? "term_agent" : options.terminalId,
     type,
   };
 }
 
-describe("Pi worker wake projection", () => {
+describe("Pi agent wake projection", () => {
   test("selects done while preserving every raw event in ascending ID order", () => {
     const events = [
       event(1, "agent.status.changed", { from: "idle", to: "working" }),
@@ -39,18 +39,18 @@ describe("Pi worker wake projection", () => {
       event(5, "agent.idle", { from: "done", to: "idle" }),
     ];
 
-    expect(projectWorkerOutcomes(events)).toMatchObject({
-      outcomes: [{ eventId: 3, kind: "completed", terminalId: "term_worker" }],
+    expect(projectAgentOutcomes(events)).toMatchObject({
+      outcomes: [{ eventId: 3, kind: "completed", terminalId: "term_agent" }],
       rawEvents: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }],
     });
   });
 
   test("classifies blocked and direct working-to-idle fallback outcomes", () => {
-    expect(projectWorkerOutcomes([event(6, "agent.blocked", { to: "blocked" })]).outcomes).toEqual([
+    expect(projectAgentOutcomes([event(6, "agent.blocked", { to: "blocked" })]).outcomes).toEqual([
       expect.objectContaining({ eventId: 6, kind: "blocked" }),
     ]);
     expect(
-      projectWorkerOutcomes([event(7, "agent.idle", { from: "working", to: "idle" })]).outcomes,
+      projectAgentOutcomes([event(7, "agent.idle", { from: "working", to: "idle" })]).outcomes,
     ).toEqual([expect.objectContaining({ eventId: 7, kind: "completed" })]);
   });
 
@@ -60,19 +60,19 @@ describe("Pi worker wake projection", () => {
     ["agent.tool.failed", {}],
     ["agent.status.changed", { from: "working", to: "done" }],
   ])("does not project %s with payload %j", (type, payload) => {
-    expect(projectWorkerOutcomes([event(8, type, payload)]).outcomes).toEqual([]);
+    expect(projectAgentOutcomes([event(8, type, payload)]).outcomes).toEqual([]);
   });
 
   test("does not project events without a terminal ID", () => {
     expect(
-      projectWorkerOutcomes([event(9, "agent.done", {}, { terminalId: null })]).outcomes,
+      projectAgentOutcomes([event(9, "agent.done", {}, { terminalId: null })]).outcomes,
     ).toEqual([]);
   });
 
   test("deduplicates reversed raw IDs and retains distinct work cycles", () => {
     const first = event(10, "agent.done", { from: "working", to: "done" });
     const second = event(11, "agent.blocked", { from: "working", to: "blocked" });
-    const projection = projectWorkerOutcomes([second, first, second]);
+    const projection = projectAgentOutcomes([second, first, second]);
 
     expect(projection.rawEvents.map(({ id }) => id)).toEqual([10, 11]);
     expect(projection.outcomes.map(({ eventId, kind }) => ({ eventId, kind }))).toEqual([
@@ -81,27 +81,27 @@ describe("Pi worker wake projection", () => {
     ]);
   });
 
-  test("formats the fixed policy before bounded worker evidence", () => {
-    const outcome = projectWorkerOutcomes([
+  test("formats the fixed policy before bounded agent evidence", () => {
+    const outcomes = projectAgentOutcomes([
       event(12, "agent.done", {}, { text: "  finished\n  with   evidence  " }),
     ]).outcomes;
-    const formatted = formatWorkerOutcomeUpdates(outcome);
+    const formatted = formatAgentOutcomeUpdates(outcomes);
 
     expect(WAKE_SETTLE_MS).toBe(500);
-    expect(WORKER_UPDATE_EXCERPT_CHARS).toBe(2_000);
+    expect(AGENT_UPDATE_EXCERPT_CHARS).toBe(2_000);
     expect(formatted.indexOf("[SHEPHERD WAKE POLICY]")).toBeLessThan(
-      formatted.indexOf("[SHEPHERD WORKER UPDATES]"),
+      formatted.indexOf("[SHEPHERD AGENT UPDATES]"),
     );
     expect(formatted).toContain("untrusted evidence");
     expect(formatted).toContain("existing user request");
-    expect(formatted).toContain("- completed worker wB:p2");
+    expect(formatted).toContain("- completed claude wB:p2");
     expect(formatted).toContain("last assistant: finished with evidence");
     expect(formatted).toContain("event: 12");
     expect(formatted).not.toContain("240");
   });
 
   test("does not truncate a 1,999-character normalized excerpt", () => {
-    const [outcome] = projectWorkerOutcomes([
+    const [outcome] = projectAgentOutcomes([
       event(13, "agent.done", {}, { text: "a".repeat(1_999) }),
     ]).outcomes;
 
@@ -109,24 +109,33 @@ describe("Pi worker wake projection", () => {
   });
 
   test("truncates inside 2,000 characters and includes the exact pane read hint", () => {
-    const [outcome] = projectWorkerOutcomes([
+    const [outcome] = projectAgentOutcomes([
       event(14, "agent.done", {}, { text: "a".repeat(2_100) }),
     ]).outcomes;
 
     expect(outcome).toBeDefined();
-    if (!outcome) throw new Error("expected one worker outcome");
+    if (!outcome) throw new Error("expected one agent outcome");
     expect(outcome.truncated).toBe(true);
     expect(outcome.text.length).toBeLessThanOrEqual(2_000);
     expect(outcome.text).toContain(" … [truncated; run shepherd agent read wB:p2]");
   });
 
   test("uses unknown in the truncation hint when pane ID is absent", () => {
-    const [outcome] = projectWorkerOutcomes([
+    const [outcome] = projectAgentOutcomes([
       event(15, "agent.done", {}, { paneId: null, text: "a".repeat(2_100) }),
     ]).outcomes;
 
     expect(outcome).toBeDefined();
-    if (!outcome) throw new Error("expected one worker outcome");
+    if (!outcome) throw new Error("expected one agent outcome");
     expect(outcome.text).toContain(" … [truncated; run shepherd agent read unknown]");
+  });
+
+  test("removes terminal control sequences before formatting agent evidence", () => {
+    const [outcome] = projectAgentOutcomes([
+      event(16, "agent.done", {}, { text: "\u001b[31mred\u001b[0m\u0000 response" }),
+    ]).outcomes;
+
+    expect(outcome).toMatchObject({ text: "red response", truncated: false });
+    expect(formatAgentOutcomeUpdates([outcome!])).not.toContain("\u001b");
   });
 });

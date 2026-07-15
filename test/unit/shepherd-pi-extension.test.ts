@@ -127,7 +127,7 @@ describe("shepherd-pi orchestrator bridge", () => {
   });
 
   test("acknowledges owner updates in ID order only after a final assistant response settles", async () => {
-    const pending = [event(42, "term_worker"), event(41, "term_worker")];
+    const pending = [event(42, "term_agent"), event(41, "term_agent")];
     const client = createFakeClient();
     client.response = (method) => {
       if (method === "agent.orchestrator.register") return connectionResponse({ events: pending });
@@ -144,29 +144,29 @@ describe("shepherd-pi orchestrator bridge", () => {
     try {
       await pi.emit("session_start", {}, ctx);
       await client.connect();
-      client.emitStream({ method: "agent.event", params: { event: event(43, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(43, "term_agent") } });
       client.emitStream({ method: "agent.event", params: { event: event(44, "term_pi") } });
       client.emitStream({ method: "agent.event", params: { event: event(45, null) } });
 
-      expect(ctx.statuses.get("shepherd")).toBe("3 pending worker updates");
-      expect(ctx.widgets.get("shepherd")).toEqual(["3 pending worker updates"]);
+      expect(ctx.statuses.get("shepherd")).toBe("3 pending agent updates");
+      expect(ctx.widgets.get("shepherd")).toEqual(["3 pending agent updates"]);
       expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
         "[SHEPHERD AGENT CONTEXT]",
       );
-      expect(formatHiddenAgentUpdates([event(1, "term_worker")])).toContain(
+      expect(formatHiddenAgentUpdates([event(1, "term_agent")])).toContain(
         "[SHEPHERD AGENT UPDATES]",
       );
 
       const before = await pi.emit("before_agent_start", {}, ctx);
       expect(before).toMatchObject({
         message: {
-          content: expect.stringContaining("[SHEPHERD WORKER UPDATES]"),
+          content: expect.stringContaining("[SHEPHERD AGENT UPDATES]"),
           customType: "shepherd-agent-context",
           display: false,
         },
       });
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("3 pending worker updates");
+      expect(ctx.statuses.get("shepherd")).toBe("3 pending agent updates");
 
       await pi.emit("message_end", assistantMessage("stop"), ctx);
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
@@ -193,7 +193,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const client = createFakeClient();
     client.response = (method) => {
       if (method === "agent.orchestrator.register") {
-        return connectionResponse({ events: [event(51, "term_worker")] });
+        return connectionResponse({ events: [event(51, "term_agent")] });
       }
       if (method === "agent.orchestrator.get") return connectionResponse();
       if (method === "agent.list") return agentListResponse();
@@ -213,9 +213,9 @@ describe("shepherd-pi orchestrator bridge", () => {
       await pi.emit("agent_settled", {}, ctx);
 
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
       expect(ctx.notifications.at(-1)).toEqual([
-        "Shepherd could not acknowledge worker updates; they remain pending",
+        "Shepherd could not acknowledge agent updates; they remain pending",
         "warning",
       ]);
     } finally {
@@ -227,7 +227,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const client = createFakeClient();
     client.response = (method, params) => {
       if (method === "agent.orchestrator.register") {
-        return connectionResponse({ events: [event(61, "term_worker"), event(62, "term_worker")] });
+        return connectionResponse({ events: [event(61, "term_agent"), event(62, "term_agent")] });
       }
       if (method === "agent.orchestrator.get") return connectionResponse();
       if (method === "agent.list") return agentListResponse();
@@ -252,8 +252,8 @@ describe("shepherd-pi orchestrator bridge", () => {
         ["agent.notifications.ack", { eventId: 61 }],
         ["agent.notifications.ack", { eventId: 62 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
-      expect(ctx.widgets.get("shepherd")).toEqual(["1 pending worker update"]);
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
+      expect(ctx.widgets.get("shepherd")).toEqual(["1 pending agent update"]);
     } finally {
       restoreEnv(previous);
     }
@@ -263,7 +263,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const client = createFakeClient();
     client.response = (method) => {
       if (method === "agent.orchestrator.register") {
-        return connectionResponse({ events: [event(63, "term_worker"), event(64, "term_worker")] });
+        return connectionResponse({ events: [event(63, "term_agent"), event(64, "term_agent")] });
       }
       if (method === "agent.orchestrator.get") return connectionResponse();
       if (method === "agent.list") return agentListResponse();
@@ -285,7 +285,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
         ["agent.notifications.ack", { eventId: 63 }],
       ]);
-      expect(ctx.statuses.get("shepherd")).toBe("2 pending worker updates");
+      expect(ctx.statuses.get("shepherd")).toBe("2 pending agent updates");
     } finally {
       restoreEnv(previous);
     }
@@ -295,7 +295,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const client = createFakeClient();
     client.response = (method) => {
       if (method === "agent.orchestrator.register") {
-        return connectionResponse({ events: [event(71, "term_worker")] });
+        return connectionResponse({ events: [event(71, "term_agent")] });
       }
       if (method === "agent.orchestrator.get") return connectionResponse();
       if (method === "agent.list") return agentListResponse();
@@ -329,7 +329,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     client.response = (method) => {
       if (method === "agent.orchestrator.register" || method === "agent.orchestrator.get") {
         return connectionResponse({
-          events: [event(9, "term_worker")],
+          events: [event(9, "term_agent")],
           ownerTerminalId: "term_other",
         });
       }
@@ -344,7 +344,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     try {
       await pi.emit("session_start", {}, ctx);
       await client.connect();
-      client.emitStream({ method: "agent.event", params: { event: event(10, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(10, "term_agent") } });
       const before = await pi.emit("before_agent_start", {}, ctx);
 
       expect(before).toMatchObject({
@@ -495,7 +495,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     client.response = (method) =>
       method === "agent.orchestrator.get"
         ? connectionResponse({
-            events: [event(77, "term_worker")],
+            events: [event(77, "term_agent")],
             paneId: "wC:p3",
             workspaceId: "wC",
           })
@@ -523,7 +523,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await tick();
 
       expect(client.calls).toContainEqual(["agent.orchestrator.get", {}]);
-      expect(ctx.statuses.get("shepherd")).toBe("1 pending worker update");
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
     } finally {
       restoreEnv(previous);
     }
@@ -543,7 +543,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await startExtension(client, pi, ctx);
       client.emitStream({
         method: "agent.event",
-        params: { event: event(43, "term_worker", { payload, type }) },
+        params: { event: event(43, "term_agent", { payload, type }) },
       });
 
       await vi.advanceTimersByTimeAsync(499);
@@ -552,7 +552,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(pi.customMessages).toEqual([
         [
           {
-            content: "Shepherd received 1 worker update.",
+            content: "Shepherd received 1 agent update.",
             customType: "shepherd-wake",
             details: { eventIds: [43] },
             display: true,
@@ -563,7 +563,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(pi.hiddenMessages).toEqual([
         [
           {
-            content: expect.stringContaining("[SHEPHERD WORKER UPDATES]"),
+            content: expect.stringContaining("[SHEPHERD AGENT UPDATES]"),
             customType: "shepherd-wake-context",
             details: { eventIds: [43] },
             display: false,
@@ -587,9 +587,9 @@ describe("shepherd-pi orchestrator bridge", () => {
     try {
       await startExtension(client, pi, ctx);
       for (const candidate of [
-        event(44, "term_worker", { type: "agent.status.changed" }),
-        event(45, "term_worker", { type: "agent.tool.failed" }),
-        event(46, "term_worker", { payload: { from: "done", to: "idle" }, type: "agent.idle" }),
+        event(44, "term_agent", { type: "agent.status.changed" }),
+        event(45, "term_agent", { type: "agent.tool.failed" }),
+        event(46, "term_agent", { payload: { from: "done", to: "idle" }, type: "agent.idle" }),
         event(47, null),
         event(48, "term_pi"),
       ]) {
@@ -613,7 +613,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(51, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(51, "term_agent") } });
       client.emitStream({
         method: "agent.event",
         params: { event: event(52, "term_other", { type: "agent.blocked" }) },
@@ -623,7 +623,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(pi.customMessages).toEqual([
         [
           {
-            content: "Shepherd received 2 worker updates.",
+            content: "Shepherd received 2 agent updates.",
             customType: "shepherd-wake",
             details: { eventIds: [51, 52] },
             display: true,
@@ -646,7 +646,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(61, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(61, "term_agent") } });
       await vi.advanceTimersByTimeAsync(1_000);
       expect(pi.customMessages).toEqual([]);
 
@@ -669,7 +669,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(71, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(71, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await pi.emit("before_agent_start", {}, ctx);
       client.emitStream({ method: "agent.event", params: { event: event(72, "term_other") } });
@@ -696,7 +696,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(81, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(81, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await pi.emit("before_agent_start", {}, ctx);
       await pi.emit("message_end", assistantMessage("aborted"), ctx);
@@ -704,7 +704,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(pi.customMessages).toHaveLength(1);
 
-      client.emitStream({ method: "agent.event", params: { event: event(82, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(82, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       expect(pi.customMessages).toHaveLength(2);
       expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [82] } });
@@ -728,7 +728,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(86, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(86, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await pi.emit("before_agent_start", {}, ctx);
       await pi.emit("message_end", assistantMessage("stop"), ctx);
@@ -736,7 +736,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(pi.customMessages).toHaveLength(1);
 
-      client.emitStream({ method: "agent.event", params: { event: event(87, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(87, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       expect(pi.customMessages).toHaveLength(2);
       expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [87] } });
@@ -749,7 +749,7 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("does not replay a sent-but-not-started wake after reconnect", async () => {
     vi.useFakeTimers();
-    const pending = event(88, "term_worker");
+    const pending = event(88, "term_agent");
     const client = createFakeClient();
     let registrations = 0;
     client.response = (method) => {
@@ -776,7 +776,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(pi.customMessages).toHaveLength(1);
       await pi.emit("agent_settled", {}, ctx);
 
-      client.emitStream({ method: "agent.event", params: { event: event(89, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(89, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       expect(pi.customMessages).toHaveLength(2);
       expect(pi.customMessages.at(-1)?.[0]).toMatchObject({ details: { eventIds: [89] } });
@@ -789,7 +789,7 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("wakes replayed pending outcomes after registration", async () => {
     vi.useFakeTimers();
-    const client = createWakeClient([event(91, "term_worker")]);
+    const client = createWakeClient([event(91, "term_agent")]);
     const pi = createFakePi();
     const ctx = fakeCtx({ idle: true });
     const previous = withHerdrEnv();
@@ -808,7 +808,7 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("lets a replacement Pi wake the previous owner's unacknowledged batch", async () => {
     vi.useFakeTimers();
-    const pending = event(96, "term_worker");
+    const pending = event(96, "term_agent");
     const firstClient = createWakeClient();
     const firstPi = createFakePi();
     const firstCtx = fakeCtx({ idle: true });
@@ -846,7 +846,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(101, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(101, "term_agent") } });
       await vi.advanceTimersByTimeAsync(250);
       const before = await pi.emit("before_agent_start", {}, ctx);
       await pi.emit("message_end", assistantMessage("stop"), ctx);
@@ -854,7 +854,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await vi.advanceTimersByTimeAsync(500);
 
       expect(before).toMatchObject({
-        message: { content: expect.stringContaining("[SHEPHERD WORKER UPDATES]") },
+        message: { content: expect.stringContaining("[SHEPHERD AGENT UPDATES]") },
       });
       expect(pi.customMessages).toEqual([]);
       expect(client.calls).toContainEqual(["agent.notifications.ack", { eventId: 101 }]);
@@ -868,8 +868,8 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("rebuilds pending wake state when timer refresh reveals a missed workspace move", async () => {
     vi.useFakeTimers();
-    const target = event(104, "term_worker", {
-      paneId: "wC:p-worker",
+    const target = event(104, "term_agent", {
+      paneId: "wC:p-agent",
       workspaceId: "wC",
     });
     const client = createFakeClient();
@@ -886,7 +886,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(103, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(103, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await vi.advanceTimersByTimeAsync(500);
 
@@ -901,8 +901,8 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("resets an old batch when reconnect registration reveals a missed workspace move", async () => {
     vi.useFakeTimers();
-    const target = event(106, "term_worker", {
-      paneId: "wC:p-worker",
+    const target = event(106, "term_agent", {
+      paneId: "wC:p-agent",
       workspaceId: "wC",
     });
     const client = createFakeClient();
@@ -921,7 +921,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(105, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(105, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       ctx.setIdle(false);
       moved = true;
@@ -947,8 +947,8 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("drops a stale timer when the same terminal moves workspaces", async () => {
     vi.useFakeTimers();
-    const target = event(108, "term_worker", {
-      paneId: "wC:p-worker",
+    const target = event(108, "term_agent", {
+      paneId: "wC:p-agent",
       workspaceId: "wC",
     });
     const client = createFakeClient();
@@ -968,7 +968,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(107, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(107, "term_agent") } });
       await vi.advanceTimersByTimeAsync(250);
       moved = true;
       client.emitStream({
@@ -988,8 +988,8 @@ describe("shepherd-pi orchestrator bridge", () => {
 
   test("invalidates and aborts a delivered Shepherd batch on same-terminal workspace move", async () => {
     vi.useFakeTimers();
-    const target = event(110, "term_worker", {
-      paneId: "wC:p-worker",
+    const target = event(110, "term_agent", {
+      paneId: "wC:p-agent",
       workspaceId: "wC",
     });
     const client = createFakeClient();
@@ -1009,7 +1009,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(109, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(109, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await pi.emit("before_agent_start", {}, ctx);
       moved = true;
@@ -1042,7 +1042,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await startExtension(client, pi, ctx);
-      client.emitStream({ method: "agent.event", params: { event: event(111, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(111, "term_agent") } });
       await vi.advanceTimersByTimeAsync(250);
       client.emitStream({
         method: "agent.orchestrator.changed",
@@ -1057,7 +1057,7 @@ describe("shepherd-pi orchestrator bridge", () => {
         params: { change: roleChange("term_other", "term_pi") },
       });
       await vi.runAllTimersAsync();
-      client.emitStream({ method: "agent.event", params: { event: event(112, "term_worker") } });
+      client.emitStream({ method: "agent.event", params: { event: event(112, "term_agent") } });
       await vi.advanceTimersByTimeAsync(500);
       await pi.emit("before_agent_start", {}, ctx);
       client.emitStream({
@@ -1306,8 +1306,8 @@ function event(
   return {
     compactHistory: { lastAssistantMessage: { text: "done" } },
     id,
-    paneId: options.paneId ?? "wB:p-worker",
-    payload: { agent: "worker", ...options.payload },
+    paneId: options.paneId ?? "wB:p-agent",
+    payload: { agent: "claude", ...options.payload },
     terminalId,
     type: options.type ?? "agent.done",
     workspaceId: options.workspaceId ?? "wB",

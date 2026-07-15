@@ -186,7 +186,7 @@ describe("ObservabilityRpcServer", () => {
       generic.request("agent.events", { workspaceId: "wB" }),
     ]);
 
-    const beforeOwner = appendRoutedEvent(harness, "term_worker", "wB");
+    const beforeOwner = appendRoutedEvent(harness, "term_agent", "wB");
     server.publishAgentEvent(beforeOwner);
     await tick();
     expect(piA.notifications).toEqual([]);
@@ -203,10 +203,10 @@ describe("ObservabilityRpcServer", () => {
     expect(piC.notifications).toEqual([]);
     expect(generic.notifications).toEqual([]);
 
-    const worker = appendRoutedEvent(harness, "term_worker", "wB");
-    server.publishAgentEvent(worker);
+    const agentEvent = appendRoutedEvent(harness, "term_agent", "wB");
+    server.publishAgentEvent(agentEvent);
     await expect(piA.waitForNotification("agent.event")).resolves.toMatchObject({
-      params: { event: { id: worker.id } },
+      params: { event: { id: agentEvent.id } },
     });
     expect(piB.notifications).toEqual([]);
 
@@ -227,7 +227,7 @@ describe("ObservabilityRpcServer", () => {
     expect(replacement).toMatchObject({
       changed: true,
       events: [
-        expect.objectContaining({ id: worker.id }),
+        expect.objectContaining({ id: agentEvent.id }),
         expect.objectContaining({ id: self.id }),
       ],
       state: { owner: { terminalId: "term_b" } },
@@ -241,10 +241,10 @@ describe("ObservabilityRpcServer", () => {
       "Only the current orchestrator",
     );
     await expect(
-      piB.request("agent.notifications.ack", { eventId: worker.id }),
+      piB.request("agent.notifications.ack", { eventId: agentEvent.id }),
     ).resolves.toMatchObject({
       acknowledged: true,
-      state: { ackedEventId: worker.id },
+      state: { ackedEventId: agentEvent.id },
     });
     await expect(
       piB.request("agent.notifications.ack", { eventId: self.id }),
@@ -265,7 +265,7 @@ describe("ObservabilityRpcServer", () => {
       piB.waitForNotification("agent.orchestrator.changed"),
     ]);
 
-    const ownerless = appendRoutedEvent(harness, "term_worker", "wB");
+    const ownerless = appendRoutedEvent(harness, "term_agent", "wB");
     await expect(piA.request("agent.orchestrator.set", { enabled: true })).resolves.toMatchObject({
       changed: true,
       events: [],

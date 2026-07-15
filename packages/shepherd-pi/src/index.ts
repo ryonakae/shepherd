@@ -6,8 +6,8 @@ import {
   ReconnectingDaemonClient,
 } from "./daemon-client.js";
 import {
-  formatWorkerOutcomeUpdates,
-  projectWorkerOutcomes,
+  formatAgentOutcomeUpdates,
+  projectAgentOutcomes,
   WAKE_SETTLE_MS,
 } from "./wake.js";
 
@@ -172,9 +172,9 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     };
 
     const setPendingUi = (ctx: PiContext | undefined) => {
-      const count = projectWorkerOutcomes(state.pendingEvents).outcomes.length;
+      const count = projectAgentOutcomes(state.pendingEvents).outcomes.length;
       const label =
-        count > 0 ? `${count} pending worker update${count === 1 ? "" : "s"}` : undefined;
+        count > 0 ? `${count} pending agent update${count === 1 ? "" : "s"}` : undefined;
       ctx?.ui.setStatus?.("shepherd", label);
       ctx?.ui.setWidget?.("shepherd", label ? [label] : undefined);
     };
@@ -193,11 +193,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     };
 
     const wakeLabel = (count: number) =>
-      `Shepherd received ${count} worker update${count === 1 ? "" : "s"}.`;
+      `Shepherd received ${count} agent update${count === 1 ? "" : "s"}.`;
 
     const scheduleWake = (ctx: PiContext | undefined) => {
       if (!ctx || !state.isOrchestrator || !state.currentScope || !pi.sendMessage) return;
-      const outcomes = projectWorkerOutcomes(state.pendingEvents).outcomes;
+      const outcomes = projectAgentOutcomes(state.pendingEvents).outcomes;
       const wakeable = outcomes.filter(
         (outcome) => outcome.eventId > state.failedWakeThroughEventId,
       );
@@ -246,7 +246,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
               requestedThroughEventId,
             );
             ctx.ui.notify?.(
-              "Shepherd could not prepare worker updates; they remain pending",
+              "Shepherd could not prepare agent updates; they remain pending",
               "warning",
             );
             return;
@@ -268,7 +268,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             return;
           }
 
-          const current = projectWorkerOutcomes(state.pendingEvents).outcomes.filter(
+          const current = projectAgentOutcomes(state.pendingEvents).outcomes.filter(
             (outcome) => outcome.eventId > state.failedWakeThroughEventId,
           );
           if (current.length === 0) {
@@ -276,7 +276,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             return;
           }
           const batchEvents = [...state.pendingEvents].sort((left, right) => left.id - right.id);
-          const batchOutcomes = projectWorkerOutcomes(batchEvents).outcomes;
+          const batchOutcomes = projectAgentOutcomes(batchEvents).outcomes;
           state.deliveredBatch = {
             assistantFinalSucceeded: false,
             events: batchEvents,
@@ -289,7 +289,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
           state.wakeRequestedThroughEventId = current.at(-1)?.eventId ?? 0;
           pi.sendMessage?.(
             {
-              content: formatWorkerOutcomeUpdates(batchOutcomes),
+              content: formatAgentOutcomeUpdates(batchOutcomes),
               customType: "shepherd-wake-context",
               details: { eventIds: batchEvents.map((event) => event.id) },
               display: false,
@@ -669,7 +669,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
           );
         }
         ctx.ui.notify?.(
-          "Shepherd could not acknowledge worker updates; they remain pending",
+          "Shepherd could not acknowledge agent updates; they remain pending",
           "warning",
         );
       };
@@ -731,14 +731,14 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         state.wakeRequested = false;
         state.wakeRequestedThroughEventId = 0;
         const outcomes = state.deliveredBatch
-          ? projectWorkerOutcomes(state.deliveredBatch.events).outcomes
+          ? projectAgentOutcomes(state.deliveredBatch.events).outcomes
           : [];
         const content = [
           formatHiddenAgentContext({
             agents: response.agents ?? [],
             workspaceId: state.currentScope.workspaceId,
           }),
-          outcomes.length > 0 ? formatWorkerOutcomeUpdates(outcomes) : "",
+          outcomes.length > 0 ? formatAgentOutcomeUpdates(outcomes) : "",
         ]
           .filter(Boolean)
           .join("\n\n");
