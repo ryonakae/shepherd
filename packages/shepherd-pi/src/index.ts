@@ -192,10 +192,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
               updateCount: projectAgentOutcomes(state.pendingEvents).outcomes.length,
             }
           : { kind: "off" };
-      ctx.ui.setStatus?.(
-        "shepherd",
-        formatShepherdFooterStatus(footerState, ctx.ui.theme),
-      );
+      ctx.ui.setStatus?.("shepherd", formatShepherdFooterStatus(footerState));
     };
 
     const cancelWakeTimer = () => {

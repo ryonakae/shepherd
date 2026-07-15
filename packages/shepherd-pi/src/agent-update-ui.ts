@@ -1,5 +1,4 @@
 import { stripVTControlCharacters } from "node:util";
-import { keyHint } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, Text } from "@earendil-works/pi-tui";
 import type { AgentOutcome } from "./wake.js";
 
@@ -82,19 +81,13 @@ function updateCountLabel(count: number): string {
 
 export function formatShepherdFooterStatus(
   state: ShepherdFooterState,
-  theme: ThemeLike,
 ): string | undefined {
   if (state.kind === "off") return undefined;
-  if (state.kind === "reconnecting") {
-    return (
-      theme.fg("warning", `◇ ${theme.bold("Shepherd")}`) +
-      theme.fg("muted", " · reconnecting")
-    );
-  }
+  if (state.kind === "reconnecting") return "◇ Shepherd · reconnecting";
 
-  const label = theme.fg("accent", `◆ ${theme.bold("Shepherd")}`);
+  const label = "◆ Shepherd";
   if (state.updateCount === 0) return label;
-  return label + theme.fg("muted", ` · ${updateCountLabel(state.updateCount)}`);
+  return `${label} · ${updateCountLabel(state.updateCount)}`;
 }
 
 export function renderAgentUpdateMessage(
@@ -105,8 +98,8 @@ export function renderAgentUpdateMessage(
   const details = messageDetails(message.details);
   const count = details.outcomes.length > 0 ? details.outcomes.length : details.eventIds.length;
   const heading =
-    theme.fg("accent", `◆ ${theme.bold("Shepherd")}`) +
-    theme.fg("muted", ` · ${updateCountLabel(count)}`);
+    theme.fg("customMessageLabel", `◆ ${theme.bold("Shepherd")}`) +
+    theme.fg("muted", ` ${updateCountLabel(count)}`);
   const visibleOutcomes = options.expanded
     ? details.outcomes
     : details.outcomes.slice(0, COLLAPSED_AGENT_UPDATE_LIMIT);
@@ -117,9 +110,8 @@ export function renderAgentUpdateMessage(
     const summary = [
       theme.fg(color, glyph),
       theme.bold(agentDisplayName(cleanDisplayText(outcome.agent))),
-      theme.fg("muted", "·"),
       theme.fg(color, outcome.kind),
-      theme.fg("muted", `· ${cleanDisplayText(outcome.paneId ?? "unknown")}`),
+      theme.fg("muted", cleanDisplayText(outcome.paneId ?? "unknown")),
     ].join(" ");
     if (!options.expanded) return [summary];
     const cleanedResponse = cleanDisplayText(outcome.text);
@@ -128,16 +120,7 @@ export function renderAgentUpdateMessage(
   });
   const hiddenCount = details.outcomes.length - visibleOutcomes.length;
   const omission = hiddenCount > 0 ? theme.fg("muted", `… ${hiddenCount} more`) : undefined;
-  const hint =
-    details.outcomes.length > 0
-      ? theme.fg(
-          "dim",
-          keyHint("app.tools.expand", options.expanded ? "to collapse" : "to expand"),
-        )
-      : undefined;
-  const text = [heading, ...rows, omission, hint]
-    .filter((line) => line !== undefined)
-    .join("\n");
+  const text = [heading, ...rows, omission].filter((line) => line !== undefined).join("\n");
   const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
   box.addChild(new Text(text, 0, 0));
   return box;

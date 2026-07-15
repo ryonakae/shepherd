@@ -13,6 +13,12 @@ const theme = {
   fg: (_color: string, text: string) => text,
 };
 
+const semanticTheme = {
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+  fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+};
+
 function outcome(eventId: number, options: Partial<AgentOutcome> = {}): AgentOutcome {
   return {
     agent: "claude",
@@ -52,16 +58,31 @@ describe("Shepherd Pi agent update UI", () => {
     expect(agentDisplayName("custom-agent")).toBe("custom-agent");
   });
 
+  test("colors the Shepherd heading as a custom message label", () => {
+    const text = renderAgentUpdateMessage(
+      {
+        content: "ignored",
+        details: { eventIds: [40], outcomes: [outcome(40)] },
+      },
+      { expanded: false },
+      semanticTheme,
+    )
+      .render(100)
+      .join("\n");
+
+    expect(text).toContain("[customMessageLabel]◆ Shepherd[/customMessageLabel]");
+  });
+
   test("renders a themed collapsed summary without event IDs", () => {
     const text = render([
       outcome(41),
       outcome(42, { agent: "codex", kind: "blocked", paneId: "wB:p3" }),
     ]);
 
-    expect(text).toContain("◆ Shepherd · 2 agent updates");
-    expect(text).toContain("✓ Claude · completed · wB:p2");
-    expect(text).toContain("! Codex · blocked · wB:p3");
-    expect(text).toContain("to expand");
+    expect(text).toContain("◆ Shepherd 2 agent updates");
+    expect(text).toContain("✓ Claude completed wB:p2");
+    expect(text).toContain("! Codex blocked wB:p3");
+    expect(text).not.toContain("·");
     expect(text).not.toContain("41");
     expect(text).not.toContain("42");
   });
@@ -75,7 +96,7 @@ describe("Shepherd Pi agent update UI", () => {
       outcome(55, { paneId: "wB:p5" }),
     ]);
 
-    expect(text).toContain("◆ Shepherd · 5 agent updates");
+    expect(text).toContain("◆ Shepherd 5 agent updates");
     expect(text).toContain("wB:p1");
     expect(text).toContain("wB:p3");
     expect(text).not.toContain("wB:p4");
@@ -97,7 +118,11 @@ describe("Shepherd Pi agent update UI", () => {
     expect(text).not.toContain("… 1 more");
     expect(text).toContain("Last response  first response");
     expect(text).toContain("Last response  No final response");
-    expect(text).toContain("to collapse");
+  });
+
+  test("omits expand and collapse hints from agent update cards", () => {
+    expect(render([outcome(65)])).not.toContain("to expand");
+    expect(render([outcome(65)], true)).not.toContain("to collapse");
   });
 
   test("renders legacy event-only details without exposing old content", () => {
@@ -112,7 +137,7 @@ describe("Shepherd Pi agent update UI", () => {
       .render(100)
       .join("\n");
 
-    expect(text).toContain("◆ Shepherd · 2 agent updates");
+    expect(text).toContain("◆ Shepherd 2 agent updates");
     expect(text).not.toContain("legacy raw message");
     expect(text).not.toContain("to expand");
   });
@@ -139,17 +164,15 @@ describe("Shepherd Pi agent update UI", () => {
     expect(text).not.toContain("\u0085");
   });
 
-  test("formats every unified Shepherd footer state", () => {
-    expect(formatShepherdFooterStatus({ kind: "off" }, theme)).toBeUndefined();
-    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 0 }, theme)).toBe("◆ Shepherd");
-    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 1 }, theme)).toBe(
+  test("formats every unified Shepherd footer state as plain text", () => {
+    expect(formatShepherdFooterStatus({ kind: "off" })).toBeUndefined();
+    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 0 })).toBe("◆ Shepherd");
+    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 1 })).toBe(
       "◆ Shepherd · 1 agent update",
     );
-    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 2 }, theme)).toBe(
+    expect(formatShepherdFooterStatus({ kind: "on", updateCount: 2 })).toBe(
       "◆ Shepherd · 2 agent updates",
     );
-    expect(formatShepherdFooterStatus({ kind: "reconnecting" }, theme)).toBe(
-      "◇ Shepherd · reconnecting",
-    );
+    expect(formatShepherdFooterStatus({ kind: "reconnecting" })).toBe("◇ Shepherd · reconnecting");
   });
 });
