@@ -17,6 +17,7 @@ Shepherd currently supports session history from Claude Code, Codex, Gemini CLI,
 - Node.js >= 24.18.0
 - pnpm >= 11.9.0
 - Herdr >= 0.7.0
+- Pi >= 0.80.6 when using `shepherd-pi`
 
 ## Install from source
 
@@ -80,11 +81,11 @@ npx skills add ogulcancelik/herdr --skill herdr -g
 
 ## Pi extension
 
-The `shepherd-pi` extension connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn. Pushed unread agent updates go only to the terminal explicitly selected as that workspace's Shepherd orchestrator.
+The `shepherd-pi` extension requires Pi 0.80.6 or newer and connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn.
 
-Enter `/shepherd orchestrator on` in Pi to claim the role. Use `/shepherd orchestrator` or `/shepherd orchestrator status` to inspect it, and `/shepherd orchestrator off` from the owner to release it. Claiming from another Pi in the same Herdr session/workspace transfers the role atomically. With no owner, no Pi receives pushed updates.
+Enter `/shepherd orchestrator on` in Pi to explicitly select that terminal as the workspace orchestrator. The selected Pi receives completed or blocked Worker outcomes and automatically starts one visible Shepherd turn. Worker output is treated as untrusted evidence: Pi may continue only the existing user request and must not expand its scope. The footer shows `N pending worker updates` until a turn containing them produces a final assistant response, settles, and acknowledges every underlying event.
 
-The role follows the Herdr terminal across Pi session replacement and pane movement. It clears when that terminal remains disconnected beyond the grace period. Only the owner shows `Shepherd: orchestrator` in the Pi footer.
+Use `/shepherd orchestrator` or `/shepherd orchestrator status` to inspect the role. `/shepherd orchestrator off` stops automatic wake and releases the role when run by its owner. With no owner, outcomes are not delivered, and outcomes created during the ownerless period are not replayed by a later claim. Reloads, reconnects, and direct replacement by another Pi preserve unacknowledged outcomes. The role follows the Herdr terminal across Pi session replacement and pane movement, and clears when that terminal remains disconnected beyond the grace period. Only the owner shows `Shepherd: orchestrator` in the Pi footer.
 
 ## Herdr plugin
 

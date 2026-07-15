@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Ready for implementation
+**Status:** Completed
 
 **Goal:** Make an explicitly selected Pi orchestrator automatically start one visible, bounded Pi turn when a worker completes or becomes blocked, then acknowledge the underlying Shepherd events only after Pi produces a final assistant response and settles.
 
@@ -838,7 +838,7 @@ git commit -m "feat(pi): wake orchestrator for worker outcomes"
 - Consumes: completed wake lifecycle and all automated test evidence.
 - Produces: public behavior contract and live acceptance evidence.
 
-- [ ] **Step 1: Update public documentation**
+- [x] **Step 1: Update public documentation**
 
 Document these exact behaviors in both root READMEs and the package README:
 
@@ -853,7 +853,7 @@ Document these exact behaviors in both root READMEs and the package README:
 
 Do not document a wake mode, passive mode, delivery mode, or configuration option.
 
-- [ ] **Step 2: Run the full automated validation**
+- [x] **Step 2: Run the full automated validation**
 
 Run with the project-required PATH prefix when necessary:
 
@@ -871,7 +871,7 @@ Expected:
 - no obsolete active TypeScript identifier remains;
 - `git diff --check` prints nothing.
 
-- [ ] **Step 3: Create a disposable Herdr topology and dogfood idle wake**
+- [x] **Step 3: Create a disposable Herdr topology and dogfood idle wake**
 
 Run the following from a Herdr-managed shell. If `HERDR_ENV` is not `1`, open a Herdr shell first; do not guess or control a focused pane from outside Herdr.
 
@@ -942,7 +942,7 @@ Expected:
 - `acked_event_id` advances through every underlying raw event in order;
 - no second wake occurs for `done -> idle`.
 
-- [ ] **Step 4: Dogfood busy deferral and ownerless drop in the disposable topology**
+- [x] **Step 4: Dogfood busy deferral and ownerless drop in the disposable topology**
 
 Busy deferral:
 
@@ -986,7 +986,7 @@ herdr wait agent-status "$PI_PANE" --status idle --timeout 120000
 
 Run the Step 3 DB query again. Record workspace/pane IDs, bounded event IDs, cursor changes, footer states, and observed custom messages under `Completion Notes`. Do not commit the disposable `.pi` settings, raw databases, session files, or terminal dumps. Close the disposable workspace with `herdr workspace close "$WORKSPACE_ID"` after evidence is recorded.
 
-- [ ] **Step 5: Commit documentation and evidence**
+- [x] **Step 5: Commit documentation and evidence**
 
 Mark Task 6 complete, set this plan status to `Completed`, fill `Completion Notes`, and run:
 
@@ -1053,15 +1053,31 @@ Do not archive the plan in this commit. Archive completed plans later in a separ
 - [x] Task 3: Drop events created during ownerless periods.
 - [x] Task 4: Acknowledge delivered updates only after Pi settles.
 - [x] Task 5: Wake the selected Pi orchestrator.
-- [ ] Task 6: Document and dogfood active orchestration.
+- [x] Task 6: Document and dogfood active orchestration.
 
 ## Completion Notes
 
-Not started. Add automated command results and bounded live event/cursor evidence during Task 6.
+Completed on 2026-07-15.
+
+Automated validation:
+
+- `pnpm check`: passed with 32 Vitest files and 175 tests, plus root/package typechecks, Biome lint/format, Drizzle check, Pi package dry-run, and Herdr plugin package check.
+- `pnpm build`: passed with TypeScript output and alias rewriting.
+- Active TypeScript `autoResume` gate: zero matches.
+- `git diff --check`: passed.
+- Focused wake lifecycle: 45 pure/extension tests passed; reconnect, disconnect-grace, and pane-move suites passed with 11 tests.
+
+Live Herdr validation used disposable workspace `wM` with Pi `wM:p1` (`term_6569beec71af718`), Claude `wM:p2` (`term_6569beec9a65f19`), and shell `wM:p3`:
+
+- Idle replay: Claude raw events 15-17 produced one visible wake. Hidden `shepherd-wake-context` contained raw IDs 15-17 and the bounded final Claude result. After Pi settled, the footer cleared and `acked_event_id` advanced from 0 to 17.
+- The first live run exposed that Pi custom-message turns bypass `before_agent_start`; commit `784e1de` now inserts hidden wake context before the visible trigger. The same run exposed repeated `working -> done` cycles reusing an old idempotency key; the fix persisted the next distinct cycle as raw IDs 23-25 with fresh history.
+- Busy deferral: while Pi ran `sleep 60`, Claude completed raw IDs 30-32. The footer showed `1 pending worker update`; `PI_BUSY_FIX_PROBE_DONE` appeared before the Shepherd wake. Hidden context contained the fresh `Busy fixed cycle probe` result for event 32, and the cursor advanced from 25 to 32 after the follow-up settled.
+- Ownerless drop: `/shepherd orchestrator off` left the cursor at 32. Claude completed raw IDs 38-40 while the scope owner was null. Reclaim reset the cursor to 40 with no pending footer, hidden wake context, or automatic turn for event 40.
+- Post-ownerless delivery: Claude raw IDs 41-43 produced one visible wake with the fresh `Post-ownerless probe` result. After settlement, the footer cleared and the cursor advanced to 43.
+- Owner self-events were not delivered to Pi. No duplicate wake followed terminal-to-idle transitions.
+
+The disposable files, SQLite database, Pi/Claude session logs, and terminal dumps were not added to the repository.
 
 ## Next Steps
 
-1. Execute Task 1 with TDD.
-2. Continue task-by-task, committing after each task.
-3. Run the full automated and live validation before marking the plan completed.
-4. Archive the completed plan later in a separate docs-only commit.
+1. Archive this completed plan under `docs/plans/archived/` in a separate docs-only commit.
