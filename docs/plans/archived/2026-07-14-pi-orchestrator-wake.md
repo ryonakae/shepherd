@@ -1061,12 +1061,12 @@ Completed on 2026-07-15.
 
 Automated validation:
 
-- `pnpm check`: passed with 32 Vitest files and 176 tests, plus root/package typechecks, Biome lint/format, Drizzle check, Pi package dry-run, and Herdr plugin package check.
+- `pnpm check`: passed with 32 Vitest files and 177 tests, plus root/package typechecks, Biome lint/format, Drizzle check, Pi package dry-run, and Herdr plugin package check.
 - `pnpm build`: passed with TypeScript output and alias rewriting.
 - Active TypeScript `autoResume` gate: zero matches.
 - `git diff --check`: passed.
-- Focused wake lifecycle: 46 pure/extension tests passed; reconnect, disconnect-grace, and pane-move suites passed with 11 tests.
-- Final read-only review found a missed-stream race where a reconnect registration could reveal a workspace move while retaining the old batch. Commit `058b35f` resets scope-local wake state on that response path and adds a regression test.
+- Focused wake lifecycle: 47 pure/extension tests passed; reconnect, disconnect-grace, and pane-move suites passed with 11 tests.
+- Final read-only review found missed-stream races where registration or the timer-time pending refresh could reveal a workspace move while retaining old scope state. Commits `058b35f` and `ba9bb86` route both response paths through scope reset logic and add regression tests. The repeated review returned no findings.
 
 Live Herdr validation used disposable workspace `wM` with Pi `wM:p1` (`term_6569beec71af718`), Claude `wM:p2` (`term_6569beec9a65f19`), and shell `wM:p3`:
 
