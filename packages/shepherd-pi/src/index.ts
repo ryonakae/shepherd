@@ -363,6 +363,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       response: ConnectionStateResponse,
       ctx: PiContext | undefined,
     ) => {
+      const scopeChanged =
+        state.currentScope !== undefined &&
+        (state.currentScope.herdrSessionName !== response.presence.herdrSessionName ||
+          state.currentScope.workspaceId !== response.presence.workspaceId);
+      if (scopeChanged) resetForScopeChange(ctx);
       state.currentScope = {
         herdrSessionName: response.presence.herdrSessionName,
         paneId: response.presence.paneId,

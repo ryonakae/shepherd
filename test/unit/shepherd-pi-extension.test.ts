@@ -866,6 +866,52 @@ describe("shepherd-pi orchestrator bridge", () => {
     }
   });
 
+  test("resets an old batch when reconnect registration reveals a missed workspace move", async () => {
+    vi.useFakeTimers();
+    const target = event(106, "term_worker", {
+      paneId: "wC:p-worker",
+      workspaceId: "wC",
+    });
+    const client = createFakeClient();
+    let moved = false;
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register" || method === "agent.orchestrator.get") {
+        return moved
+          ? connectionResponse({ events: [target], paneId: "wC:p1", workspaceId: "wC" })
+          : connectionResponse();
+      }
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(105, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      ctx.setIdle(false);
+      moved = true;
+      await client.connect();
+
+      expect(ctx.aborts).toBe(1);
+      ctx.setIdle(true);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(client.calls).not.toContainEqual(["agent.notifications.ack", { eventId: 105 }]);
+      expect(pi.customMessages.map(([message]) => message.details)).toEqual([
+        { eventIds: [105] },
+        { eventIds: [106] },
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
   test("drops a stale timer when the same terminal moves workspaces", async () => {
     vi.useFakeTimers();
     const target = event(108, "term_worker", {
