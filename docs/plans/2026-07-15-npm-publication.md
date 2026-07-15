@@ -442,7 +442,7 @@ git push origin main
 
 **Objective:** Prove the exact tarballs work before creating an immutable npm version.
 
-- [ ] **Step 1: Run repository gates**
+- [x] **Step 1: Run repository gates**
 
 ```bash
 PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/installs/pnpm/11.9.0/bin:$PATH" pnpm check
@@ -452,7 +452,7 @@ git diff --check
 
 Expected: typecheck, all Vitest files, Biome, Drizzle, root package check, Pi package check, Herdr package check, and production build pass.
 
-- [ ] **Step 2: Create actual tarballs outside the repository**
+- [x] **Step 2: Create actual tarballs outside the repository**
 
 ```bash
 RELEASE_TMP="$(mktemp -d)"
@@ -472,7 +472,7 @@ ls -lh "$RELEASE_TMP"
 
 Expected: the exact two scoped tarball filenames match. The Herdr directory produces no release tarball.
 
-- [ ] **Step 3: Install and run the packed root CLI**
+- [x] **Step 3: Install and run the packed root CLI**
 
 ```bash
 mkdir -p "$RELEASE_TMP/root-prefix"
@@ -483,7 +483,7 @@ npm install --global --prefix "$RELEASE_TMP/root-prefix" \
 
 Expected: installation succeeds without repository files; `shepherd help` exits zero and prints the CLI command list.
 
-- [ ] **Step 4: Install and inspect the Pi tarball**
+- [x] **Step 4: Install and inspect the Pi tarball**
 
 ```bash
 mkdir -p "$RELEASE_TMP/pi-prefix"
@@ -495,7 +495,7 @@ test ! -f "$RELEASE_TMP/pi-prefix/node_modules/@ryonakae/shepherd-pi/tsconfig.js
 
 Expected: package installation succeeds and only the declared runtime files appear.
 
-- [ ] **Step 5: Confirm no repository changes**
+- [x] **Step 5: Confirm no repository changes**
 
 ```bash
 git status --short
@@ -748,10 +748,10 @@ Expected: the docs-only archive commit is after `v0.3.1`; the tag remains on the
 
 - [x] Task 1: Lock the publication boundary and clean package output — `bab2d62`
 - [x] Task 2: Document installation and release operations
-- [ ] Task 3: Validate packed artifacts and isolated installation
+- [x] Task 3: Validate packed artifacts and isolated installation — 34 test files / 200 tests; root 195 files / 94,093 bytes; Pi 6 files / 11,878 bytes
 - [ ] Task 4: Release version 0.3.1 to npm and GitHub
 - [ ] Task 5: Archive the completed plan
 
 ## Next steps
 
-- Execute Task 3 packed-artifact and isolated-install validation.
+- Execute Task 4 release version 0.3.1 to npm and GitHub.
