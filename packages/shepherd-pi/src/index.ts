@@ -211,35 +211,109 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       const ownerTerminalId = state.currentScope.terminalId;
       const ownerWorkspaceId = state.currentScope.workspaceId;
       state.wakeTimer = setTimeout(() => {
-        state.wakeTimer = undefined;
-        if (
-          generation !== wakeGeneration ||
-          !state.isOrchestrator ||
-          state.currentScope?.herdrSessionName !== ownerHerdrSessionName ||
-          state.currentScope?.terminalId !== ownerTerminalId ||
-          state.currentScope?.workspaceId !== ownerWorkspaceId
-        ) {
-          return;
-        }
-        if (ctx.isIdle?.() === false) {
-          state.wakeDeferredUntilSettled = true;
-          return;
-        }
-        const current = projectWorkerOutcomes(state.pendingEvents).outcomes.filter(
-          (outcome) => outcome.eventId > state.failedWakeThroughEventId,
-        );
-        if (current.length === 0) return;
-        state.wakeRequested = true;
-        state.wakeRequestedThroughEventId = current.at(-1)?.eventId ?? 0;
-        pi.sendMessage?.(
-          {
-            content: wakeLabel(current.length),
-            customType: "shepherd-wake",
-            details: { eventIds: current.map((outcome) => outcome.eventId) },
-            display: true,
-          },
-          { deliverAs: "followUp", triggerTurn: true },
-        );
+        const startWake = async () => {
+          if (
+            generation !== wakeGeneration ||
+            !state.isOrchestrator ||
+            state.currentScope?.herdrSessionName !== ownerHerdrSessionName ||
+            state.currentScope?.terminalId !== ownerTerminalId ||
+            state.currentScope?.workspaceId !== ownerWorkspaceId
+          ) {
+            state.wakeTimer = undefined;
+            return;
+          }
+          if (ctx.isIdle?.() === false) {
+            state.wakeTimer = undefined;
+            state.wakeDeferredUntilSettled = true;
+            return;
+          }
+
+          const requestedThroughEventId = wakeable.at(-1)?.eventId ?? 0;
+          try {
+            const response = (await state.client?.request(
+              "agent.orchestrator.get",
+              {},
+            )) as ConnectionStateResponse | undefined;
+            if (
+              !response ||
+              response.state?.owner?.terminalId !== ownerTerminalId ||
+              response.state.herdrSessionName !== ownerHerdrSessionName ||
+              response.state.workspaceId !== ownerWorkspaceId
+            ) {
+              state.wakeTimer = undefined;
+              return;
+            }
+            addPendingEvents(response.events ?? [], ctx);
+          } catch {
+            state.wakeTimer = undefined;
+            state.failedWakeThroughEventId = Math.max(
+              state.failedWakeThroughEventId,
+              requestedThroughEventId,
+            );
+            ctx.ui.notify?.(
+              "Shepherd could not prepare worker updates; they remain pending",
+              "warning",
+            );
+            return;
+          }
+
+          if (
+            generation !== wakeGeneration ||
+            !state.isOrchestrator ||
+            state.currentScope?.herdrSessionName !== ownerHerdrSessionName ||
+            state.currentScope?.terminalId !== ownerTerminalId ||
+            state.currentScope?.workspaceId !== ownerWorkspaceId
+          ) {
+            state.wakeTimer = undefined;
+            return;
+          }
+          if (ctx.isIdle?.() === false) {
+            state.wakeTimer = undefined;
+            state.wakeDeferredUntilSettled = true;
+            return;
+          }
+
+          const current = projectWorkerOutcomes(state.pendingEvents).outcomes.filter(
+            (outcome) => outcome.eventId > state.failedWakeThroughEventId,
+          );
+          if (current.length === 0) {
+            state.wakeTimer = undefined;
+            return;
+          }
+          const batchEvents = [...state.pendingEvents].sort((left, right) => left.id - right.id);
+          const batchOutcomes = projectWorkerOutcomes(batchEvents).outcomes;
+          state.deliveredBatch = {
+            assistantFinalSucceeded: false,
+            events: batchEvents,
+            invalidated: false,
+            ownerTerminalId,
+            shepherdTriggered: true,
+          };
+          state.wakeTimer = undefined;
+          state.wakeRequested = true;
+          state.wakeRequestedThroughEventId = current.at(-1)?.eventId ?? 0;
+          pi.sendMessage?.(
+            {
+              content: formatWorkerOutcomeUpdates(batchOutcomes),
+              customType: "shepherd-wake-context",
+              details: { eventIds: batchEvents.map((event) => event.id) },
+              display: false,
+            },
+            { deliverAs: "followUp" },
+          );
+          pi.sendMessage?.(
+            {
+              content: wakeLabel(current.length),
+              customType: "shepherd-wake",
+              details: { eventIds: current.map((outcome) => outcome.eventId) },
+              display: true,
+            },
+            { deliverAs: "followUp", triggerTurn: true },
+          );
+          state.wakeRequested = false;
+          state.wakeRequestedThroughEventId = 0;
+        };
+        void startWake();
       }, WAKE_SETTLE_MS);
     };
 

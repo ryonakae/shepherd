@@ -560,6 +560,17 @@ describe("shepherd-pi orchestrator bridge", () => {
           { deliverAs: "followUp", triggerTurn: true },
         ],
       ]);
+      expect(pi.hiddenMessages).toEqual([
+        [
+          {
+            content: expect.stringContaining("[SHEPHERD WORKER UPDATES]"),
+            customType: "shepherd-wake-context",
+            details: { eventIds: [43] },
+            display: false,
+          },
+          { deliverAs: "followUp" },
+        ],
+      ]);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
@@ -763,6 +774,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       await client.connect();
       await vi.advanceTimersByTimeAsync(1_000);
       expect(pi.customMessages).toHaveLength(1);
+      await pi.emit("agent_settled", {}, ctx);
 
       client.emitStream({ method: "agent.event", params: { event: event(89, "term_worker") } });
       await vi.advanceTimersByTimeAsync(500);
@@ -1098,6 +1110,12 @@ function createFakePi() {
     >,
     entries: [] as unknown[],
     handlers,
+    hiddenMessages: [] as Array<
+      [
+        { content: string; customType: string; details?: unknown; display: boolean },
+        { deliverAs?: string; triggerTurn?: boolean } | undefined,
+      ]
+    >,
     appendEntry(customType: string, data: unknown) {
       this.entries.push([customType, data]);
     },
@@ -1111,7 +1129,11 @@ function createFakePi() {
     },
     registerTool() {},
     sendMessage(message: unknown, options?: unknown) {
-      this.customMessages.push([message as never, options as never]);
+      const target =
+        (message as { display?: boolean }).display === false
+          ? this.hiddenMessages
+          : this.customMessages;
+      target.push([message as never, options as never]);
     },
     setSessionName() {},
   };

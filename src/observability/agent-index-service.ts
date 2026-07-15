@@ -28,6 +28,7 @@ export class AgentIndexService {
   }) => Pick<HerdrSocketClient, "close" | "sessionSnapshot">;
   readonly #history: AgentHistoryService;
   readonly #stores: AgentIndexServiceStores;
+  #observationSequence = 0;
 
   constructor(options: {
     clientFactory?: (input: {
@@ -138,26 +139,27 @@ export class AgentIndexService {
     from: AgentStatus;
     to: AgentStatus;
   }): AgentEventRecord | undefined {
-    let lastEvent: AgentEventRecord | undefined;
-    if (input.from !== input.to) {
-      lastEvent = this.#stores.agentEvents.append({
-        agentId: input.agent.id,
-        compactHistory: input.compactHistory,
-        herdrSessionName: input.agent.herdrSessionName,
-        idempotencyKey: idempotencyKey(
-          "agent.status.changed",
-          input.agent,
-          input.from,
-          input.to,
-          input.evidence,
-        ),
-        paneId: input.agent.paneId,
-        payload: payload(input.agent, input.from, input.to),
-        terminalId: input.agent.terminalId,
-        type: "agent.status.changed",
-        workspaceId: input.agent.workspaceId,
-      });
-    }
+    if (input.from === input.to) return undefined;
+    const observationId =
+      eventIdentity(input.evidence) ??
+      `observed:${input.agent.lastSeenAt.getTime()}:${this.#observationSequence++}`;
+    let lastEvent = this.#stores.agentEvents.append({
+      agentId: input.agent.id,
+      compactHistory: input.compactHistory,
+      herdrSessionName: input.agent.herdrSessionName,
+      idempotencyKey: idempotencyKey(
+        "agent.status.changed",
+        input.agent,
+        input.from,
+        input.to,
+        observationId,
+      ),
+      paneId: input.agent.paneId,
+      payload: payload(input.agent, input.from, input.to),
+      terminalId: input.agent.terminalId,
+      type: "agent.status.changed",
+      workspaceId: input.agent.workspaceId,
+    });
     const statusType = statusEventType(input.to);
     if (statusType) {
       lastEvent = this.#stores.agentEvents.append({
@@ -169,7 +171,7 @@ export class AgentIndexService {
           input.agent,
           input.from,
           input.to,
-          input.evidence,
+          observationId,
         ),
         paneId: input.agent.paneId,
         payload: payload(input.agent, input.from, input.to),
@@ -217,14 +219,17 @@ function idempotencyKey(
   agent: AgentIndexRecord,
   from: AgentStatus,
   to: AgentStatus,
-  event: Record<string, unknown>,
+  observationId: string,
 ): string {
-  const seq =
-    stringValue(event.seq) ??
-    stringValue(event.id) ??
-    stringValue(event.timestamp) ??
-    `${from}:${to}`;
-  return `${type}:${agent.herdrSessionName}:${agent.paneId}:${from}:${to}:${seq}`;
+  return `${type}:${agent.herdrSessionName}:${agent.paneId}:${from}:${to}:${observationId}`;
+}
+
+function eventIdentity(event: Record<string, unknown>): string | null {
+  for (const value of [event.seq, event.id, event.timestamp]) {
+    if (typeof value === "string" && value.length > 0) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
 }
 
 function record(value: unknown): Record<string, unknown> {

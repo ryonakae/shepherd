@@ -8,6 +8,62 @@ import { cleanupTempDirs, openObservabilityDbHarness } from "./observability-db-
 afterEach(cleanupTempDirs);
 
 describe("AgentIndexService", () => {
+  test("persists distinct terminal events for repeated work cycles", async () => {
+    const harness = openObservabilityDbHarness();
+    let assistantText = "first result";
+    const index = new AgentIndexService({
+      clientFactory: () => ({
+        close() {},
+        async sessionSnapshot() {
+          return snapshot("working");
+        },
+      }),
+      history: {
+        async getCompactHistory() {
+          return {
+            ...emptyCompactHistory("claude-jsonl"),
+            lastAssistantMessage: { ref: "history", text: assistantText, timestamp: null },
+          };
+        },
+      } as unknown as AgentHistoryService,
+      stores: harness,
+    });
+    await index.refreshHerdrSession({
+      herdrSessionName: "default",
+      sessionDir: "/tmp/herdr",
+      socketPath: "/tmp/herdr.sock",
+    });
+    const handleStatus = (agentStatus: string) =>
+      index.handleHerdrEvent({
+        event: {
+          agent_status: agentStatus,
+          pane_id: "wJ:p2",
+          type: "pane.agent_status_changed",
+        },
+        herdrSessionName: "default",
+      });
+
+    const firstDone = await handleStatus("done");
+    await handleStatus("working");
+    assistantText = "second result";
+    const secondDone = await handleStatus("done");
+    const duplicateDone = await handleStatus("done");
+
+    expect(firstDone).toMatchObject({ type: "agent.done" });
+    expect(secondDone).toMatchObject({
+      compactHistory: { lastAssistantMessage: { text: "second result" } },
+      type: "agent.done",
+    });
+    expect(secondDone?.id).not.toBe(firstDone?.id);
+    expect(duplicateDone).toBeUndefined();
+    expect(
+      harness.agentEvents
+        .listAfter({ herdrSessionName: "default", workspaceId: "wJ" })
+        .filter((event) => event.type === "agent.done"),
+    ).toHaveLength(2);
+    harness.sqlite.close();
+  });
+
   test("emits one terminal status event when a refreshed snapshot observes a missed transition", async () => {
     const harness = openObservabilityDbHarness();
     const emitted: AgentEventRecord[] = [];
