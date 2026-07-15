@@ -110,7 +110,7 @@ export async function getDaemonStatus(input: {
   pidPath: string;
   socketPath: string;
 }): Promise<DaemonStatus> {
-  const isProcessRunning = input.deps?.isProcessRunning ?? defaultIsProcessRunning;
+  const processIsRunning = input.deps?.isProcessRunning ?? isProcessRunning;
   const connectSocket = input.deps?.connectSocket ?? defaultConnectSocket;
 
   if (!existsSync(input.pidPath)) {
@@ -126,7 +126,7 @@ export async function getDaemonStatus(input: {
   }
 
   const pid = Number(readFileSync(input.pidPath, "utf8").trim());
-  if (!Number.isInteger(pid) || pid <= 0 || !isProcessRunning(pid)) {
+  if (!Number.isInteger(pid) || pid <= 0 || !processIsRunning(pid)) {
     if (await connectSocket(input.socketPath)) {
       return {
         pidPath: input.pidPath,
@@ -238,13 +238,13 @@ export async function stopDaemonProcess(input: {
   }
 
   const killProcess = deps.killProcess ?? ((pid, signal) => process.kill(pid, signal));
-  const isProcessRunning = deps.isProcessRunning ?? defaultIsProcessRunning;
+  const processIsRunning = deps.isProcessRunning ?? isProcessRunning;
   const waitMs = deps.waitMs ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
   killProcess(status.pid, "SIGTERM");
   const deadline = Date.now() + input.timeoutMs;
   while (Date.now() < deadline) {
-    if (!isProcessRunning(status.pid)) {
+    if (!processIsRunning(status.pid)) {
       rmSync(input.pidPath, { force: true });
       return { alreadyStopped: false, pid: status.pid };
     }
@@ -263,12 +263,14 @@ function spawnDaemonProcess(
   return { pid: child.pid, unref: () => child.unref() };
 }
 
-function defaultIsProcessRunning(pid: number): boolean {
+type ProcessProbe = (pid: number, signal: 0) => unknown;
+
+export function isProcessRunning(pid: number, probe: ProcessProbe = process.kill): boolean {
   try {
-    process.kill(pid, 0);
+    probe(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM";
   }
 }
 

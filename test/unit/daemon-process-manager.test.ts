@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   type DaemonRuntimeRecord,
   getDaemonStatus,
+  isProcessRunning,
   prepareDaemonSocketPath,
   readDaemonRuntimeRecord,
   startDaemonProcess,
@@ -54,6 +55,22 @@ describe("daemon process manager", () => {
       socketReachable: true,
       state: "orphaned",
     });
+  });
+
+  test("treats an EPERM process probe as a live process", () => {
+    const probe = () => {
+      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+    };
+
+    expect(isProcessRunning(1234, probe)).toBe(true);
+  });
+
+  test("treats an ESRCH process probe as a stopped process", () => {
+    const probe = () => {
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    };
+
+    expect(isProcessRunning(1234, probe)).toBe(false);
   });
 
   test("reports running when the pid file contains a live process", async () => {
