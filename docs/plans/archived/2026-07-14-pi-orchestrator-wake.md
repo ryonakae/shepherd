@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Completed
+**Status:** Completed and archived
 
 **Goal:** Make an explicitly selected Pi orchestrator automatically start one visible, bounded Pi turn when a worker completes or becomes blocked, then acknowledge the underlying Shepherd events only after Pi produces a final assistant response and settles.
 
@@ -1080,4 +1080,4 @@ The disposable files, SQLite database, Pi/Claude session logs, and terminal dump
 
 ## Next Steps
 
-1. Archive this completed plan under `docs/plans/archived/` in a separate docs-only commit.
+No further implementation work remains.
