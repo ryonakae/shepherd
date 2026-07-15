@@ -8,6 +8,8 @@ const extensionModuleUrl = new URL("../../packages/shepherd-pi/src/index.ts", im
 
 type Handler = (...args: unknown[]) => unknown;
 type Command = {
+  description: string;
+  getArgumentCompletions?(prefix: string): Array<{ label: string; value: string }> | null;
   handler(args: string, ctx: ReturnType<typeof fakeCtx>): Promise<void>;
 };
 
@@ -52,6 +54,8 @@ describe("shepherd-pi orchestrator bridge", () => {
     await pi.emit("session_start", {}, ctx);
     expect(clients).toBe(0);
     expect(ctx.statuses.get("shepherd-orchestrator")).toBeUndefined();
+    await pi.command("", ctx);
+    expect(ctx.notifications.at(-1)).toEqual(["Shepherd requires a Herdr workspace", "error"]);
 
     const previous = withHerdrEnv();
     delete process.env.HERDR_PANE_ID;
@@ -215,7 +219,7 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
       expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
       expect(ctx.notifications.at(-1)).toEqual([
-        "Shepherd could not acknowledge agent updates; they remain pending",
+        "Shepherd couldn’t acknowledge agent updates · updates remain pending",
         "warning",
       ]);
     } finally {
@@ -363,7 +367,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     }
   });
 
-  test("implements strict orchestrator command parsing and status messages", async () => {
+  test("implements direct local command parsing and status messages", async () => {
     const client = createFakeClient();
     let current = connectionResponse({ ownerTerminalId: null });
     client.response = (method, params) => {
@@ -372,9 +376,10 @@ describe("shepherd-pi orchestrator bridge", () => {
       }
       if (method === "agent.orchestrator.set") {
         const enabled = (params as { enabled: boolean }).enabled;
-        current = enabled
-          ? connectionResponse({ changed: true })
-          : connectionResponse({ changed: false, ownerTerminalId: "term_other" });
+        if (enabled) current = connectionResponse({ changed: true });
+        else if (current.state.owner?.terminalId === "term_pi") {
+          current = connectionResponse({ changed: true, ownerTerminalId: null });
+        } else current = { ...current, changed: false };
         return current;
       }
       return {};
@@ -386,32 +391,51 @@ describe("shepherd-pi orchestrator bridge", () => {
     const previous = withHerdrEnv();
     try {
       await pi.emit("session_start", {}, ctx);
-      await pi.command("orchestrator on", ctx);
-      expect(ctx.notifications.at(-1)).toEqual([UNAVAILABLE, "error"]);
+      await pi.command("on", ctx);
+      expect(ctx.notifications.at(-1)).toEqual([
+        "Shepherd is reconnecting · try again shortly",
+        "warning",
+      ]);
       await client.connect();
 
-      await pi.command("orchestrator", ctx);
-      expect(ctx.notifications.at(-1)).toEqual([
-        "No Shepherd orchestrator is set for default/wB",
-        "info",
+      expect(pi.commands.get("shepherd")?.description).toBe(
+        "Watch Shepherd agent updates in this Pi",
+      );
+      expect(pi.commands.get("shepherd")?.getArgumentCompletions?.("")).toEqual([
+        { label: "on", value: "on" },
+        { label: "off", value: "off" },
+        { label: "status", value: "status" },
       ]);
-      await pi.command("  orchestrator   on  ", ctx);
+
+      await pi.command("", ctx);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off", "info"]);
+      await pi.command("status", ctx);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off", "info"]);
+
+      await pi.command("  on  ", ctx);
       expect(client.calls).toContainEqual(["agent.orchestrator.set", { enabled: true }]);
-      expect(ctx.statuses.get("shepherd-orchestrator")).toBe("Shepherd: orchestrator");
       expect(ctx.notifications.at(-1)).toEqual([
-        "This Pi is the Shepherd orchestrator for default/wB (wB:p1)",
+        "Shepherd is watching agent updates · default/wB · wB:p1",
         "info",
       ]);
-      await pi.command("orchestrator off", ctx);
+      await pi.command("status", ctx);
       expect(ctx.notifications.at(-1)).toEqual([
-        "This Pi is not the Shepherd orchestrator",
+        "Shepherd is watching agent updates · default/wB · wB:p1",
         "info",
       ]);
-      await pi.command("orchestrator status", ctx);
-      expect(ctx.notifications.at(-1)).toEqual([
-        "Shepherd orchestrator for default/wB is wB:p-other",
-        "info",
-      ]);
+
+      await pi.command("off", ctx);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off", "info"]);
+
+      current = connectionResponse({ ownerTerminalId: "term_other" });
+      await pi.command("status", ctx);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off", "info"]);
+      await pi.command("off", ctx);
+      expect(current.state.owner?.terminalId).toBe("term_other");
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd is off", "info"]);
+
+      await pi.command("orchestrator on", ctx);
+      expect(ctx.notifications.at(-1)).toEqual([USAGE, "warning"]);
       await pi.command("unknown", ctx);
       expect(ctx.notifications.at(-1)).toEqual([USAGE, "warning"]);
     } finally {
@@ -461,10 +485,8 @@ describe("shepherd-pi orchestrator bridge", () => {
       });
       await tick();
       ctx.notifications.length = 0;
-      await pi.command("orchestrator off", ctx);
-      expect(ctx.notifications).toEqual([
-        ["No Shepherd orchestrator is set for default/wB", "info"],
-      ]);
+      await pi.command("off", ctx);
+      expect(ctx.notifications).toEqual([["Shepherd is off", "info"]]);
     } finally {
       restoreEnv(previous);
     }
@@ -644,6 +666,35 @@ describe("shepherd-pi orchestrator bridge", () => {
           },
           { deliverAs: "followUp", triggerTurn: true },
         ],
+      ]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
+  test("retains pending outcomes when wake preparation fails", async () => {
+    vi.useFakeTimers();
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") return connectionResponse();
+      if (method === "agent.orchestrator.get") throw new Error("refresh failed");
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(53, "term_agent") } });
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages).toEqual([]);
+      expect(ctx.statuses.get("shepherd")).toBe("1 pending agent update");
+      expect(ctx.notifications.at(-1)).toEqual([
+        "Shepherd couldn’t load agent updates · updates remain pending",
+        "warning",
       ]);
     } finally {
       vi.clearAllTimers();
@@ -1110,8 +1161,7 @@ describe("shepherd-pi orchestrator bridge", () => {
   });
 });
 
-const USAGE = "Usage: /shepherd orchestrator [on|off|status]";
-const UNAVAILABLE = "Shepherd orchestrator is unavailable until this Pi reconnects to the daemon";
+const USAGE = "Usage: /shepherd [on|off|status]";
 
 function createWakeClient(replayedEvents: AgentEventWireRecord[] = []) {
   const client = createFakeClient();

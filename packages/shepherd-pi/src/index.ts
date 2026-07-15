@@ -136,9 +136,9 @@ type ExtensionOptions = {
 
 const DEFAULT_HOME_NAME = ".shepherd";
 const MAX_EXCERPT = 4096;
-const COMMAND_USAGE = "Usage: /shepherd orchestrator [on|off|status]";
-const UNAVAILABLE_MESSAGE =
-  "Shepherd orchestrator is unavailable until this Pi reconnects to the daemon";
+const COMMAND_USAGE = "Usage: /shepherd [on|off|status]";
+const HERDR_REQUIRED_MESSAGE = "Shepherd requires a Herdr workspace";
+const RECONNECTING_MESSAGE = "Shepherd is reconnecting · try again shortly";
 
 function defaultShepherdHome() {
   return process.env.SHEPHERD_HOME || `${process.env.HOME || ""}/${DEFAULT_HOME_NAME}`;
@@ -256,7 +256,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
               requestedThroughEventId,
             );
             ctx.ui.notify?.(
-              "Shepherd could not prepare agent updates; they remain pending",
+              "Shepherd couldn’t load agent updates · updates remain pending",
               "warning",
             );
             return;
@@ -382,10 +382,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
         terminalId: response.presence.terminalId,
         workspaceId: response.presence.workspaceId,
       };
-      const isOwner =
-        response.state?.owner?.terminalId === response.presence.terminalId &&
-        response.state.herdrSessionName === response.presence.herdrSessionName &&
-        response.state.workspaceId === response.presence.workspaceId;
+      const isOwner = isLocalOwner(response);
       if (!isOwner) {
         loseRole(ctx);
         return;
@@ -498,33 +495,26 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     };
 
     pi.registerCommand?.("shepherd", {
-      description: "Manage the Shepherd orchestrator for this Herdr workspace",
+      description: "Watch Shepherd agent updates in this Pi",
       getArgumentCompletions(prefix: string) {
-        const values = [
-          "orchestrator",
-          "orchestrator on",
-          "orchestrator off",
-          "orchestrator status",
-        ];
-        const items = values
+        const items = ["on", "off", "status"]
           .filter((value) => value.startsWith(prefix))
           .map((value) => ({ label: value, value }));
         return items.length > 0 ? items : null;
       },
       handler: async (args: string, ctx: PiContext) => {
-        const tokens = args.trim().split(/\s+/).filter(Boolean);
-        const action =
-          tokens.length === 1 && tokens[0] === "orchestrator"
-            ? "status"
-            : tokens.length === 2 && tokens[0] === "orchestrator"
-              ? tokens[1]
-              : undefined;
+        const value = args.trim();
+        const action = value === "" ? "status" : value;
         if (action !== "on" && action !== "off" && action !== "status") {
           ctx.ui.notify?.(COMMAND_USAGE, "warning");
           return;
         }
+        if (!state.launchIdentity) {
+          ctx.ui.notify?.(HERDR_REQUIRED_MESSAGE, "error");
+          return;
+        }
         if (!state.client || !state.connected || !state.currentScope) {
-          ctx.ui.notify?.(UNAVAILABLE_MESSAGE, "error");
+          ctx.ui.notify?.(RECONNECTING_MESSAGE, "warning");
           return;
         }
         try {
@@ -534,7 +524,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
               {},
             )) as ConnectionStateResponse;
             applyConnectionStateResponse(response, ctx);
-            notifyStatus(response, ctx);
+            notifyLocalStatus(response, ctx);
             return;
           }
           state.roleMutationInFlight = true;
@@ -542,11 +532,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             enabled: action === "on",
           })) as ConnectionStateResponse;
           applyConnectionStateResponse(response, ctx);
-          if (action === "off" && response.changed === false) {
-            ctx.ui.notify?.("This Pi is not the Shepherd orchestrator", "info");
-          } else {
-            notifyStatus(response, ctx);
-          }
+          notifyLocalStatus(response, ctx);
         } catch (error) {
           ctx.ui.notify?.(error instanceof Error ? error.message : String(error), "error");
         } finally {
@@ -682,7 +668,7 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
           );
         }
         ctx.ui.notify?.(
-          "Shepherd could not acknowledge agent updates; they remain pending",
+          "Shepherd couldn’t acknowledge agent updates · updates remain pending",
           "warning",
         );
       };
@@ -806,23 +792,22 @@ export function formatHiddenAgentUpdates(events: AgentEventWireRecord[]): string
   ].join("\n");
 }
 
-function notifyStatus(response: ConnectionStateResponse, ctx: PiContext): void {
-  const scope = `${response.presence.herdrSessionName}/${response.presence.workspaceId}`;
-  if (!response.state?.owner) {
-    ctx.ui.notify?.(`No Shepherd orchestrator is set for ${scope}`, "info");
-    return;
-  }
-  if (response.state.owner.terminalId === response.presence.terminalId) {
-    ctx.ui.notify?.(
-      `This Pi is the Shepherd orchestrator for ${scope} (${response.state.owner.paneId})`,
-      "info",
-    );
-    return;
-  }
-  ctx.ui.notify?.(
-    `Shepherd orchestrator for ${scope} is ${response.state.owner.paneId}`,
-    "info",
+function isLocalOwner(response: ConnectionStateResponse): boolean {
+  return (
+    response.state?.owner?.terminalId === response.presence.terminalId &&
+    response.state.herdrSessionName === response.presence.herdrSessionName &&
+    response.state.workspaceId === response.presence.workspaceId
   );
+}
+
+function localStatusMessage(response: ConnectionStateResponse): string {
+  if (!isLocalOwner(response) || !response.state?.owner) return "Shepherd is off";
+  const scope = `${response.presence.herdrSessionName}/${response.presence.workspaceId}`;
+  return `Shepherd is watching agent updates · ${scope} · ${response.state.owner.paneId}`;
+}
+
+function notifyLocalStatus(response: ConnectionStateResponse, ctx: PiContext): void {
+  ctx.ui.notify?.(localStatusMessage(response), "info");
 }
 
 function herdrLaunchIdentity(environment: NodeJS.ProcessEnv): LaunchIdentity | undefined {
