@@ -1,6 +1,6 @@
 {
   "name": "shepherd-herdr-plugin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Herdr companion plugin for Shepherd agent history.",
   "type": "module",
   "private": true,
