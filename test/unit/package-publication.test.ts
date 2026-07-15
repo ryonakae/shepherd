@@ -34,8 +34,10 @@ describe("npm publication metadata", () => {
     expect(root.scripts).toMatchObject({
       "clean:dist": "node scripts/clean-dist.mjs",
       "package:check": "node scripts/check-root-package.mjs",
+      "pnpm:devPreinstall": "husky",
       prepack: "pnpm build",
     });
+    expect(root.scripts).not.toHaveProperty("prepare");
     expect(root.scripts?.build).toContain("pnpm clean:dist");
     expect(root.scripts?.check).toContain("pnpm package:check");
 

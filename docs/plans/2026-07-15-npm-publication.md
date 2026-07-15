@@ -82,6 +82,7 @@
     "clean:dist": "node scripts/clean-dist.mjs",
     "build": "pnpm clean:dist && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "package:check": "node scripts/check-root-package.mjs",
+    "pnpm:devPreinstall": "husky",
     "prepack": "pnpm build"
   }
 }
@@ -205,8 +206,10 @@ describe("npm publication metadata", () => {
     expect(root.scripts).toMatchObject({
       "clean:dist": "node scripts/clean-dist.mjs",
       "package:check": "node scripts/check-root-package.mjs",
+      "pnpm:devPreinstall": "husky",
       prepack: "pnpm build",
     });
+    expect(root.scripts).not.toHaveProperty("prepare");
     expect(root.scripts?.build).toContain("pnpm clean:dist");
     expect(root.scripts?.check).toContain("pnpm package:check");
 
@@ -313,7 +316,7 @@ if (errors.length > 0) {
 console.log(`${packed.name}@${packed.version}: ${files.length} files`);
 ```
 
-Update root scripts so `build` starts with `pnpm clean:dist`, `prepack` runs `pnpm build`, `package:check` runs the checker, and the aggregate `check` includes `pnpm package:check` before nested package checks. `package:check` calling `npm pack` does not recurse: npm runs `prepack`, and `prepack` calls `build`, which does not call `package:check`.
+Update root scripts so `build` starts with `pnpm clean:dist`, `prepack` runs `pnpm build`, `package:check` runs the checker, and the aggregate `check` includes `pnpm package:check` before nested package checks. Replace the standard `prepare` lifecycle with `pnpm:devPreinstall` so local pnpm development still installs Husky hooks without exposing an install lifecycle script to npm consumers. `package:check` calling `npm pack` does not recurse: npm runs `prepack`, and `prepack` calls `build`, which does not call `package:check`.
 
 - [x] **Step 5: Run focused contract and package checks**
 
