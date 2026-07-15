@@ -5,6 +5,7 @@ import {
   type DaemonStreamMessage,
   ReconnectingDaemonClient,
 } from "./daemon-client.js";
+import { formatWorkerOutcomeUpdates, projectWorkerOutcomes } from "./wake.js";
 
 type AgentListItem = {
   agent?: string | null;
@@ -60,10 +61,20 @@ type LaunchIdentity = {
   workspaceId: string;
 };
 
+type DeliveredBatch = {
+  assistantFinalSucceeded: boolean;
+  events: AgentEventWireRecord[];
+  invalidated: boolean;
+  ownerTerminalId: string;
+  shepherdTriggered: boolean;
+};
+
 type ShepherdState = {
   client: ShepherdDaemonClient | undefined;
   connected: boolean;
   currentScope: CurrentScope | undefined;
+  deliveredBatch: DeliveredBatch | undefined;
+  failedWakeThroughEventId: number;
   isOrchestrator: boolean;
   launchIdentity: LaunchIdentity | undefined;
   pendingEvents: AgentEventWireRecord[];
@@ -72,9 +83,13 @@ type ShepherdState = {
   sessionRef: AgentSessionRef | undefined;
   subscriberId: string | undefined;
   toolStartTimes: Map<string, { inputPreview?: string; startedAt: number; toolName: string }>;
+  wakeDeferredUntilSettled: boolean;
+  wakeRequested: boolean;
+  wakeTimer: ReturnType<typeof setTimeout> | undefined;
 };
 
 type PiContext = {
+  abort?: () => void;
   isIdle?: () => boolean;
   sessionManager: { getSessionFile(): string; getSessionId(): string };
   ui: {
@@ -95,6 +110,10 @@ type PiApi = {
   on: (eventName: string, handler: (...args: any[]) => unknown) => void;
   registerCommand?: (name: string, options: CommandOptions) => void;
   registerTool?: (tool: unknown) => void;
+  sendMessage?: (
+    message: { content: string; customType: string; details?: unknown; display: boolean },
+    options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean },
+  ) => void;
   setSessionName?: (name: string) => void;
 };
 
@@ -122,6 +141,8 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       client: undefined,
       connected: false,
       currentScope: undefined,
+      deliveredBatch: undefined,
+      failedWakeThroughEventId: 0,
       isOrchestrator: false,
       launchIdentity: undefined,
       pendingEvents: [],
@@ -130,6 +151,9 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       sessionRef: undefined,
       subscriberId: undefined,
       toolStartTimes: new Map(),
+      wakeDeferredUntilSettled: false,
+      wakeRequested: false,
+      wakeTimer: undefined,
     };
     let activeContext: PiContext | undefined;
 
@@ -148,6 +172,10 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     };
 
     const loseRole = (ctx: PiContext | undefined) => {
+      if (state.deliveredBatch) {
+        state.deliveredBatch.invalidated = true;
+        if (state.deliveredBatch.shepherdTriggered) ctx?.abort?.();
+      }
       state.isOrchestrator = false;
       state.pendingEvents = [];
       setRoleUi(ctx);
@@ -419,8 +447,15 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
     });
 
     pi.on("message_end", async (event: Record<string, unknown>) => {
+      const message = record(event.message);
+      if (message.role !== "assistant") return;
+      const stopReason = stringValue(message.stopReason);
+      if (state.deliveredBatch) {
+        state.deliveredBatch.assistantFinalSucceeded =
+          stopReason === "stop" || stopReason === "length";
+      }
       if (!state.client || !state.connected || !state.currentScope) return;
-      const excerpt = sanitize(event.text ?? event.content ?? "");
+      const excerpt = sanitize(assistantText(message.content));
       try {
         await state.client.request("agent.telemetry", {
           event: {
@@ -429,9 +464,9 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
             redactionApplied: excerpt.redacted,
             runtime: "pi",
             sessionRef: state.sessionRef ?? null,
-            stopReason: stringValue(event.stopReason) ?? "stop",
+            stopReason: stopReason ?? "stop",
             textExcerpt: excerpt.text,
-            turnId: stringValue(event.turnId) ?? "unknown-turn",
+            turnId: stringValue(message.turnId) ?? "unknown-turn",
             type: "agent.message.final",
           },
           workspaceId: state.currentScope.workspaceId,
@@ -441,38 +476,86 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       }
     });
 
-    pi.on("before_agent_start", async () => {
+    pi.on("agent_settled", async (_event: unknown, ctx: PiContext) => {
+      const batch = state.deliveredBatch;
+      if (!batch) return;
+      state.deliveredBatch = undefined;
+      const stillOwner =
+        state.isOrchestrator && state.currentScope?.terminalId === batch.ownerTerminalId;
+      const failBatch = () => {
+        const lastEventId = batch.events.at(-1)?.id;
+        if (lastEventId !== undefined) {
+          state.failedWakeThroughEventId = Math.max(
+            state.failedWakeThroughEventId,
+            lastEventId,
+          );
+        }
+        ctx.ui.notify?.(
+          "Shepherd could not acknowledge worker updates; they remain pending",
+          "warning",
+        );
+      };
+
+      if (
+        !batch.assistantFinalSucceeded ||
+        batch.invalidated ||
+        !stillOwner ||
+        !state.client ||
+        !state.connected
+      ) {
+        failBatch();
+        setUnreadUi(ctx);
+        return;
+      }
+
+      for (const event of batch.events) {
+        try {
+          await state.client.request("agent.notifications.ack", { eventId: event.id });
+          state.pendingEvents = state.pendingEvents.filter((pending) => pending.id !== event.id);
+        } catch {
+          failBatch();
+          break;
+        }
+      }
+      setUnreadUi(ctx);
+    });
+
+    pi.on("before_agent_start", async (_event: unknown, ctx: PiContext) => {
       if (!state.client || !state.connected || !state.currentScope) return {};
       try {
         const status = (await state.client.request(
           "agent.orchestrator.get",
           {},
         )) as ConnectionStateResponse;
-        applyConnectionStateResponse(status, activeContext);
+        applyConnectionStateResponse(status, ctx);
         if (!state.currentScope) return {};
         const response = (await state.client.request("agent.list", {
           herdrSessionName: state.currentScope.herdrSessionName,
           workspaceId: state.currentScope.workspaceId,
         })) as { agents?: AgentListItem[] };
-        const events = state.isOrchestrator ? [...state.pendingEvents] : [];
+        if (state.isOrchestrator && !state.deliveredBatch && state.pendingEvents.length > 0) {
+          state.deliveredBatch = {
+            assistantFinalSucceeded: false,
+            events: [...state.pendingEvents].sort((left, right) => left.id - right.id),
+            invalidated: false,
+            ownerTerminalId: state.currentScope.terminalId,
+            shepherdTriggered: state.wakeRequested,
+          };
+          state.wakeRequested = false;
+        }
+        const outcomes = state.deliveredBatch
+          ? projectWorkerOutcomes(state.deliveredBatch.events).outcomes
+          : [];
         const content = [
           formatHiddenAgentContext({
             agents: response.agents ?? [],
             workspaceId: state.currentScope.workspaceId,
           }),
-          events.length > 0 ? formatHiddenAgentUpdates(events) : "",
+          outcomes.length > 0 ? formatWorkerOutcomeUpdates(outcomes) : "",
         ]
           .filter(Boolean)
           .join("\n\n");
-        for (const event of events) {
-          try {
-            await state.client.request("agent.notifications.ack", { eventId: event.id });
-            state.pendingEvents = state.pendingEvents.filter((pending) => pending.id !== event.id);
-          } catch {
-            break;
-          }
-        }
-        setUnreadUi(activeContext);
+        setUnreadUi(ctx);
         return {
           message: {
             content,
@@ -549,6 +632,17 @@ function herdrLaunchIdentity(environment: NodeJS.ProcessEnv): LaunchIdentity | u
   const workspaceId = stringValue(environment.HERDR_WORKSPACE_ID);
   if (!herdrSocketPath || !paneId || !workspaceId) return undefined;
   return { herdrSocketPath, paneId, workspaceId };
+}
+
+function assistantText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => record(block))
+    .filter((block) => block.type === "text")
+    .map((block) => stringValue(block.text) ?? "")
+    .filter(Boolean)
+    .join("\n");
 }
 
 function sanitize(value: unknown): { redacted: boolean; text: string } {

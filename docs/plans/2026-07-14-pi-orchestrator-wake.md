@@ -521,7 +521,7 @@ git commit -m "fix: reset orchestrator cursor after ownerless periods"
 - Consumes: ordered `pendingEvents`, `agent.orchestrator.get`, `agent.notifications.ack`, Pi `message_end`, and Pi `agent_settled`.
 - Produces: `DeliveredBatch` state and post-settlement ordered acknowledgement.
 
-- [ ] **Step 1: Extend the fake Pi lifecycle and write failing deferred-ack tests**
+- [x] **Step 1: Extend the fake Pi lifecycle and write failing deferred-ack tests**
 
 Update the fake objects in `test/unit/shepherd-pi-extension.test.ts`:
 
@@ -569,7 +569,7 @@ Replace the existing immediate-ack test with these assertions:
 6. partial and full ack failures remove successful IDs only, retain the rest, and suppress automatic wake for the failed batch;
 7. role loss marks the batch invalid before abort and causes no ack even if an earlier assistant message had `stopReason: "stop"`.
 
-- [ ] **Step 2: Run the extension test to verify RED**
+- [x] **Step 2: Run the extension test to verify RED**
 
 Run:
 
@@ -579,7 +579,7 @@ pnpm test test/unit/shepherd-pi-extension.test.ts
 
 Expected: tests fail because the current extension acknowledges in `before_agent_start` and has no `agent_settled` handler.
 
-- [ ] **Step 3: Implement delivered-batch tracking**
+- [x] **Step 3: Implement delivered-batch tracking**
 
 In `before_agent_start`:
 
@@ -650,7 +650,7 @@ Sort `batch.events` before storing it so `batch.events.at(-1)` is the maximum ID
 
 Set `@earendil-works/pi-coding-agent` peer dependency to `>=0.80.6` in `packages/shepherd-pi/package.json`. No lockfile update is expected because the nested package is not a pnpm workspace importer.
 
-- [ ] **Step 4: Verify deferred ack and package typing**
+- [x] **Step 4: Verify deferred ack and package typing**
 
 Run:
 
@@ -661,7 +661,7 @@ pnpm --dir packages/shepherd-pi typecheck
 
 Expected: extension lifecycle tests pass, ack calls occur only after assistant final plus settlement, and the package typecheck passes.
 
-- [ ] **Step 5: Commit safe acknowledgement**
+- [x] **Step 5: Commit safe acknowledgement**
 
 Mark Task 4 complete in this plan, then run:
 
@@ -1051,7 +1051,7 @@ Do not archive the plan in this commit. Archive completed plans later in a separ
 - [x] Task 1: Model raw events as worker outcomes.
 - [x] Task 2: Remove the obsolete auto-resume contract.
 - [x] Task 3: Drop events created during ownerless periods.
-- [ ] Task 4: Acknowledge delivered updates only after Pi settles.
+- [x] Task 4: Acknowledge delivered updates only after Pi settles.
 - [ ] Task 5: Wake the selected Pi orchestrator.
 - [ ] Task 6: Document and dogfood active orchestration.
 

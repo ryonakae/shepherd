@@ -99,9 +99,12 @@ describe("shepherd-pi orchestrator bridge", () => {
         turnId: "turn-1",
       });
       await pi.emit("message_end", {
-        stopReason: "stop",
-        text: "completed",
-        turnId: "turn-1",
+        message: {
+          content: [{ text: "completed", type: "text" }],
+          role: "assistant",
+          stopReason: "stop",
+          turnId: "turn-1",
+        },
       });
       expect(client.calls).toContainEqual([
         "agent.telemetry",
@@ -123,7 +126,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     }
   });
 
-  test("injects owner updates in id order and acknowledges without subscriber state", async () => {
+  test("acknowledges owner updates in ID order only after a final assistant response settles", async () => {
     const pending = [event(42, "term_worker"), event(41, "term_worker")];
     const client = createFakeClient();
     client.response = (method) => {
@@ -157,11 +160,18 @@ describe("shepherd-pi orchestrator bridge", () => {
       const before = await pi.emit("before_agent_start", {}, ctx);
       expect(before).toMatchObject({
         message: {
-          content: expect.stringContaining("[SHEPHERD AGENT UPDATES]"),
+          content: expect.stringContaining("[SHEPHERD WORKER UPDATES]"),
           customType: "shepherd-agent-context",
           display: false,
         },
       });
+      expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
+      expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
+
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
+      await pi.emit("agent_settled", {}, ctx);
+
       expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
         ["agent.notifications.ack", { eventId: 41 }],
         ["agent.notifications.ack", { eventId: 42 }],
@@ -169,6 +179,146 @@ describe("shepherd-pi orchestrator bridge", () => {
       ]);
       expect(ctx.statuses.get("shepherd")).toBeUndefined();
       expect(ctx.widgets.get("shepherd")).toBeUndefined();
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test.each([
+    undefined,
+    "error",
+    "aborted",
+    "toolUse",
+  ])("retains delivered updates when the final assistant stop reason is %s", async (stopReason) => {
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") {
+        return connectionResponse({ events: [event(51, "term_worker")] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
+    const previous = withHerdrEnv();
+    try {
+      await pi.emit("session_start", {}, ctx);
+      await client.connect();
+      await pi.emit("before_agent_start", {}, ctx);
+      if (stopReason) await pi.emit("message_end", assistantMessage(stopReason), ctx);
+      else await pi.emit("message_end", { message: { role: "user" } }, ctx);
+      await pi.emit("agent_settled", {}, ctx);
+
+      expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
+      expect(ctx.statuses.get("shepherd")).toBe("1 unread agent event");
+      expect(ctx.notifications.at(-1)).toEqual([
+        "Shepherd could not acknowledge worker updates; they remain pending",
+        "warning",
+      ]);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("retains only unacknowledged events after a partial acknowledgement failure", async () => {
+    const client = createFakeClient();
+    client.response = (method, params) => {
+      if (method === "agent.orchestrator.register") {
+        return connectionResponse({ events: [event(61, "term_worker"), event(62, "term_worker")] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      if (method === "agent.notifications.ack" && (params as { eventId: number }).eventId === 62) {
+        throw new Error("ack failed");
+      }
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
+    const previous = withHerdrEnv();
+    try {
+      await pi.emit("session_start", {}, ctx);
+      await client.connect();
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+
+      expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
+        ["agent.notifications.ack", { eventId: 61 }],
+        ["agent.notifications.ack", { eventId: 62 }],
+      ]);
+      expect(ctx.statuses.get("shepherd")).toBe("1 unread agent event");
+      expect(ctx.widgets.get("shepherd")).toEqual(["1 unread agent event"]);
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("retains all events after a full acknowledgement failure", async () => {
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") {
+        return connectionResponse({ events: [event(63, "term_worker"), event(64, "term_worker")] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      if (method === "agent.notifications.ack") throw new Error("ack failed");
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
+    const previous = withHerdrEnv();
+    try {
+      await pi.emit("session_start", {}, ctx);
+      await client.connect();
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      await pi.emit("agent_settled", {}, ctx);
+
+      expect(client.calls.filter(([method]) => method === "agent.notifications.ack")).toEqual([
+        ["agent.notifications.ack", { eventId: 63 }],
+      ]);
+      expect(ctx.statuses.get("shepherd")).toBe("2 unread agent events");
+    } finally {
+      restoreEnv(previous);
+    }
+  });
+
+  test("invalidates a delivered batch on role loss without aborting a normal turn", async () => {
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") {
+        return connectionResponse({ events: [event(71, "term_worker")] });
+      }
+      if (method === "agent.orchestrator.get") return connectionResponse();
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx();
+    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
+    const previous = withHerdrEnv();
+    try {
+      await pi.emit("session_start", {}, ctx);
+      await client.connect();
+      await pi.emit("before_agent_start", {}, ctx);
+      await pi.emit("message_end", assistantMessage("stop"), ctx);
+      client.emitStream({
+        method: "agent.orchestrator.changed",
+        params: { change: roleChange("term_pi", "term_other", "wB:p-other") },
+      });
+      await pi.emit("agent_settled", {}, ctx);
+
+      expect(ctx.aborts).toBe(0);
+      expect(client.calls.some(([method]) => method === "agent.notifications.ack")).toBe(false);
     } finally {
       restoreEnv(previous);
     }
@@ -463,6 +613,12 @@ function createFakePi() {
   const commands = new Map<string, Command>();
   return {
     commands,
+    customMessages: [] as Array<
+      [
+        { content: string; customType: string; details?: unknown; display: boolean },
+        { deliverAs?: string; triggerTurn?: boolean } | undefined,
+      ]
+    >,
     entries: [] as unknown[],
     handlers,
     appendEntry(customType: string, data: unknown) {
@@ -477,17 +633,28 @@ function createFakePi() {
       commands.set(name, options);
     },
     registerTool() {},
+    sendMessage(message: unknown, options?: unknown) {
+      this.customMessages.push([message as never, options as never]);
+    },
     setSessionName() {},
   };
 }
 
 function fakeCtx(options: { idle?: boolean; sessionId?: string } = {}) {
+  const runtime = { idle: options.idle ?? false };
   const ctx = {
-    isIdle: () => options.idle ?? false,
+    abort() {
+      ctx.aborts += 1;
+    },
+    aborts: 0,
+    isIdle: () => runtime.idle,
     notifications: [] as Array<[string, string | undefined]>,
     sessionManager: {
       getSessionFile: () => "/tmp/pi-session.jsonl",
       getSessionId: () => options.sessionId ?? "pi-session",
+    },
+    setIdle(value: boolean) {
+      runtime.idle = value;
     },
     statuses: new Map<string, string | undefined>(),
     widgets: new Map<string, string[] | undefined>(),
@@ -557,6 +724,17 @@ function event(id: number, terminalId: string | null): AgentEventWireRecord {
     terminalId,
     type: "agent.done",
     workspaceId: "wB",
+  };
+}
+
+function assistantMessage(stopReason: string) {
+  return {
+    message: {
+      content: [{ text: "completed", type: "text" }],
+      role: "assistant",
+      stopReason,
+      turnId: "turn-1",
+    },
   };
 }
 
