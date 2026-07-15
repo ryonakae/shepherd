@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Approved
+**Status:** Completed and archived
 
 **Goal:** Publish the Shepherd CLI/daemon and Pi extension as `@ryonakae/shepherd` and `@ryonakae/shepherd-pi`, keep the Herdr plugin on its existing GitHub-subdirectory distribution path, and document a repeatable release process.
 
@@ -513,7 +513,7 @@ Expected: clean worktree after the first two commits; tarballs remain only under
 
 **Objective:** Publish both scoped packages from one verified commit and expose the matching GitHub Release.
 
-- [ ] **Step 1: Run authentication and availability preflight**
+- [x] **Step 1: Run authentication and availability preflight**
 
 ```bash
 git fetch origin main
@@ -537,7 +537,7 @@ npm view @ryonakae/shepherd-pi@0.3.1 version
 
 Expected: branch is `main`; tree is clean; `HEAD` equals `origin/main`; npm account is `ryonakae` with verified email and write 2FA; GitHub auth succeeds; both `npm view` commands return `E404` before first publication. Treat any returned version as a hard stop.
 
-- [ ] **Step 2: Bump all four versions to 0.3.1**
+- [x] **Step 2: Bump all four versions to 0.3.1**
 
 Edit the three package manifests and `herdr-plugin.toml`. Run the focused publication test and all package checks.
 
@@ -552,11 +552,11 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 
 Expected: all versions match; all gates pass; root and Pi dry-runs report `0.3.1`.
 
-- [ ] **Step 3: Repeat actual tarball installation at 0.3.1**
+- [x] **Step 3: Repeat actual tarball installation at 0.3.1**
 
 Repeat Task 3 with a fresh temporary directory and the `0.3.1` tarball names. Do not reuse the `0.3.0` preparation artifacts.
 
-- [ ] **Step 4: Commit and push the release commit**
+- [x] **Step 4: Commit and push the release commit**
 
 ```bash
 git add \
@@ -576,7 +576,7 @@ Verify the pushed release commit exactly:
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 ```
 
-- [ ] **Step 5: Create a local annotated tag**
+- [x] **Step 5: Create a local annotated tag**
 
 ```bash
 git tag -a v0.3.1 -m "v0.3.1"
@@ -584,7 +584,7 @@ git tag -a v0.3.1 -m "v0.3.1"
 
 Do not push the tag yet. Verify `git rev-list -n 1 v0.3.1` equals `HEAD`.
 
-- [ ] **Step 6: Publish and verify the root package**
+- [x] **Step 6: Publish and verify the root package**
 
 Run publication from an interactive terminal and let npm request the second factor. Do not pass an OTP through command arguments.
 
@@ -598,7 +598,7 @@ Expected: publication succeeds; name/version are exact; `latest` is `0.3.1`; bin
 
 If publish returns a network or timeout error, run `npm view @ryonakae/shepherd@0.3.1 version` before retrying. Do not retry if the version exists.
 
-- [ ] **Step 7: Publish and verify the Pi package**
+- [x] **Step 7: Publish and verify the Pi package**
 
 Run a separate interactive publish so npm requests a fresh second factor:
 
@@ -615,7 +615,7 @@ Expected: publication succeeds; `latest` is `0.3.1`; repository directory and Pi
 
 Apply the same `npm view` before-retry rule after ambiguous failures. If root exists but Pi requires a content change, delete the unpushed local tag with `git tag -d v0.3.1`; export `VERSION=0.3.2 TAG=v0.3.2`; update all four version files and the Herdr tag references in `README.md`, `README.ja.md`, and `packages/shepherd-herdr-plugin/README.md`; commit the replacement, confirm a clean tree, push `main`, verify `HEAD` equals `origin/main`, and only then create the replacement local tag and continue publication. Do not create a GitHub `v0.3.1` release.
 
-- [ ] **Step 8: Verify registry installation**
+- [x] **Step 8: Verify registry installation**
 
 Use a new temporary directory and install from the registry, not local tarballs:
 
@@ -631,7 +631,7 @@ test -f "$REGISTRY_TMP/pi-prefix/node_modules/@ryonakae/shepherd-pi/src/index.ts
 
 Expected: both registry installs succeed and the CLI runs.
 
-- [ ] **Step 9: Push the tag and create the GitHub Release**
+- [x] **Step 9: Push the tag and create the GitHub Release**
 
 Create and inspect the exact notes file:
 
@@ -674,7 +674,7 @@ gh release create v0.3.1 \
 
 Expected: the notes include both npm install commands, scoped publication, root tarball cleanup, Herdr GitHub distribution, and validation commands.
 
-- [ ] **Step 10: Audit external state**
+- [x] **Step 10: Audit external state**
 
 Verify:
 
@@ -693,7 +693,7 @@ Expected: both npm versions are `0.3.1`; GitHub Release is public/latest; the an
 
 **Objective:** Record final evidence without changing the published release commit.
 
-- [ ] **Step 1: Complete the plan record**
+- [x] **Step 1: Complete the plan record**
 
 Set Status to `Completed and archived`, mark every task checkbox, and record:
 
@@ -707,7 +707,7 @@ Set Status to `Completed and archived`, mark every task checkbox, and record:
 
 Set `Next steps` to `None` unless a concrete follow-up remains.
 
-- [ ] **Step 2: Move and commit the plan**
+- [x] **Step 2: Move and commit the plan**
 
 ```bash
 git mv \
@@ -734,6 +734,19 @@ Expected: the docs-only archive commit is after `v0.3.1`; the tag remains on the
 - GitHub audit — `v0.3.1` is public/latest and points to the release commit.
 - `git diff --check` and clean-tree checks pass before publication and after plan archival.
 
+## Completion Evidence
+
+- Package boundary commit: `bab2d62`; consumer lifecycle follow-up: `405f6dd`; installation/release documentation: `47e0559`.
+- Validation evidence commit: `937803c`; version commit: `a5835fa`; final release/tag commit with corrected npm bin metadata: `8429482`.
+- `pnpm check` passed with 34 test files and 200 tests. `pnpm build`, root/Pi dry-runs, Herdr package validation, and `git diff --check` passed.
+- Local tarballs installed in isolated prefixes. The root CLI printed help, and the Pi package contained runtime source without `tsconfig.json`.
+- Root tarball: 195 files and 94,093 bytes. Pi tarball: 6 files and 11,878 bytes.
+- Registry installs passed for `@ryonakae/shepherd@0.3.1` and `@ryonakae/shepherd-pi@0.3.1`; the installed root CLI executed successfully.
+- npm packages: <https://www.npmjs.com/package/@ryonakae/shepherd> and <https://www.npmjs.com/package/@ryonakae/shepherd-pi>.
+- GitHub Release: <https://github.com/ryonakae/shepherd/releases/tag/v0.3.1>.
+- npm access lists exactly the two public packages. `@ryonakae/shepherd-herdr-plugin` and unscoped `shepherd-herdr-plugin` remain unpublished.
+- Remote annotated `v0.3.1` dereferences to `84294825a3e3278ed22505031f11c2d1a6cd68cc`, the same commit used by the GitHub Release.
+
 ## Risks and Tradeoffs
 
 - npm publication is irreversible for a version. The procedure performs dry-run and isolated installation twice before publish.
@@ -751,12 +764,12 @@ Expected: the docs-only archive commit is after `v0.3.1`; the tag remains on the
 
 ## Progress
 
-- [x] Task 1: Lock the publication boundary and clean package output — `bab2d62`
-- [x] Task 2: Document installation and release operations
-- [x] Task 3: Validate packed artifacts and isolated installation — 34 test files / 200 tests; root 195 files / 94,093 bytes; Pi 6 files / 11,878 bytes
-- [ ] Task 4: Release version 0.3.1 to npm and GitHub
-- [ ] Task 5: Archive the completed plan
+- [x] Task 1: Lock the publication boundary and clean package output — `bab2d62`, `405f6dd`
+- [x] Task 2: Document installation and release operations — `47e0559`
+- [x] Task 3: Validate packed artifacts and isolated installation — `937803c`; 34 test files / 200 tests; root 195 files / 94,093 bytes; Pi 6 files / 11,878 bytes
+- [x] Task 4: Release version 0.3.1 to npm and GitHub — `a5835fa`, `8429482`
+- [x] Task 5: Archive the completed plan
 
 ## Next steps
 
-- Execute Task 4 release version 0.3.1 to npm and GitHub.
+None.
