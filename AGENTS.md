@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Shepherd は Herdr 管理の coding agent から worker snapshot、`worker.*` event、orchestrator notification を作る TypeScript daemon / CLI です。まず `README.md` で使い方を確認し、仕様判断が必要なときだけ `docs/plans/` を見てください。
+Shepherd は Herdr 管理の coding agent から agent snapshot、`agent.*` event、orchestrator notification を作る TypeScript daemon / CLI です。まず `README.md` で使い方を確認し、仕様判断が必要なときだけ `docs/plans/` を見てください。
 
 ## よく使うコマンド
 
@@ -27,7 +27,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 
 ## 重要パス
 
-- `src/observability/`: worker contract、telemetry normalization、rules、notification service、`WorkerStatePipeline`。
+- `src/observability/`: agent contract、telemetry normalization、agent index、orchestrator service。
 - `src/daemon/`: daemon JSON Lines RPC、process manager、service startup。
 - `src/cli/`: `shepherd` CLI entrypoint。
 - `src/config/`: runtime config schema と path/env 解決。

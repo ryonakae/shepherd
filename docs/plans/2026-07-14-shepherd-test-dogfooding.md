@@ -2,21 +2,21 @@
 
 **Status:** Phase 1 core acceptance completed; extended routing/lifecycle phases pending
 
-**Goal:** Exercise Shepherd from `/Users/ryo.nakae/Dev/_sandbox/shepherd-test` as a real user would, covering structured agent history, the Shepherd Agent Skill, Pi hidden context, and orchestrator-only updates without risking the normal Shepherd runtime state.
+**Goal:** Exercise Shepherd from `/Users/ryo.nakae/Dev/_sandbox/shepherd-test` as a real user would, covering structured agent history, the Shepherd Agent Skill, Pi hidden context, and selected-Pi updates without risking the normal Shepherd runtime state.
 
-**Architecture:** Run one Pi orchestrator, one worker agent, and one shell observer in the same Herdr workspace. Complete a short core loop first, then add a second Pi for routing and lifecycle checks. Use an isolated `SHEPHERD_HOME` for restart, disconnect, and unread-transfer scenarios so the normal `~/.shepherd` database is not changed by destructive tests.
+**Architecture:** Run one Pi wake owner, one Claude agent, and one shell observer in the same Herdr workspace. Complete a short core loop first, then add a second Pi for routing and lifecycle checks. Use an isolated `SHEPHERD_HOME` for restart, disconnect, and unread-transfer scenarios so the normal `~/.shepherd` database is not changed by destructive tests.
 
-**Tech Stack:** Shepherd 0.2.0, Herdr 0.7.2, Pi 0.80.6, Claude Code or another supported worker runtime, JSON CLI output.
+**Tech Stack:** Shepherd 0.2.0, Herdr 0.7.2, Pi 0.80.6, Claude Code or another supported agent runtime, JSON CLI output.
 
 ## Global Constraints
 
 - Run all agent panes from `/Users/ryo.nakae/Dev/_sandbox/shepherd-test`.
 - Do not reuse recorded Herdr workspace or pane ids. Re-read them because public ids can compact.
-- Enter `/shepherd orchestrator ...` in Pi, not in a shell.
+- Enter `/shepherd [on|off|status]` in Pi, not in a shell.
 - Use Shepherd for structured status/history and Herdr for raw terminal output or pane control.
 - Do not inspect raw session files unless a Shepherd result is demonstrably wrong and diagnosis is required.
 - Do not record credentials, complete session files, SQLite databases, or unredacted terminal dumps as evidence.
-- A `done` status is only observable while the completed worker pane has not been viewed.
+- A `done` status is only observable while the completed agent pane has not been viewed.
 - Test ownerless event replay only after the scope has had an owner once. The first-ever claim deliberately starts its cursor at the latest existing event.
 - Use a disposable Shepherd home for daemon restart, disconnect expiry, owner transfer with pending events, and ownerless replay.
 
@@ -35,12 +35,12 @@ Use one Herdr workspace with these panes:
 
 | Role | Process | Purpose |
 | --- | --- | --- |
-| Pi A | `pi` | Primary orchestrator and hidden-context consumer |
-| Worker | `claude` initially | Produces status transitions, messages, and tool results |
+| Pi A | `pi` | Primary wake owner and hidden-context consumer |
+| Agent | `claude` initially | Produces status transitions, messages, and tool results |
 | Observer | shell | Runs `shepherd agent list/get/read` without changing pane focus |
 | Pi B | `pi` in the extended run | Tests owner replacement, non-owner behavior, and unread transfer |
 
-Start with Pi A, Worker, and Observer. Add Pi B only after the core loop passes.
+Start with Pi A, Agent, and Observer. Add Pi B only after the core loop passes.
 
 ## Phase 1: Core Loop With Normal Runtime
 
@@ -68,7 +68,7 @@ cd /Users/ryo.nakae/Dev/_sandbox/shepherd-test
 herdr
 ```
 
-Create the Pi A, Worker, and Observer panes using the normal Herdr UI. In the Observer pane, run:
+Create the Pi A, Agent, and Observer panes using the normal Herdr UI. In the Observer pane, run:
 
 ```bash
 herdr pane list
@@ -76,31 +76,31 @@ herdr pane list
 
 Expected: all three panes belong to one workspace and have the target directory as their working directory. Record the current session name, workspace id, and pane ids.
 
-- [ ] **Step 3: Claim the orchestrator role in Pi A**
+- [ ] **Step 3: Enable wake in Pi A**
 
 Start Pi A with `pi`, then enter:
 
 ```text
-/shepherd orchestrator status
-/shepherd orchestrator on
-/shepherd orchestrator status
+/shepherd status
+/shepherd on
+/shepherd status
 ```
 
 Expected:
 
 - the first status may report no owner;
 - `on` identifies Pi A as owner for the current Herdr session/workspace;
-- Pi A's footer shows `Shepherd: orchestrator`.
+- Pi A's footer shows `◆ Shepherd`.
 
-- [x] **Step 4: Give the worker a harmless tool-using task**
+- [x] **Step 4: Give the agent a harmless tool-using task**
 
-Start Claude Code in the Worker pane and submit:
+Start Claude Code in the agent pane and submit:
 
 ```text
-Create dogfood-output/worker-note.md. Include a short heading, the current working directory, and the names of the files directly under this directory. Use tools to inspect the directory and write the file, then report the exact path you changed.
+Create dogfood-output/agent-note.md. Include a short heading, the current working directory, and the names of the files directly under this directory. Use tools to inspect the directory and write the file, then report the exact path you changed.
 ```
 
-Do not focus the Worker pane after submission. From the Observer pane, query while it is running and again after completion:
+Do not focus the agent pane after submission. From the Observer pane, query while it is running and again after completion:
 
 ```bash
 shepherd agent list --json
@@ -108,7 +108,7 @@ shepherd agent list --json
 
 Expected:
 
-- the worker appears in the current workspace;
+- the agent appears in the current workspace;
 - `agentStatus` changes through an observed runtime state, normally `working` and then `done`;
 - the final user and assistant excerpts match the submitted task and completion report.
 
@@ -116,16 +116,16 @@ If the task completes too quickly to observe `working`, record that as timing-re
 
 - [x] **Step 5: Validate structured metadata and compact history**
 
-Use the current Worker pane id returned by `agent list`:
+Use the current Agent pane id returned by `agent list`:
 
 ```bash
-shepherd agent get <worker-pane-id> --json
-shepherd agent read <worker-pane-id> --limit 20 --json
+shepherd agent get <agent-pane-id> --json
+shepherd agent read <agent-pane-id> --limit 20 --json
 ```
 
 Expected:
 
-- `get` returns the worker metadata, compact history, and latest compact tool result when available;
+- `get` returns the agent metadata, compact history, and latest compact tool result when available;
 - `read` contains normalized `user`, `assistant`, and compact `tool_result` messages in recent order;
 - output is concise and does not dump full raw terminal output;
 - Claude history identifies its source as `claude-jsonl`.
@@ -133,7 +133,7 @@ Expected:
 Also compare the structured result with raw terminal evidence only once:
 
 ```bash
-herdr pane read <worker-pane-id> --source recent-unwrapped --lines 80
+herdr pane read <agent-pane-id> --source recent-unwrapped --lines 80
 ```
 
 Expected: Shepherd preserves the meaningful messages while omitting terminal chrome and unrelated stream text.
@@ -143,17 +143,17 @@ Expected: Shepherd preserves the meaningful messages while omitting terminal chr
 In Pi A, submit:
 
 ```text
-Shepherd hidden contextだけを使い、別ペインのworkerが最後に依頼されたことと、最後に報告したことを説明してください。追加のCLI問い合わせはしないでください。
+Shepherd hidden contextだけを使い、別ペインのagentが最後に依頼されたことと、最後に報告したことを説明してください。追加のCLI問い合わせはしないでください。
 ```
 
-Expected: Pi A identifies the Worker and accurately summarizes its latest user/assistant messages without invoking `shepherd agent get/read` during this turn.
+Expected: Pi A identifies the agent and accurately summarizes its latest user/assistant messages without invoking `shepherd agent get/read` during this turn.
 
 - [x] **Step 7: Validate Shepherd Agent Skill behavior**
 
 In Pi A, submit:
 
 ```text
-別ペインのworkerの現在の状態、直近20件の履歴、最後のtool resultを確認してください。
+別ペインのagentの現在の状態、直近20件の履歴、最後のtool resultを確認してください。
 ```
 
 Expected:
@@ -166,22 +166,22 @@ Expected:
 
 - [x] **Step 8: Validate pushed update consumption**
 
-Give the Worker a second harmless task while Pi A remains owner:
+Give the agent a second harmless task while Pi A remains owner:
 
 ```text
-Append a section named "Second pass" to dogfood-output/worker-note.md and report completion.
+Append a section named "Second pass" to dogfood-output/agent-note.md and report completion.
 ```
 
-Wait for the Worker to finish without sending a turn from Pi A.
+Wait for the agent to finish without sending a turn from Pi A.
 
 Expected:
 
 - only Pi A displays an unread Shepherd event indicator;
-- Pi A's next normal prompt receives the worker update in hidden context;
+- Pi A's next normal prompt receives the agent update in hidden context;
 - after that turn, the unread indicator clears and the event is acknowledged;
 - Pi A does not receive a notification for Pi A's own terminal activity.
 
-## Phase 2: Isolated Orchestrator Routing
+## Phase 2: Isolated Wake Ownership Routing
 
 **Objective:** Exercise ownership and unread behavior without modifying normal `~/.shepherd` state.
 
@@ -197,18 +197,18 @@ cd /Users/ryo.nakae/Dev/_sandbox/shepherd-test
 herdr --session shepherd-dogfood
 ```
 
-Expected: the daemon creates a clean runtime home, and processes launched from this Herdr session inherit the same `SHEPHERD_HOME`. Start Pi A, Pi B, Worker, and Observer only after the export is active.
+Expected: the daemon creates a clean runtime home, and processes launched from this Herdr session inherit the same `SHEPHERD_HOME`. Start Pi A, Pi B, Agent, and Observer only after the export is active.
 
 - [ ] **Step 2: Prove no-owner silence, then initialize the scope**
 
-Before claiming, run `/shepherd orchestrator status` in Pi A and Pi B and trigger one Worker transition.
+Before claiming, run `/shepherd status` in Pi A and Pi B and trigger one Agent transition.
 
 Expected: neither Pi receives pushed unread updates, but both still receive ordinary current-workspace agent context on their next turns.
 
 Then claim once from Pi A:
 
 ```text
-/shepherd orchestrator on
+/shepherd on
 ```
 
 Expected: Pi A becomes owner and establishes the scope cursor.
@@ -218,13 +218,13 @@ Expected: Pi A becomes owner and establishes the scope cursor.
 In Pi B:
 
 ```text
-/shepherd orchestrator on
+/shepherd on
 ```
 
 Then run status from both Pi instances. In Pi A, also run:
 
 ```text
-/shepherd orchestrator off
+/shepherd off
 ```
 
 Expected:
@@ -232,21 +232,21 @@ Expected:
 - the footer moves from Pi A to Pi B;
 - Pi A receives one transient notification naming Pi B's pane;
 - both status calls identify Pi B;
-- Pi A's non-owner `off` is a no-op and reports that it is not the orchestrator.
+- Pi A's non-owner `off` is a no-op and reports `Shepherd is off`.
 
 - [ ] **Step 4: Verify owner-only delivery and self-event exclusion**
 
-Trigger a Worker completion while Pi B owns the role. Then make Pi B perform a normal tool-using turn.
+Trigger an agent completion while Pi B owns wake. Then make Pi B perform a normal tool-using turn.
 
 Expected:
 
-- the Worker update reaches Pi B only;
-- Pi A receives no unread worker update;
+- the agent update reaches Pi B only;
+- Pi A receives no unread agent update;
 - Pi B's own terminal event does not become an unread event in Pi B and does not cause a resume loop.
 
 - [ ] **Step 5: Transfer an unacknowledged event**
 
-Trigger another Worker completion while Pi B owns the role. Before Pi B sends its next turn, claim from Pi A.
+Trigger another Agent completion while Pi B owns the role. Before Pi B sends its next turn, claim from Pi A.
 
 Expected:
 
@@ -256,7 +256,7 @@ Expected:
 
 - [ ] **Step 6: Replay an event created with no owner**
 
-After the scope has already had an owner, turn the current owner off, trigger a Worker completion, then claim from Pi B.
+After the scope has already had an owner, turn the current owner off, trigger an agent completion, then claim from Pi B.
 
 Expected: Pi B receives the event created during the ownerless interval. This distinguishes initialized-scope replay from the intentional first-claim cursor behavior.
 
@@ -268,7 +268,7 @@ Expected: Pi B receives the event created during the ownerless interval. This di
 
 With Pi B as owner, exercise `/new`, `/reload`, and one of `/resume` or `/fork` after suitable sessions/entries exist.
 
-Expected: the same Herdr terminal regains or retains `Shepherd: orchestrator` without another `on`, and status continues to identify that terminal under the replacement Pi session.
+Expected: the same Herdr terminal regains or retains `◆ Shepherd` without another `on`, and status continues to identify that terminal under the replacement Pi session.
 
 - [ ] **Step 2: Restart the disposable daemon**
 
@@ -279,13 +279,13 @@ SHEPHERD_HOME=/tmp/shepherd-test-dogfood shepherd daemon restart
 SHEPHERD_HOME=/tmp/shepherd-test-dogfood shepherd daemon status
 ```
 
-Expected: the Pi extension reconnects automatically within startup grace, the owner's footer returns or remains, and subsequent Worker events are delivered without reclaiming.
+Expected: the Pi extension reconnects automatically within startup grace, the owner's footer returns or remains, and subsequent Agent events are delivered without reclaiming.
 
 - [ ] **Step 3: Verify disconnect expiry**
 
 Exit the owner Pi process and do not restart Pi in that terminal for more than 5 seconds. Query status from the remaining Pi.
 
-Expected: the scope becomes ownerless. Claim from the remaining Pi and confirm that later Worker updates are delivered normally.
+Expected: the scope becomes ownerless. Claim from the remaining Pi and confirm that later Agent updates are delivered normally.
 
 - [ ] **Step 4: Verify a live cross-workspace move**
 
@@ -296,7 +296,7 @@ Expected:
 - the source workspace becomes ownerless;
 - the moved terminal becomes owner in the destination under its new public pane id;
 - the previous destination owner loses the footer and receives one transient notification;
-- subsequent hidden context and Worker updates use the destination workspace.
+- subsequent hidden context and Agent updates use the destination workspace.
 
 ## Phase 4: Runtime Compatibility Matrix
 
@@ -350,7 +350,7 @@ Do not keep raw session files or databases in the repository. A screenshot is us
 
 - Shepherd `0.2.0` using the normal `~/.shepherd` home;
 - Herdr `0.7.2`, session `default`, current workspace `wJ`;
-- Claude worker pane `wJ:p2` completed `dogfood-output/worker-note.md` successfully.
+- Claude agent pane `wJ:p2` completed `dogfood-output/agent-note.md` successfully.
 
 **Observed:**
 
@@ -383,7 +383,7 @@ A missed lifecycle event or disconnected stream could therefore leave the agent 
 
 **Separate observation:** Claude tool results were compacted and readable, but their `toolName` was `unknown`. This does not invalidate the agent-index recovery and should be investigated separately in the Claude history reader if the runtime log contains enough information to recover tool names.
 
-**Hidden-context evidence:** Pi answered without a CLI or Skill call, correctly identifying Claude `wJ:p2` as idle, reconstructing the `worker-note.md` request, and summarizing the created path and listed entries. Pi noted that the report ended mid-sentence because hidden context intentionally limits each one-line message excerpt to 240 characters. This is acceptable for compact context, but it is a useful quality observation when prompts request complete reports.
+**Hidden-context evidence:** Pi answered without a CLI or Skill call, correctly identifying Claude `wJ:p2` as idle, reconstructing the `agent-note.md` request, and summarizing the created path and listed entries. Pi noted that the report ended mid-sentence because hidden context intentionally limits each one-line message excerpt to 240 characters. This is acceptable for compact context, but it is a useful quality observation when prompts request complete reports.
 
 **Skill evidence:** Pi explicitly loaded the project Shepherd skill, checked daemon status first, started it after observing a stopped state, listed the current Herdr workspace, selected exact target `wJ:p2`, and used both metadata/history queries. Its final answer correctly reported `idle`, all five available normalized messages, and the latest non-error compact tool result with the known `toolName: unknown` limitation.
 
@@ -393,7 +393,7 @@ A missed lifecycle event or disconnected stream could therefore leave the agent 
 
 **Remaining live check:** rerun Phase 1 Step 8 for owner-only pushed update consumption against the single rebuilt daemon.
 
-### 2026-07-14: Claude completion produced no orchestrator notification
+### 2026-07-14: Claude completion produced no selected-Pi notification
 
 **Result:** Phase 1 Step 8 failed. Claude completed the `Second pass` edit, but Pi A displayed no unread event.
 
@@ -416,9 +416,9 @@ A missed lifecycle event or disconnected stream could therefore leave the agent 
 
 **Second live-run finding:** the official envelope fix alone still produced no notification. A direct real-Herdr subscription showed that broad lifecycle subscriptions replay retained events from sequence `0`. Shepherd reacted to the first historical lifecycle event by refreshing and reconnecting, then received the same historical event again, so it never kept a status subscription open. The final fix subscribes only to pane-specific `pane.agent_status_changed`; topology changes use the existing 60-second snapshot rescan. After restart as PID `33996`, `lsof` showed two stable outbound Herdr Unix socket connections instead of zero.
 
-**Third live-run finding:** the final Claude probe generated persisted event IDs `1` through `5` for `idle→working→done→idle`, proving Herdr subscription and daemon persistence. Pi changed to `Shepherd: reconnecting` because shepherd-pi passed object `{ unread: count }` to `ctx.ui.setWidget()`, whose Pi API expects string lines or a component factory. The UI exception destroyed the socket; reconnect registration returned the same pending events and repeated the exception indefinitely. The extension now passes `["N unread agent event(s)"]`; its fake UI enforces string-array widget input, and focused reconnect/update tests pass.
+**Third live-run finding:** the final Claude probe generated persisted event IDs `1` through `5` for `idle→working→done→idle`, proving Herdr subscription and daemon persistence. Pi entered its reconnecting state because shepherd-pi passed object `{ unread: count }` to `ctx.ui.setWidget()`, whose Pi API expects string lines or a component factory. The UI exception destroyed the socket; reconnect registration returned the same pending events and repeated the exception indefinitely. The extension first switched to string-array widget input; the current implementation replaces that widget with the single Shepherd footer.
 
-**Live daemon evidence:** after cleanup and rebuild, the current daemon reports `running` with `socketReachable: true`. The current `default/wJ` snapshot contains Pi `wJ:p1` and Claude `wJ:p2`, and the persisted owner remains Pi terminal `term_6568aed2ff7f314` with pane `wJ:p1`. Reloading the fixed project extension restored `5 unread agent events` together with `Shepherd: orchestrator`, proving reconnect, durable pending-event replay, valid widget rendering, and role preservation. Hidden-context consumption and cursor acknowledgement remain to verify.
+**Live daemon evidence:** after cleanup and rebuild, the current daemon reports `running` with `socketReachable: true`. The current `default/wJ` snapshot contains Pi `wJ:p1` and Claude `wJ:p2`, and the persisted owner remains Pi terminal `term_6568aed2ff7f314` with pane `wJ:p1`. Reloading the fixed project extension restored `◆ Shepherd · 5 agent updates`, proving reconnect, durable pending-event replay, and role preservation. Hidden-context consumption and cursor acknowledgement remain to verify.
 
 ### 2026-07-14: Daemon exited when started from shepherd-test
 
@@ -428,16 +428,16 @@ A missed lifecycle event or disconnected stream could therefore leave the agent 
 
 **Fix and evidence:** the daemon now searches upward from its own service module for `drizzle/meta/_journal.json` and passes that absolute package-root path to migrations. A unit test covers the built `dist/src/daemon` layout. Starting the rebuilt daemon from `shepherd-test` produced PID `10825`, remained reachable across repeated checks, and indexed `default/wJ` successfully.
 
-**Live notification evidence:** after `/reload`, Pi restored `5 unread agent events` together with `Shepherd: orchestrator`. Its next turn used hidden Shepherd updates without CLI calls, accurately summarized Claude's `Final notification probe`, and reported the final idle state. The scope cursor advanced to event ID `5`. Pi's own subsequent event IDs `6` through `10` were not delivered back to the owner terminal, proving self-event exclusion. A second worker task then delivered without reload: Claude event IDs `11` and `12` were summarized accurately, the cursor advanced from `5` to `12`, and Pi's own event IDs `13` and `14` remained excluded.
+**Live notification evidence:** after `/reload`, Pi restored `◆ Shepherd · 5 agent updates`. Its next turn used hidden Shepherd updates without CLI calls, accurately summarized Claude's `Final notification probe`, and reported the final idle state. The scope cursor advanced to event ID `5`. Pi's own subsequent event IDs `6` through `10` were not delivered back to the owner terminal, proving self-event exclusion. A second agent task then delivered without reload: Claude event IDs `11` and `12` were summarized accurately, the cursor advanced from `5` to `12`, and Pi's own event IDs `13` and `14` remained excluded.
 
 ## Acceptance Criteria
 
 ### Core acceptance
 
 - [x] CLI `list/get/read` returns accurate structured data for at least Claude and Pi.
-- [x] Pi hidden context accurately summarizes a worker without an explicit query.
+- [x] Pi hidden context accurately summarizes a agent without an explicit query.
 - [x] Shepherd skill selects the proper scope and exact pane target.
-- [x] One real Worker update reaches the selected orchestrator and is acknowledged on the next turn.
+- [x] One real agent update reaches the selected Pi and is acknowledged on the next turn.
 
 ### Extended acceptance
 

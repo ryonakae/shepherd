@@ -83,9 +83,9 @@ npx skills add ogulcancelik/herdr --skill herdr -g
 
 `shepherd-pi` extension には Pi 0.80.6 以降が必要です。Pi が Herdr 内で動くと Shepherd daemon に接続し、接続中のすべての Pi は turn 前に current workspace の compact agent history を hidden context として受け取ります。
 
-Pi で `/shepherd orchestrator on` を入力すると、その terminal を workspace のオーケストレーターとして明示的に選べます。選ばれた Pi は、完了または blocked になった Worker の結果を受け取り、visible な Shepherd turn を1回自動で開始します。Worker の出力は信頼できない参考情報として扱い、Pi は既存の user request に必要な作業だけを続けます。`N pending worker updates` は footer に残り、そのupdateを含むturnが最終assistant responseを生成してsettleし、元のeventをすべてacknowledgeすると消えます。
+Pi で `/shepherd on` を入力すると、現在の Pi で agent update の監視と自動wakeが有効になります。同じ Herdr workspace にあるほかの Pi はoffになります。agentが完了またはblockedになると、visibleなShepherd turnを1回開始します。themed cardは最大3件を表示し、Piのexpand keyで全outcomeと長さを制限した最終responseを確認できます。agentの出力は信頼できない参考情報として扱い、Piは既存のuser requestに必要な作業だけを続けます。
 
-role の確認には `/shepherd orchestrator` または `/shepherd orchestrator status` を使います。owner が `/shepherd orchestrator off` を実行すると自動wakeが止まり、roleが解除されます。owner がいない間は結果を配信せず、その間に発生した結果は後からclaimしてもreplayしません。reload、reconnect、別Piによる直接のowner交代では、未acknowledgedの結果を保持します。role は Pi session の切り替えや pane の移動後も同じ Herdr terminal に追従し、その terminal が grace period を超えて切断された場合は解除されます。Pi footer に `Shepherd: orchestrator` を表示するのは owner だけです。
+現在のPiの状態は`/shepherd`または`/shepherd status`で確認し、`/shepherd off`でそのPiの自動wakeを停止します。offにしても別のownerへは影響せず、current workspaceのhidden agent contextも引き続き利用できます。onのPiだけがfooterに`◆ Shepherd`を表示し、未処理のoutcomeがある間は`· N agent updates`が付きます。updateを含むturnが最終assistant responseを生成してsettleし、元のeventをacknowledgeすると件数が消えます。直前までonだったPiが接続を失うと、復旧中は`◇ Shepherd · reconnecting`を表示します。ownerがいない間はoutcomeを配信せず、その間に発生したoutcomeは後からclaimしてもreplayしません。reload、reconnect、別Piによる直接のowner交代では、未acknowledgedのoutcomeを保持します。ownershipはPi sessionの切り替えやpaneの移動後も同じHerdr terminalに追従し、そのterminalがgrace periodを超えて切断された場合は解除されます。
 
 ## Herdr plugin
 
