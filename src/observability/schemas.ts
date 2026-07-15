@@ -50,7 +50,6 @@ export const agentEventsInputSchema = Type.Object(
 
 export const agentOrchestratorRegisterInputSchema = Type.Object(
   {
-    autoResume: Type.Optional(Type.Boolean()),
     herdrSocketPath: Type.String({ minLength: 1 }),
     paneId: Type.String({ minLength: 1 }),
     subscriberId: Type.String({ minLength: 1 }),

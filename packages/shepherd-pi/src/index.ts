@@ -24,7 +24,6 @@ type AgentSessionRef = {
 };
 
 type PiPresence = {
-  autoResume: boolean;
   connectedAt: number;
   herdrSessionName: string;
   paneId: string;
@@ -96,12 +95,10 @@ type PiApi = {
   on: (eventName: string, handler: (...args: any[]) => unknown) => void;
   registerCommand?: (name: string, options: CommandOptions) => void;
   registerTool?: (tool: unknown) => void;
-  sendUserMessage?: (message: string) => void;
   setSessionName?: (name: string) => void;
 };
 
 type ExtensionOptions = {
-  autoResume?: boolean;
   clientFactory?: () => ShepherdDaemonClient;
 };
 
@@ -192,9 +189,6 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       if (event.terminalId === state.currentScope.terminalId) return;
       addPendingEvents([event], ctx);
       pi.appendEntry?.("shepherd.agent_event", event);
-      if (options.autoResume && ctx?.isIdle?.() && shouldAutoResume(event)) {
-        pi.sendUserMessage?.(`Shepherd agent notification: ${event.type} event ${event.id}`);
-      }
     };
 
     const refreshAfterRoleGain = async (ctx: PiContext | undefined) => {
@@ -265,7 +259,6 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
       if (!client || !launchIdentity || !subscriberId) return Promise.resolve();
       const registration = client
         .request("agent.orchestrator.register", {
-          autoResume: options.autoResume ?? false,
           herdrSocketPath: launchIdentity.herdrSocketPath,
           paneId: state.currentScope?.paneId ?? launchIdentity.paneId,
           subscriberId,
@@ -556,10 +549,6 @@ function herdrLaunchIdentity(environment: NodeJS.ProcessEnv): LaunchIdentity | u
   const workspaceId = stringValue(environment.HERDR_WORKSPACE_ID);
   if (!herdrSocketPath || !paneId || !workspaceId) return undefined;
   return { herdrSocketPath, paneId, workspaceId };
-}
-
-function shouldAutoResume(event: AgentEventWireRecord): boolean {
-  return event.type === "agent.done" || event.type === "agent.blocked" || event.type === "agent.idle";
 }
 
 function sanitize(value: unknown): { redacted: boolean; text: string } {

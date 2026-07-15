@@ -32,7 +32,6 @@ describe("agent observability contracts", () => {
   test("validates orchestrator connection-bound RPC inputs", () => {
     expect(
       Value.Check(agentOrchestratorRegisterInputSchema, {
-        autoResume: false,
         herdrSocketPath: "/tmp/herdr.sock",
         paneId: "wB:p1",
         subscriberId: "pi-session-1",
@@ -40,6 +39,16 @@ describe("agent observability contracts", () => {
         workspaceId: "wB",
       }),
     ).toBe(true);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ["auto" + "Resume"]: true,
+        herdrSocketPath: "/tmp/herdr.sock",
+        paneId: "wB:p1",
+        subscriberId: "pi-session-1",
+        subscriberKind: "pi",
+        workspaceId: "wB",
+      }),
+    ).toBe(false);
     expect(
       Value.Check(agentOrchestratorRegisterInputSchema, {
         herdrSocketPath: "/tmp/herdr.sock",

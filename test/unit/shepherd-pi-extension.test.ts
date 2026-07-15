@@ -13,7 +13,6 @@ type Command = {
 
 type Module = {
   createShepherdPiExtension: (options?: {
-    autoResume?: boolean;
     clientFactory?: () => FakeClient;
   }) => (pi: FakePi) => void;
   defaultSocketPath: () => string;
@@ -83,7 +82,6 @@ describe("shepherd-pi orchestrator bridge", () => {
       expect(client.calls[0]).toEqual([
         "agent.orchestrator.register",
         {
-          autoResume: false,
           herdrSocketPath: "/tmp/herdr.sock",
           paneId: "wB:p1",
           subscriberId: "pi-session",
@@ -138,7 +136,7 @@ describe("shepherd-pi orchestrator bridge", () => {
     const ctx = fakeCtx({ idle: true });
     const { createShepherdPiExtension, formatHiddenAgentContext, formatHiddenAgentUpdates } =
       (await import(extensionModuleUrl)) as Module;
-    createShepherdPiExtension({ autoResume: true, clientFactory: () => client })(pi);
+    createShepherdPiExtension({ clientFactory: () => client })(pi);
     const previous = withHerdrEnv();
     try {
       await pi.emit("session_start", {}, ctx);
@@ -149,7 +147,6 @@ describe("shepherd-pi orchestrator bridge", () => {
 
       expect(ctx.statuses.get("shepherd")).toBe("3 unread agent events");
       expect(ctx.widgets.get("shepherd")).toEqual(["3 unread agent events"]);
-      expect(pi.messages).toEqual([expect.stringContaining("agent.done")]);
       expect(formatHiddenAgentContext({ agents: [], workspaceId: "wB" })).toContain(
         "[SHEPHERD AGENT CONTEXT]",
       );
@@ -468,7 +465,6 @@ function createFakePi() {
     commands,
     entries: [] as unknown[],
     handlers,
-    messages: [] as string[],
     appendEntry(customType: string, data: unknown) {
       this.entries.push([customType, data]);
     },
@@ -481,9 +477,6 @@ function createFakePi() {
       commands.set(name, options);
     },
     registerTool() {},
-    sendUserMessage(message: string) {
-      this.messages.push(message);
-    },
     setSessionName() {},
   };
 }
@@ -533,7 +526,6 @@ function connectionResponse(
     ...(options.changed === undefined ? {} : { changed: options.changed }),
     events: options.events ?? [],
     presence: {
-      autoResume: false,
       connectedAt: 1,
       herdrSessionName: "default",
       paneId,

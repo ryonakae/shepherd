@@ -360,7 +360,7 @@ git commit -m "feat(pi): model worker wake outcomes"
 - Consumes: existing connection-bound Pi registration and owner routing.
 - Produces: registration payload `{ herdrSocketPath, paneId, subscriberId, subscriberKind, workspaceId }` with no wake option.
 
-- [ ] **Step 1: Change contract tests to require the reduced payload**
+- [x] **Step 1: Change contract tests to require the reduced payload**
 
 In `test/unit/observability-contracts.test.ts`, remove the obsolete property from the valid registration and add:
 
@@ -379,7 +379,7 @@ expect(
 
 In `test/unit/shepherd-pi-extension.test.ts`, remove the option from the local `Module` type and expect the first `agent.orchestrator.register` call not to include it.
 
-- [ ] **Step 2: Run focused tests to verify RED**
+- [x] **Step 2: Run focused tests to verify RED**
 
 Run:
 
@@ -389,7 +389,7 @@ pnpm test test/unit/observability-contracts.test.ts test/unit/shepherd-pi-extens
 
 Expected: schema and registration payload assertions fail while active code still accepts/sends the obsolete property.
 
-- [ ] **Step 3: Remove the obsolete field from all active layers**
+- [x] **Step 3: Remove the obsolete field from all active layers**
 
 Make these exact changes:
 
@@ -403,7 +403,7 @@ Make these exact changes:
 
 Do not edit archived or active plan prose merely to remove historical mentions.
 
-- [ ] **Step 4: Verify tests and the active-source terminology gate**
+- [x] **Step 4: Verify tests and the active-source terminology gate**
 
 Run:
 
@@ -414,7 +414,7 @@ if rg -n "autoResume" packages/shepherd-pi/src src test --glob '*.ts'; then exit
 
 Expected: both test files pass and `rg` prints no active TypeScript match.
 
-- [ ] **Step 5: Commit the contract cleanup**
+- [x] **Step 5: Commit the contract cleanup**
 
 Mark Task 2 complete in this plan, then run:
 
@@ -1049,7 +1049,7 @@ Do not archive the plan in this commit. Archive completed plans later in a separ
 ## Progress
 
 - [x] Task 1: Model raw events as worker outcomes.
-- [ ] Task 2: Remove the obsolete auto-resume contract.
+- [x] Task 2: Remove the obsolete auto-resume contract.
 - [ ] Task 3: Drop events created during ownerless periods.
 - [ ] Task 4: Acknowledge delivered updates only after Pi settles.
 - [ ] Task 5: Wake the selected Pi orchestrator.

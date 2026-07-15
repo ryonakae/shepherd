@@ -170,7 +170,6 @@ export type AgentOrchestratorChanged = {
 };
 
 export type PiPresenceRegistration = {
-  autoResume: boolean;
   herdrSocketPath: string;
   paneId: string;
   subscriberId: string;

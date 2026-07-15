@@ -47,7 +47,6 @@ type AgentStores = {
 };
 
 export type PiPresence = AgentScope & {
-  autoResume: boolean;
   connectedAt: number;
   paneId: string;
   subscriberId: string;
@@ -343,7 +342,6 @@ export class ObservabilityRpcServer {
     });
     if (indexed?.workspaceId === input.workspaceId && indexed.terminalId) {
       return {
-        autoResume: input.autoResume ?? false,
         connectedAt: this.#now(),
         herdrSessionName: session.name,
         paneId: indexed.paneId,
@@ -359,7 +357,6 @@ export class ObservabilityRpcServer {
         socketPath: session.socketPath,
       });
       return {
-        autoResume: input.autoResume ?? false,
         connectedAt: this.#now(),
         herdrSessionName: session.name,
         paneId: live.paneId,
