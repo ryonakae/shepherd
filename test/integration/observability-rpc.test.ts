@@ -265,6 +265,13 @@ describe("ObservabilityRpcServer", () => {
       piB.waitForNotification("agent.orchestrator.changed"),
     ]);
 
+    const ownerless = appendRoutedEvent(harness, "term_worker", "wB");
+    await expect(piA.request("agent.orchestrator.set", { enabled: true })).resolves.toMatchObject({
+      changed: true,
+      events: [],
+      state: { ackedEventId: ownerless.id, owner: { terminalId: "term_a" } },
+    });
+
     piA.close();
     piB.close();
     piC.close();

@@ -84,36 +84,42 @@ describe("AgentOrchestratorService", () => {
     expect(service.pending({ ...scope, terminalId: "term_worker" })).toEqual([]);
   });
 
-  test("keeps ownerless events pending and acknowledges monotonically", () => {
+  test("drops ownerless events but preserves direct replacement events", () => {
     const { harness, service } = openService();
     service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
     service.release({ ...scope, reason: "released", terminalId: "term_a" });
+    appendEvent(harness, { terminalId: "term_worker" });
+    const ownerlessLater = appendEvent(harness, { terminalId: "term_worker_2" });
+    const reclaimed = service.claim({ ...scope, paneId: "wB:p2", terminalId: "term_b" });
+
+    expect(reclaimed.current.ackedEventId).toBe(ownerlessLater.id);
+    expect(service.pending({ ...scope, terminalId: "term_b" })).toEqual([]);
+
     const pending = appendEvent(harness, { terminalId: "term_worker" });
     const later = appendEvent(harness, { terminalId: "term_worker_2" });
-    service.claim({ ...scope, paneId: "wB:p2", terminalId: "term_b" });
-
-    expect(service.pending({ ...scope, terminalId: "term_b" })).toMatchObject([
+    service.claim({ ...scope, paneId: "wB:p3", terminalId: "term_c" });
+    expect(service.pending({ ...scope, terminalId: "term_c" })).toMatchObject([
       { id: pending.id },
       { id: later.id },
     ]);
-    expect(() => service.ack({ ...scope, eventId: later.id, terminalId: "term_b" })).toThrow(
+    expect(() => service.ack({ ...scope, eventId: later.id, terminalId: "term_c" })).toThrow(
       "Only the next pending orchestrator event can be acknowledged",
     );
     expect(() =>
-      service.ack({ ...scope, eventId: later.id + 10_000, terminalId: "term_b" }),
+      service.ack({ ...scope, eventId: later.id + 10_000, terminalId: "term_c" }),
     ).toThrow("Only the next pending orchestrator event can be acknowledged");
-    expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_b" }).ackedEventId).toBe(
+    expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_c" }).ackedEventId).toBe(
       pending.id,
     );
-    expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_b" }).ackedEventId).toBe(
+    expect(service.ack({ ...scope, eventId: pending.id, terminalId: "term_c" }).ackedEventId).toBe(
       pending.id,
     );
-    expect(() => service.ack({ ...scope, eventId: pending.id + 1, terminalId: "term_a" })).toThrow(
+    expect(() => service.ack({ ...scope, eventId: later.id, terminalId: "term_b" })).toThrow(
       "Only the current orchestrator can acknowledge notifications",
     );
   });
 
-  test("moves ownership while preserving initialized cursors", () => {
+  test("moves ownership with target ownerless-drop and active-owner preservation", () => {
     const { harness, service } = openService();
     service.claim({ ...scope, paneId: "wB:p1", terminalId: "term_a" });
     const sourceEvent = appendEvent(harness, { terminalId: "term_worker" });
@@ -121,7 +127,10 @@ describe("AgentOrchestratorService", () => {
     const target = { herdrSessionName: "default", workspaceId: "wC" };
     service.claim({ ...target, paneId: "wC:p1", terminalId: "term_c" });
     service.release({ ...target, reason: "released", terminalId: "term_c" });
-    const targetEvent = appendEvent(harness, { terminalId: "term_worker", workspaceId: "wC" });
+    const ownerlessTargetEvent = appendEvent(harness, {
+      terminalId: "term_worker",
+      workspaceId: "wC",
+    });
 
     expect(
       service.move({
@@ -133,18 +142,30 @@ describe("AgentOrchestratorService", () => {
     ).toMatchObject([
       { current: { ackedEventId: sourceEvent.id, owner: null }, reason: "moved" },
       {
-        current: { owner: { paneId: "wC:p2", terminalId: "term_a" } },
+        current: {
+          ackedEventId: ownerlessTargetEvent.id,
+          owner: { paneId: "wC:p2", terminalId: "term_a" },
+        },
         previous: { owner: null },
         reason: "moved",
       },
     ]);
-    expect(service.pending({ ...target, terminalId: "term_a" })).toMatchObject([
-      { id: targetEvent.id },
+    expect(service.pending({ ...target, terminalId: "term_a" })).toEqual([]);
+
+    const ownedTarget = { herdrSessionName: "default", workspaceId: "wD" };
+    service.claim({ ...ownedTarget, paneId: "wD:p1", terminalId: "term_d" });
+    const pendingTargetEvent = appendEvent(harness, {
+      terminalId: "term_worker",
+      workspaceId: "wD",
+    });
+    service.move({ from: target, paneId: "wD:p2", terminalId: "term_a", to: ownedTarget });
+    expect(service.pending({ ...ownedTarget, terminalId: "term_a" })).toMatchObject([
+      { id: pendingTargetEvent.id },
     ]);
 
-    const unseen = { herdrSessionName: "default", workspaceId: "wD" };
-    const unseenBaseline = appendEvent(harness, { terminalId: "term_worker", workspaceId: "wD" });
-    service.move({ from: target, paneId: "wD:p1", terminalId: "term_a", to: unseen });
+    const unseen = { herdrSessionName: "default", workspaceId: "wE" };
+    const unseenBaseline = appendEvent(harness, { terminalId: "term_worker", workspaceId: "wE" });
+    service.move({ from: ownedTarget, paneId: "wE:p1", terminalId: "term_a", to: unseen });
     expect(service.status(unseen)).toMatchObject({ ackedEventId: unseenBaseline.id });
   });
 

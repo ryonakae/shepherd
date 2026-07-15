@@ -4,7 +4,7 @@ import type { AgentOrchestratorState, AgentScope } from "@/observability/contrac
 export type AgentOrchestratorScopeKey = AgentScope;
 
 export type ClaimOrchestratorInput = AgentOrchestratorScopeKey & {
-  initialAckedEventId: number;
+  ackedEventId: number;
   paneId: string;
   terminalId: string;
 };
@@ -88,8 +88,8 @@ export class AgentOrchestratorScopeStore {
 
   moveOwner(input: {
     from: AgentOrchestratorScopeKey;
-    initialTargetAckedEventId: number;
     paneId: string;
+    targetAckedEventId: number;
     terminalId: string;
     to: AgentOrchestratorScopeKey;
   }): ScopeChange[] {
@@ -111,7 +111,7 @@ export class AgentOrchestratorScopeStore {
       if (!sourceCurrent) throw new Error("Orchestrator source disappeared during move");
       const target = this.#claim({
         ...input.to,
-        initialAckedEventId: input.initialTargetAckedEventId,
+        ackedEventId: input.targetAckedEventId,
         paneId: input.paneId,
         terminalId: input.terminalId,
       });
@@ -154,7 +154,7 @@ export class AgentOrchestratorScopeStore {
         .run(
           input.herdrSessionName,
           input.workspaceId,
-          input.initialAckedEventId,
+          input.ackedEventId,
           input.paneId,
           input.terminalId,
           now,
@@ -168,10 +168,17 @@ export class AgentOrchestratorScopeStore {
     this.#sqlite
       .prepare(
         `update agent_orchestrator_scopes
-         set owner_pane_id = ?, owner_terminal_id = ?, updated_at = ?
+         set acked_event_id = ?, owner_pane_id = ?, owner_terminal_id = ?, updated_at = ?
          where herdr_session_name = ? and workspace_id = ?`,
       )
-      .run(input.paneId, input.terminalId, now, input.herdrSessionName, input.workspaceId);
+      .run(
+        input.ackedEventId,
+        input.paneId,
+        input.terminalId,
+        now,
+        input.herdrSessionName,
+        input.workspaceId,
+      );
     const current = this.get(input);
     if (!current) throw new Error("Orchestrator scope disappeared during claim");
     return { current, previous };

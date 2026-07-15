@@ -439,7 +439,7 @@ git commit -m "refactor: remove auto resume option"
 - Consumes: `AgentEventStore.latestEventId()`, existing shared scope cursor, and last-successful-claim owner replacement.
 - Produces: authoritative `ClaimOrchestratorInput.ackedEventId` and identical target behavior for `moveOwner()`.
 
-- [ ] **Step 1: Write failing store and service tests**
+- [x] **Step 1: Write failing store and service tests**
 
 Replace the ownerless replay expectation in `test/integration/agent-orchestrator-service.test.ts` with:
 
@@ -456,7 +456,7 @@ Update the move test so a target scope whose owner was released skips target own
 
 In `test/integration/agent-orchestrator-scope-store.test.ts`, change `ClaimOrchestratorInput` fixtures from `initialAckedEventId` to `ackedEventId` and assert that a second explicit claim applies the cursor supplied by the service. The store no longer decides whether to preserve or reset.
 
-- [ ] **Step 2: Run cursor tests to verify RED**
+- [x] **Step 2: Run cursor tests to verify RED**
 
 Run:
 
@@ -466,7 +466,7 @@ pnpm test test/integration/agent-orchestrator-scope-store.test.ts test/integrati
 
 Expected: ownerless reclaim and renamed input assertions fail against the current preserve-on-existing-row behavior.
 
-- [ ] **Step 3: Implement authoritative cursor selection**
+- [x] **Step 3: Implement authoritative cursor selection**
 
 In `AgentOrchestratorService`, add:
 
@@ -488,7 +488,7 @@ In `AgentOrchestratorScopeStore`:
 
 This is a behavior change only; do not edit `src/db/schema.ts` or generate a migration.
 
-- [ ] **Step 4: Verify ownerless drop and direct transfer preservation**
+- [x] **Step 4: Verify ownerless drop and direct transfer preservation**
 
 Run:
 
@@ -498,7 +498,7 @@ pnpm test test/integration/agent-orchestrator-scope-store.test.ts test/integrati
 
 Expected: all focused integration tests pass; reclaim from null returns no ownerless pending event, while direct A-to-B replacement returns the existing pending event to B.
 
-- [ ] **Step 5: Commit cursor semantics**
+- [x] **Step 5: Commit cursor semantics**
 
 Mark Task 3 complete in this plan, then run:
 
@@ -1050,7 +1050,7 @@ Do not archive the plan in this commit. Archive completed plans later in a separ
 
 - [x] Task 1: Model raw events as worker outcomes.
 - [x] Task 2: Remove the obsolete auto-resume contract.
-- [ ] Task 3: Drop events created during ownerless periods.
+- [x] Task 3: Drop events created during ownerless periods.
 - [ ] Task 4: Acknowledge delivered updates only after Pi settles.
 - [ ] Task 5: Wake the selected Pi orchestrator.
 - [ ] Task 6: Document and dogfood active orchestration.

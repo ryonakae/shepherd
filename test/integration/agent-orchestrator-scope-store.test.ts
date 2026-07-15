@@ -27,12 +27,12 @@ describe("AgentOrchestratorScopeStore", () => {
     expect(store.get(defaultScope)).toBeUndefined();
   });
 
-  test("initializes the cursor once and replaces the owner without resetting it", () => {
+  test("applies the authoritative cursor supplied with every claim", () => {
     const store = openStore();
 
     const first = store.claim({
       ...defaultScope,
-      initialAckedEventId: 12,
+      ackedEventId: 12,
       paneId: "wB:p1",
       terminalId: "term_1",
     });
@@ -46,24 +46,27 @@ describe("AgentOrchestratorScopeStore", () => {
 
     const replacement = store.claim({
       ...defaultScope,
-      initialAckedEventId: 99,
+      ackedEventId: 99,
       paneId: "wB:p2",
       terminalId: "term_2",
     });
-    expect(replacement.previous.owner).toEqual({ paneId: "wB:p1", terminalId: "term_1" });
-    expect(replacement.current).toMatchObject({
+    expect(replacement.previous).toMatchObject({
       ackedEventId: 12,
+      owner: { paneId: "wB:p1", terminalId: "term_1" },
+    });
+    expect(replacement.current).toMatchObject({
+      ackedEventId: 99,
       owner: { paneId: "wB:p2", terminalId: "term_2" },
     });
 
     const movedPane = store.claim({
       ...defaultScope,
-      initialAckedEventId: 99,
+      ackedEventId: 101,
       paneId: "wB:p3",
       terminalId: "term_2",
     });
     expect(movedPane.current).toMatchObject({
-      ackedEventId: 12,
+      ackedEventId: 101,
       owner: { paneId: "wB:p3", terminalId: "term_2" },
     });
   });
@@ -72,7 +75,7 @@ describe("AgentOrchestratorScopeStore", () => {
     const store = openStore();
     store.claim({
       ...defaultScope,
-      initialAckedEventId: 12,
+      ackedEventId: 12,
       paneId: "wB:p1",
       terminalId: "term_1",
     });
@@ -92,7 +95,7 @@ describe("AgentOrchestratorScopeStore", () => {
     const store = openStore();
     store.claim({
       ...defaultScope,
-      initialAckedEventId: 12,
+      ackedEventId: 12,
       paneId: "wB:p1",
       terminalId: "term_1",
     });
@@ -104,38 +107,38 @@ describe("AgentOrchestratorScopeStore", () => {
     );
   });
 
-  test("moves ownership atomically while preserving initialized cursors", () => {
+  test("moves ownership atomically with the authoritative target cursor", () => {
     const store = openStore();
     store.claim({
       ...defaultScope,
-      initialAckedEventId: 12,
+      ackedEventId: 12,
       paneId: "wB:p1",
       terminalId: "term_1",
     });
     store.ack({ ...defaultScope, eventId: 20, terminalId: "term_1" });
     const target = { herdrSessionName: "default", workspaceId: "wC" };
-    store.claim({ ...target, initialAckedEventId: 5, paneId: "wC:p2", terminalId: "term_2" });
+    store.claim({ ...target, ackedEventId: 5, paneId: "wC:p2", terminalId: "term_2" });
 
     const changes = store.moveOwner({
       from: defaultScope,
-      initialTargetAckedEventId: 99,
       paneId: "wC:p3",
+      targetAckedEventId: 99,
       terminalId: "term_1",
       to: target,
     });
     expect(changes).toMatchObject([
       { current: { ackedEventId: 20, owner: null } },
       {
-        current: { ackedEventId: 5, owner: { paneId: "wC:p3", terminalId: "term_1" } },
-        previous: { owner: { paneId: "wC:p2", terminalId: "term_2" } },
+        current: { ackedEventId: 99, owner: { paneId: "wC:p3", terminalId: "term_1" } },
+        previous: { ackedEventId: 5, owner: { paneId: "wC:p2", terminalId: "term_2" } },
       },
     ]);
 
     const newTarget = { herdrSessionName: "default", workspaceId: "wD" };
     store.moveOwner({
       from: target,
-      initialTargetAckedEventId: 31,
       paneId: "wD:p1",
+      targetAckedEventId: 31,
       terminalId: "term_1",
       to: newTarget,
     });
@@ -147,10 +150,10 @@ describe("AgentOrchestratorScopeStore", () => {
 
   test("lists only owned scopes for the requested Herdr session", () => {
     const store = openStore();
-    store.claim({ ...defaultScope, initialAckedEventId: 1, paneId: "wB:p1", terminalId: "term_1" });
+    store.claim({ ...defaultScope, ackedEventId: 1, paneId: "wB:p1", terminalId: "term_1" });
     store.claim({
       herdrSessionName: "default",
-      initialAckedEventId: 1,
+      ackedEventId: 1,
       paneId: "wC:p1",
       terminalId: "term_2",
       workspaceId: "wC",
@@ -162,7 +165,7 @@ describe("AgentOrchestratorScopeStore", () => {
     });
     store.claim({
       herdrSessionName: "other",
-      initialAckedEventId: 1,
+      ackedEventId: 1,
       paneId: "wB:p1",
       terminalId: "term_3",
       workspaceId: "wB",

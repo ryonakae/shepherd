@@ -32,10 +32,7 @@ export class AgentOrchestratorService {
   }
 
   claim(input: AgentScope & { paneId: string; terminalId: string }): AgentOrchestratorChange {
-    const initialAckedEventId = this.#scopes.get(input)
-      ? 0
-      : this.#agentEvents.latestEventId(input);
-    const change = this.#scopes.claim({ ...input, initialAckedEventId });
+    const change = this.#scopes.claim({ ...input, ackedEventId: this.#claimCursor(input) });
     return { ...change, reason: "claimed" };
   }
 
@@ -98,15 +95,17 @@ export class AgentOrchestratorService {
     terminalId: string;
     to: AgentScope;
   }): AgentOrchestratorChange[] {
-    const initialTargetAckedEventId = this.#scopes.get(input.to)
-      ? 0
-      : this.#agentEvents.latestEventId(input.to);
     return this.#scopes
-      .moveOwner({ ...input, initialTargetAckedEventId })
+      .moveOwner({ ...input, targetAckedEventId: this.#claimCursor(input.to) })
       .map((change) => ({ ...change, reason: "moved" }));
   }
 
   persistedOwners(): AgentOrchestratorState[] {
     return this.#scopes.listOwned();
+  }
+
+  #claimCursor(scope: AgentScope): number {
+    const current = this.#scopes.get(scope);
+    return current?.owner ? current.ackedEventId : this.#agentEvents.latestEventId(scope);
   }
 }
