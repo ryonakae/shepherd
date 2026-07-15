@@ -866,6 +866,39 @@ describe("shepherd-pi orchestrator bridge", () => {
     }
   });
 
+  test("rebuilds pending wake state when timer refresh reveals a missed workspace move", async () => {
+    vi.useFakeTimers();
+    const target = event(104, "term_worker", {
+      paneId: "wC:p-worker",
+      workspaceId: "wC",
+    });
+    const client = createFakeClient();
+    client.response = (method) => {
+      if (method === "agent.orchestrator.register") return connectionResponse();
+      if (method === "agent.orchestrator.get") {
+        return connectionResponse({ events: [target], paneId: "wC:p1", workspaceId: "wC" });
+      }
+      if (method === "agent.list") return agentListResponse();
+      return { acknowledged: true };
+    };
+    const pi = createFakePi();
+    const ctx = fakeCtx({ idle: true });
+    const previous = withHerdrEnv();
+    try {
+      await startExtension(client, pi, ctx);
+      client.emitStream({ method: "agent.event", params: { event: event(103, "term_worker") } });
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(pi.customMessages).toHaveLength(1);
+      expect(pi.customMessages[0]?.[0]).toMatchObject({ details: { eventIds: [104] } });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      restoreEnv(previous);
+    }
+  });
+
   test("resets an old batch when reconnect registration reveals a missed workspace move", async () => {
     vi.useFakeTimers();
     const target = event(106, "term_worker", {

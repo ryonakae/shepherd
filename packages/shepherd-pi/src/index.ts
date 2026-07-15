@@ -234,16 +234,11 @@ export function createShepherdPiExtension(options: ExtensionOptions = {}) {
               "agent.orchestrator.get",
               {},
             )) as ConnectionStateResponse | undefined;
-            if (
-              !response ||
-              response.state?.owner?.terminalId !== ownerTerminalId ||
-              response.state.herdrSessionName !== ownerHerdrSessionName ||
-              response.state.workspaceId !== ownerWorkspaceId
-            ) {
+            if (!response) {
               state.wakeTimer = undefined;
               return;
             }
-            addPendingEvents(response.events ?? [], ctx);
+            applyConnectionStateResponse(response, ctx);
           } catch {
             state.wakeTimer = undefined;
             state.failedWakeThroughEventId = Math.max(
