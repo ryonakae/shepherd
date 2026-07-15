@@ -4,13 +4,15 @@ Pi >= 0.80.6 extension for Shepherd agent history and automatic agent-update wak
 
 This package contains the runtime extension only. The Agent Skill remains at the repository root.
 
-When Pi runs inside Herdr, this extension connects to the Shepherd daemon and injects compact current-workspace agent history before every turn. All connected Pi instances receive that hidden context. Completed or blocked agent outcomes go only to the explicitly selected Pi.
-
-Start the daemon first:
+Install the Shepherd CLI and Pi package, then start the daemon:
 
 ```bash
+npm install --global @ryonakae/shepherd
+pi install npm:@ryonakae/shepherd-pi
 shepherd daemon start
 ```
+
+When Pi runs inside Herdr, this extension connects to the Shepherd daemon and injects compact current-workspace agent history before every turn. All connected Pi instances receive that hidden context. Completed or blocked agent outcomes go only to the explicitly selected Pi.
 
 Enter these commands in Pi, not in a shell:
 

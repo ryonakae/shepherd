@@ -15,18 +15,26 @@ Shepherd currently supports session history from Claude Code, Codex, Gemini CLI,
 ## Requirements
 
 - Node.js >= 24.18.0
-- pnpm >= 11.9.0
 - Herdr >= 0.7.0
 - Pi >= 0.80.6 when using `shepherd-pi`
 
-## Install from source
+## Install
+
+```bash
+npm install --global @ryonakae/shepherd
+shepherd help
+```
+
+### Install from source
+
+Source builds also require pnpm >= 11.9.0.
 
 ```bash
 git clone https://github.com/ryonakae/shepherd.git
 cd shepherd
 pnpm install
 pnpm build
-npm install -g . --ignore-scripts
+npm install --global . --ignore-scripts
 shepherd help
 ```
 
@@ -81,7 +89,13 @@ npx skills add ogulcancelik/herdr --skill herdr -g
 
 ## Pi extension
 
-The `shepherd-pi` extension requires Pi 0.80.6 or newer and connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn.
+Install the extension through Pi:
+
+```bash
+pi install npm:@ryonakae/shepherd-pi
+```
+
+The extension requires Pi 0.80.6 or newer and connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn.
 
 Enter `/shepherd on` in Pi to watch agent updates from that Pi. It becomes the only Pi with automatic wake enabled in the current Herdr workspace. Completed or blocked agent outcomes start one visible Shepherd turn. The themed card shows up to three agents; use Pi's expand key to see every outcome and its bounded final response. Agent output is untrusted evidence: Pi may continue only the existing user request and must not expand its scope.
 
@@ -89,14 +103,21 @@ Use `/shepherd` or `/shepherd status` to inspect the current Pi, and `/shepherd 
 
 ## Herdr plugin
 
-`shepherd-herdr-plugin` is an optional Herdr plugin. Inside a Herdr workspace, it connects to the Shepherd daemon and shows compact agent rows for the current workspace in the Herdr UI. It is not required if you only use the Shepherd CLI or Pi extension.
+Install the optional plugin from the GitHub release tag:
+
+```bash
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.3.1 --yes
+```
+
+The plugin connects to the Shepherd daemon and shows compact agent rows for the current Herdr workspace. Herdr installs it from the repository subdirectory; it is not published to npm or required for the CLI and Pi extension.
 
 ## Packages
 
-| Path | Purpose |
-| --- | --- |
-| `packages/shepherd-pi` | Pi extension for agent history and agent updates. |
-| `packages/shepherd-herdr-plugin` | Optional plugin that shows compact agent rows in the Herdr UI. |
+| Path | Distribution | Purpose |
+| --- | --- | --- |
+| repository root | npm: `@ryonakae/shepherd` | Shepherd CLI and daemon. |
+| `packages/shepherd-pi` | npm: `@ryonakae/shepherd-pi` | Pi extension for agent history and agent updates. |
+| `packages/shepherd-herdr-plugin` | GitHub release subdirectory | Optional Herdr UI integration; not an npm package. |
 
 ## Development
 
@@ -105,6 +126,8 @@ pnpm install
 pnpm check
 pnpm build
 ```
+
+See [Releasing Shepherd](./docs/releasing.md) for package validation, npm publication, and GitHub Release steps.
 
 DB schema changes require:
 
