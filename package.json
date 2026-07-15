@@ -1,8 +1,15 @@
 {
-  "name": "shepherd",
+  "name": "@ryonakae/shepherd",
   "version": "0.3.0",
   "description": "Agent history daemon and runtime bridges for Herdr-managed coding agents.",
   "type": "module",
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "shepherd": "./dist/src/cli/shepherd.js"
   },
@@ -27,17 +34,20 @@
     "pnpm": ">=11.9.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
-    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm pi-package:check && pnpm herdr-plugin:check",
+    "build": "pnpm clean:dist && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm package:check && pnpm pi-package:check && pnpm herdr-plugin:check",
+    "clean:dist": "node scripts/clean-dist.mjs",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
+    "herdr-plugin:check": "pnpm --dir packages/shepherd-herdr-plugin typecheck && pnpm --dir packages/shepherd-herdr-plugin package:check",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "package:check": "node scripts/check-root-package.mjs",
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
-    "herdr-plugin:check": "pnpm --dir packages/shepherd-herdr-plugin typecheck && pnpm --dir packages/shepherd-herdr-plugin package:check",
+    "prepack": "pnpm build",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,5 +1,5 @@
 {
-  "name": "shepherd-pi",
+  "name": "@ryonakae/shepherd-pi",
   "version": "0.3.0",
   "description": "Pi extension bridge for Shepherd agent history.",
   "type": "module",
@@ -9,6 +9,17 @@
     "pi-extension"
   ],
   "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryonakae/shepherd.git",
+    "directory": "packages/shepherd-pi"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
