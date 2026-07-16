@@ -10,6 +10,7 @@ import {
   type HerdrPaneIdentity,
   resolveHerdrPaneIdentity,
 } from "@/herdr/pane-identity-resolver.js";
+import type { AgentContextService } from "@/observability/agent-context-service.js";
 import type { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import type {
   AgentEventRecord,
@@ -19,6 +20,7 @@ import type {
   AgentOrchestratorWireState,
   AgentQueryScope,
   AgentScope,
+  AgentWorkspaceContextSnapshot,
   PiPresenceRegistration,
 } from "@/observability/contracts.js";
 import {
@@ -30,7 +32,6 @@ import {
   agentOrchestratorRegisterInputSchema,
   agentOrchestratorSetInputSchema,
   agentReadInputSchema,
-  agentTelemetryInputSchema,
 } from "@/observability/schemas.js";
 import { encodeJsonLine, JsonLineDecoder } from "@/shared/json-lines.js";
 
@@ -54,6 +55,7 @@ export type PiPresence = AgentScope & {
 };
 
 type AgentOrchestratorConnectionStateResult = {
+  context: AgentWorkspaceContextSnapshot | null;
   events: AgentEventRecord[];
   presence: PiPresence;
   state: AgentOrchestratorWireState | null;
@@ -67,6 +69,7 @@ type GraceTimer = {
 
 export class ObservabilityRpcServer {
   readonly #clearTimeout: (handle: TimerHandle) => void;
+  readonly #context: AgentContextService;
   readonly #connectionOrderBySocket = new Map<Socket, number>();
   readonly #disconnectGraceMs: number;
   readonly #disconnectTimers = new Map<string, GraceTimer>();
@@ -74,6 +77,11 @@ export class ObservabilityRpcServer {
   readonly #now: () => number;
   readonly #orchestrator: AgentOrchestratorService;
   readonly #piPresenceBySocket = new Map<Socket, PiPresence>();
+  readonly #registerPiSessionRef: (input: {
+    herdrSessionName: string;
+    sessionRef: PiPresenceRegistration["sessionRef"];
+    terminalId: string;
+  }) => Promise<{ contextChangedScopes: AgentScope[] }>;
   readonly #resolvePaneIdentity: (input: {
     paneId: string;
     socketPath: string;
@@ -90,10 +98,16 @@ export class ObservabilityRpcServer {
 
   constructor(options: {
     clearTimeout?: (handle: TimerHandle) => void;
+    context: AgentContextService;
     disconnectGraceMs?: number;
     history: AgentHistoryService;
     now?: () => number;
     orchestrator: AgentOrchestratorService;
+    registerPiSessionRef?: (input: {
+      herdrSessionName: string;
+      sessionRef: PiPresenceRegistration["sessionRef"];
+      terminalId: string;
+    }) => Promise<{ contextChangedScopes: AgentScope[] }>;
     resolvePaneIdentity?: (input: {
       paneId: string;
       socketPath: string;
@@ -104,10 +118,13 @@ export class ObservabilityRpcServer {
     stores: AgentStores;
   }) {
     this.#clearTimeout = options.clearTimeout ?? clearTimeout;
+    this.#context = options.context;
     this.#disconnectGraceMs = options.disconnectGraceMs ?? DISCONNECT_GRACE_MS;
     this.#history = options.history;
     this.#now = options.now ?? Date.now;
     this.#orchestrator = options.orchestrator;
+    this.#registerPiSessionRef =
+      options.registerPiSessionRef ?? (async () => ({ contextChangedScopes: [] }));
     this.#resolvePaneIdentity = options.resolvePaneIdentity ?? resolveHerdrPaneIdentity;
     this.#setTimeout = options.setTimeout ?? setTimeout;
     this.#socketPath = options.socketPath;
@@ -145,6 +162,21 @@ export class ObservabilityRpcServer {
       this.#server.close((error) => (error ? reject(error) : resolve()));
     });
     if (existsSync(this.#socketPath)) unlinkSync(this.#socketPath);
+  }
+
+  publishAgentContext(scope: AgentScope): void {
+    const owner = this.#orchestrator.status(scope)?.owner;
+    if (!owner) return;
+    const socket = this.#newestSocketForTerminal({ ...scope, terminalId: owner.terminalId });
+    if (!socket) return;
+    const context = this.#context.workspaceSnapshot({
+      ...scope,
+      excludeTerminalId: owner.terminalId,
+    });
+    this.#write(socket, {
+      method: "agent.context.changed",
+      params: { context, herdrSessionName: scope.herdrSessionName, workspaceId: scope.workspaceId },
+    });
   }
 
   publishAgentEvent(event: AgentEventRecord): void {
@@ -241,39 +273,29 @@ export class ObservabilityRpcServer {
       case "agent.list": {
         assertSchema(agentListInputSchema, params);
         const scope = this.#resolveScope(params as AgentQueryScope);
-        const agents = this.#stores.agents.list(scope);
-        return {
-          agents: await Promise.all(
-            agents.map(async (agent) => {
-              const history = await this.#history.getCompactHistory(historyInput(agent));
-              return {
-                ...agent,
-                history: {
-                  lastAssistantMessage: history.lastAssistantMessage,
-                  lastUserMessage: history.lastUserMessage,
-                  source: history.source,
-                  updatedAt: history.updatedAt,
-                },
-              };
-            }),
-          ),
-        };
+        return { agents: this.#context.listAgents(scope) };
       }
       case "agent.get": {
         assertSchema(agentGetInputSchema, params);
         const input = params as AgentQueryScope & { target: string };
         const scope = this.#resolveScope(input);
         const agent = this.#stores.agents.resolveTarget(scope, input.target);
-        return {
-          agent: { ...agent, history: await this.#history.getCompactHistory(historyInput(agent)) },
-        };
+        const preferredRef = this.#context.getAgentSnapshot(agent.id)?.historyRef;
+        const history = await this.#history.resolveCompactHistory(historyInput(agent), {
+          preferredRef: preferredRef ?? null,
+        });
+        return { agent: { ...agent, history: history.compactHistory } };
       }
       case "agent.read": {
         assertSchema(agentReadInputSchema, params);
         const input = params as AgentQueryScope & { limit?: number; target: string };
         const scope = this.#resolveScope(input);
         const agent = this.#stores.agents.resolveTarget(scope, input.target);
-        const read = await this.#history.read(historyInput(agent), { limit: input.limit ?? 20 });
+        const preferredRef = this.#context.getAgentSnapshot(agent.id)?.historyRef;
+        const read = await this.#history.read(historyInput(agent), {
+          limit: input.limit ?? 20,
+          preferredRef: preferredRef ?? null,
+        });
         return { agent: { ...agent, historyRef: read.historyRef, messages: read.messages } };
       }
       case "agent.events": {
@@ -290,6 +312,12 @@ export class ObservabilityRpcServer {
         if (previous && terminalPresenceKey(previous) !== terminalPresenceKey(presence)) {
           this.#scheduleDisconnect(previous);
         }
+        const registration = await this.#registerPiSessionRef({
+          herdrSessionName: presence.herdrSessionName,
+          sessionRef: (params as PiPresenceRegistration).sessionRef,
+          terminalId: presence.terminalId,
+        });
+        for (const scope of registration.contextChangedScopes) this.publishAgentContext(scope);
         return this.#connectionState(presence);
       }
       case "agent.orchestrator.get": {
@@ -323,10 +351,6 @@ export class ObservabilityRpcServer {
           eventId: (params as { eventId: number }).eventId,
         });
         return { acknowledged: true, state: toWireState(state) };
-      }
-      case "agent.telemetry": {
-        assertSchema(agentTelemetryInputSchema, params);
-        return { accepted: true };
       }
       default:
         throw new Error(`Unknown method: ${method}`);
@@ -375,7 +399,12 @@ export class ObservabilityRpcServer {
 
   #connectionState(presence: PiPresence): AgentOrchestratorConnectionStateResult {
     const state = this.#orchestrator.status(presence);
+    const context =
+      state?.owner?.terminalId === presence.terminalId
+        ? this.#context.workspaceSnapshot({ ...presence, excludeTerminalId: presence.terminalId })
+        : null;
     return {
+      context,
       events: this.#orchestrator.pending({ ...presence, limit: 100 }),
       presence,
       state: state ? toWireState(state) : null,

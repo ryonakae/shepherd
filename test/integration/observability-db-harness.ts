@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AgentContextSnapshotStore } from "@/db/agent-context-snapshots.js";
 import { AgentEventStore } from "@/db/agent-events.js";
 import { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import { AgentOrchestratorScopeStore } from "@/db/agent-orchestrator-scopes.js";
@@ -19,6 +20,7 @@ export function openObservabilityDbHarness() {
   applyMigrations(sqlite, { migrationsFolder: "drizzle" });
   const agentEvents = new AgentEventStore(sqlite);
   return {
+    agentContextSnapshots: new AgentContextSnapshotStore(sqlite),
     agentEvents,
     agentHistoryCache: new AgentHistoryCacheStore(sqlite),
     agentOrchestratorScopes: new AgentOrchestratorScopeStore(sqlite),

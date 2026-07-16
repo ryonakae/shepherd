@@ -45,7 +45,9 @@ Use `--session <name>` when workspace ids or agent names are ambiguous across ru
 
 ## Inspect an agent
 
-Start with `agent list` and select the exact pane id, terminal id, or unique agent name from its result. Do not assume names such as `claude` or `codex` are unique.
+Start with `agent list` and select the exact pane id, terminal id, or unique agent name from its result. `agent list` is the fast cached discovery and index view; inspect `updatedAt` when freshness matters. Do not call it repeatedly in a polling loop or assume names such as `claude` or `codex` are unique.
+
+Use `agent get` or `agent read` for explicit current detail after selecting the exact target.
 
 ```bash
 shepherd agent get <target> --json

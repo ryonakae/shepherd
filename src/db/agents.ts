@@ -12,6 +12,7 @@ export type HerdrAgentLike = Record<string, unknown>;
 
 type AgentRow = {
   agent: string | null;
+  agent_session_hint_json: string | null;
   agent_session_json: string | null;
   agent_status: AgentStatus;
   cwd: string | null;
@@ -22,6 +23,7 @@ type AgentRow = {
   id: string;
   last_seen_at: number;
   pane_id: string;
+  pane_revision: number | null;
   tab_id: string | null;
   terminal_id: string | null;
   workspace_id: string;
@@ -54,20 +56,28 @@ export class AgentStore {
     });
 
     return this.#transaction(() => {
-      const existing = this.listForHerdrSession(input.herdrSessionName);
-      const byPane = new Map(existing.map((agent) => [agent.paneId, agent]));
+      const existing = this.#sqlite
+        .prepare("select * from agents where herdr_session_name = ?")
+        .all(input.herdrSessionName) as AgentRow[];
+      const byPane = new Map(existing.map((agent) => [agent.pane_id, agent]));
       const byTerminal = new Map(
-        existing.flatMap((agent) => (agent.terminalId ? [[agent.terminalId, agent] as const] : [])),
+        existing.flatMap((agent) =>
+          agent.terminal_id ? [[agent.terminal_id, agent] as const] : [],
+        ),
       );
-      const matched = snapshots.map((snapshot) => ({
-        existing:
-          (snapshot.terminalId ? byTerminal.get(snapshot.terminalId) : undefined) ??
-          byPane.get(snapshot.paneId),
-        snapshot,
-      }));
+      const matched = snapshots.map((snapshot) => {
+        const terminalMatch = snapshot.terminalId ? byTerminal.get(snapshot.terminalId) : undefined;
+        const paneMatch = byPane.get(snapshot.paneId);
+        const canUsePaneFallback =
+          paneMatch && (snapshot.terminalId === null || paneMatch.terminal_id === null);
+        return {
+          existing: terminalMatch ?? (canUsePaneFallback ? paneMatch : undefined),
+          snapshot,
+        };
+      });
       const temporaryPaneIds = new Set<string>();
       for (const { existing: current, snapshot } of matched) {
-        if (current && current.paneId !== snapshot.paneId) temporaryPaneIds.add(current.id);
+        if (current && current.pane_id !== snapshot.paneId) temporaryPaneIds.add(current.id);
         const occupant = byPane.get(snapshot.paneId);
         if (occupant && occupant.id !== current?.id) temporaryPaneIds.add(occupant.id);
       }
@@ -81,14 +91,18 @@ export class AgentStore {
       for (const { existing: current, snapshot } of matched) {
         const id = current?.id ?? `ag_${randomUUID()}`;
         retainedIds.push(id);
+        const agent = stringValue(snapshot.agent.agent);
+        const sessionHint = current?.agent === agent ? current.agent_session_hint_json : null;
         const values = [
           snapshot.paneId,
           snapshot.terminalId,
           stringValue(snapshot.agent.tab_id) ?? stringValue(snapshot.agent.tabId),
           snapshot.workspaceId,
-          stringValue(snapshot.agent.agent),
+          agent,
           parseAgentStatus(snapshot.agent.agent_status),
           agentSessionJson(snapshot.agent.agent_session),
+          sessionHint,
+          integerValue(snapshot.agent.revision),
           stringValue(snapshot.agent.cwd),
           stringValue(snapshot.agent.foreground_cwd) ?? stringValue(snapshot.agent.foregroundCwd),
           snapshot.agent.focused === true ? 1 : 0,
@@ -99,8 +113,8 @@ export class AgentStore {
             .prepare(
               `update agents
                set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?,
-                   agent_status = ?, agent_session_json = ?, cwd = ?, foreground_cwd = ?,
-                   focused = ?, last_seen_at = ?
+                   agent_status = ?, agent_session_json = ?, agent_session_hint_json = ?, pane_revision = ?,
+                   cwd = ?, foreground_cwd = ?, focused = ?, last_seen_at = ?
                where id = ?`,
             )
             .run(...values, id);
@@ -108,8 +122,8 @@ export class AgentStore {
           this.#sqlite
             .prepare(
               `insert into agents
-               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, agent_status, agent_session_json, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(id, input.herdrSessionName, ...values, now);
         }
@@ -129,6 +143,28 @@ export class AgentStore {
       }
       return this.listForHerdrSession(input.herdrSessionName);
     });
+  }
+
+  setSessionRefByTerminal(input: {
+    agentSession: AgentSessionRef;
+    herdrSessionName: string;
+    terminalId: string;
+  }): AgentIndexRecord | undefined {
+    const current = this.findByTerminal(input);
+    if (!current) return undefined;
+    const compatible = current.agent?.toLowerCase() === input.agentSession.agent.toLowerCase();
+    this.#sqlite
+      .prepare(
+        `update agents
+         set agent_session_hint_json = ?
+         where herdr_session_name = ? and terminal_id = ?`,
+      )
+      .run(
+        compatible ? JSON.stringify(input.agentSession) : null,
+        input.herdrSessionName,
+        input.terminalId,
+      );
+    return this.findByTerminal(input);
   }
 
   updateStatus(input: {
@@ -237,9 +273,13 @@ export class AgentStore {
 }
 
 function mapAgent(row: AgentRow): AgentIndexRecord {
+  const reportedSession = parseAgentSession(row.agent_session_json);
+  const hintedSession = parseAgentSession(row.agent_session_hint_json);
+  const compatibleHint =
+    row.agent?.toLowerCase() === hintedSession?.agent.toLowerCase() ? hintedSession : null;
   return {
     agent: row.agent,
-    agentSession: parseAgentSession(row.agent_session_json),
+    agentSession: reportedSession ?? compatibleHint,
     agentStatus: row.agent_status,
     cwd: row.cwd,
     firstSeenAt: new Date(row.first_seen_at),
@@ -249,6 +289,7 @@ function mapAgent(row: AgentRow): AgentIndexRecord {
     id: row.id,
     lastSeenAt: new Date(row.last_seen_at),
     paneId: row.pane_id,
+    paneRevision: row.pane_revision,
     tabId: row.tab_id,
     terminalId: row.terminal_id,
     workspaceId: row.workspace_id,
@@ -297,6 +338,10 @@ function parseAgentSession(value: string | null): AgentSessionRef | null {
     return null;
   }
   return null;
+}
+
+function integerValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function stringValue(value: unknown): string | null {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 import { ObservabilityRpcServer } from "@/daemon/observability-server.js";
+import { AgentContextService } from "@/observability/agent-context-service.js";
 import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import type { AgentIndexRecord } from "@/observability/contracts.js";
 import {
@@ -189,8 +190,14 @@ async function openServer() {
     agents: harness.agents,
     scopes: harness.agentOrchestratorScopes,
   });
+  const history = createAgentHistoryService({ cache: harness.agentHistoryCache });
+  const context = new AgentContextService({
+    history,
+    stores: { agentContextSnapshots: harness.agentContextSnapshots, agents: harness.agents },
+  });
   const server = new ObservabilityRpcServer({
-    history: createAgentHistoryService({ cache: harness.agentHistoryCache }),
+    context,
+    history,
     orchestrator,
     socketPath,
     stores: {
@@ -252,6 +259,7 @@ function otherSessionAgent(
     id: "ag_other",
     lastSeenAt: new Date(),
     paneId,
+    paneRevision: null,
     tabId: null,
     terminalId,
     workspaceId,
@@ -267,6 +275,12 @@ function register(
   return client.request("agent.orchestrator.register", {
     herdrSocketPath: "/tmp/herdr/herdr.sock",
     paneId,
+    sessionRef: {
+      agent: "pi",
+      kind: "path",
+      source: "herdr:pi",
+      value: "/tmp/pi-session.jsonl",
+    },
     subscriberId,
     subscriberKind: "pi",
     workspaceId,

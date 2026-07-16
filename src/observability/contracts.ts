@@ -37,6 +37,7 @@ export type AgentIndexRecord = {
   id: string;
   lastSeenAt: Date;
   paneId: string;
+  paneRevision: number | null;
   tabId: string | null;
   terminalId: string | null;
   workspaceId: string;
@@ -89,6 +90,21 @@ export type CompactAgentHistory = {
   updatedAt: string | null;
 };
 
+export type AgentHistorySourceFingerprint = {
+  mtimeMs: number;
+  path: string;
+  size: number;
+};
+
+export type AgentContextSnapshotRecord = {
+  agentId: string;
+  compactHistory: CompactAgentHistory;
+  historyRef: AgentHistoryRef | null;
+  paneRevision: number | null;
+  sourceFingerprint: AgentHistorySourceFingerprint | null;
+  updatedAt: Date;
+};
+
 export type AgentHistoryMessage = {
   compact?: CompactToolResult;
   ref: string;
@@ -139,6 +155,11 @@ export type AgentScope = {
   workspaceId: string;
 };
 
+export type AgentWorkspaceContextSnapshot = AgentScope & {
+  agents: AgentListItem[];
+  updatedAt: string;
+};
+
 export type AgentOrchestratorOwner = {
   paneId: string;
   terminalId: string;
@@ -172,42 +193,11 @@ export type AgentOrchestratorChanged = {
 export type PiPresenceRegistration = {
   herdrSocketPath: string;
   paneId: string;
+  sessionRef: AgentSessionRef;
   subscriberId: string;
   subscriberKind: "pi";
   workspaceId: string;
 };
-
-export type AgentTelemetryEvent =
-  | {
-      artifactRefs: string[];
-      durationMs?: number;
-      errorExcerpt?: string;
-      inputPreview?: string;
-      isError: boolean;
-      occurredAt: string;
-      outputExcerpt?: string;
-      redactionApplied: boolean;
-      runtime: string;
-      sessionRef: AgentSessionRef | null;
-      toolCallId: string;
-      toolName: string;
-      turnId: string;
-      type: "agent.tool.completed";
-    }
-  | {
-      blockedHint?: string;
-      completionHint?: string;
-      evidenceRefs: string[];
-      needsInputHint?: string;
-      occurredAt: string;
-      redactionApplied: boolean;
-      runtime: string;
-      sessionRef: AgentSessionRef | null;
-      stopReason: string;
-      textExcerpt: string;
-      turnId: string;
-      type: "agent.message.final";
-    };
 
 export type AgentQueryScope = {
   all?: boolean;

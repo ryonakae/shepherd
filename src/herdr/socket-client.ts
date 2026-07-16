@@ -243,6 +243,7 @@ export class HerdrSocketClient {
         wake = undefined;
       },
     };
+    if (options.signal?.aborted) return;
     this.#subscribers.add(subscriber);
     try {
       await this.request("events.subscribe", {
@@ -251,6 +252,7 @@ export class HerdrSocketClient {
           type: "pane.agent_status_changed" as const,
         })),
       });
+      if (options.signal?.aborted) return;
       while (!options.signal?.aborted) {
         if (failure) throw failure;
         if (queue.length === 0) {

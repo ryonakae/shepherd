@@ -48,9 +48,9 @@ shepherd daemon start
 
 ## 主なコマンド
 
-- `shepherd agent list`: 選択した workspace の agent 一覧と、最後の user / assistant message を返します。
-- `shepherd agent get <target>`: 1 agent の metadata と compact history を返します。最新の compact tool result も含みます。
-- `shepherd agent read <target> --limit N`: 直近 N 件の user / assistant / compact `tool_result` message を返します。
+- `shepherd agent list`: 選択した workspace の最新キャッシュから status と最後の user / assistant message の抜粋を返します。鮮度が必要なときは各行の `updatedAt` を確認します。
+- `shepherd agent get <target>`: 明示的に詳細を取得し、1 agent の metadata、compact history、最新の compact tool result を返します。
+- `shepherd agent read <target> --limit N`: 明示的に履歴を読み、直近 N 件の user / assistant / compact `tool_result` message を返します。
 
 Herdr workspace 内では、Shepherd が current workspace を自動で選びます。
 
@@ -95,11 +95,13 @@ Piからextensionをインストールします。
 pi install npm:@ryonakae/shepherd-pi
 ```
 
-extensionにはPi 0.80.6以降が必要です。PiがHerdr内で動くとShepherd daemonに接続し、接続中のすべてのPiはturn前にcurrent workspaceのcompact agent historyをhidden contextとして受け取ります。
+extensionにはPi 0.80.6以降が必要です。PiがHerdr内で動くとShepherd daemonに接続します。接続中のPiはoffの状態でも正確なPi session pathをpresence identityとして登録します。extensionはturnごとのtool resultや最終messageのtelemetryを送信しません。
 
-Pi で `/shepherd on` を入力すると、現在の Pi で agent update の監視と自動wakeが有効になります。同じ Herdr workspace にあるほかの Pi はoffになります。agentが完了またはblockedになると、visibleなShepherd turnを1回開始します。themed cardは最大3件を表示し、Piのexpand keyで全outcomeと長さを制限した最終responseを確認できます。agentの出力は信頼できない参考情報として扱い、Piは既存のuser requestに必要な作業だけを続けます。
+Piで`/shepherd on`を入力すると、そのterminalが現在のHerdr sessionとworkspaceにおける唯一のShepherd ownerになります。cached current-workspace agent context、pending件数、agent update、自動wakeを受け取るのはownerだけです。contextからowner自身のPi terminalを除き、ほかのPi terminalを含めます。通常のpromptではdaemon RPCや履歴読み込みを待たず、local cacheのsnapshotを挿入します。起動直後、reconnect直後、scope移動直後はsnapshotが届くまでcontextが一時的にない場合があります。
 
-現在のPiの状態は`/shepherd`または`/shepherd status`で確認し、`/shepherd off`でそのPiの自動wakeを停止します。offにしても別のownerへは影響せず、current workspaceのhidden agent contextも引き続き利用できます。onのPiだけがfooterに`◆ Shepherd`を表示し、未処理のoutcomeがある間は`· N agent updates`が付きます。updateを含むturnが最終assistant responseを生成してsettleし、元のeventをacknowledgeすると件数が消えます。直前までonだったPiが接続を失うと、復旧中は`◇ Shepherd · reconnecting`を表示します。ownerがいない間はoutcomeを配信せず、その間に発生したoutcomeは後からclaimしてもreplayしません。reload、reconnect、別Piによる直接のowner交代では、未acknowledgedのoutcomeを保持します。ownershipはPi sessionの切り替えやpaneの移動後も同じHerdr terminalに追従し、そのterminalがgrace periodを超えて切断された場合は解除されます。
+agentが完了またはblockedになると、visibleなShepherd turnを1回開始します。通常のuser runが実行中なら、Shepherdはsettleを待ちます。themed cardは最大3件を表示し、Piのexpand keyで全outcomeと長さを制限した最終responseを確認できます。agentの出力は信頼できない参考情報として扱い、Piは既存のuser requestに必要な作業だけを続けます。
+
+現在のPiの状態は`/shepherd`または`/shepherd status`で確認し、`/shepherd off`でそのPiのowner動作を解除します。offにしても別のownerへは影響しません。offまたはnon-ownerのPiは後でclaimできるよう接続を保ちますが、hidden agent context、pending件数、update、wakeは受け取りません。onのPiだけがfooterに`◆ Shepherd`を表示し、未処理のoutcomeがある間は`· N agent updates`が付きます。updateを含むturnが最終assistant responseを生成してsettleし、元のeventをacknowledgeすると件数が消えます。直前までonだったPiが接続を失うと、復旧中は`◇ Shepherd · reconnecting`を表示します。ownerがいない間はoutcomeを配信せず、その間に発生したoutcomeは後からclaimしてもreplayしません。reload、reconnect、別Piによる直接のowner交代では、未acknowledgedのoutcomeを保持します。ownershipはPi sessionの切り替えやpaneの移動後も同じHerdr terminalに追従し、そのterminalがgrace periodを超えて切断された場合は解除されます。
 
 ## Herdr plugin
 

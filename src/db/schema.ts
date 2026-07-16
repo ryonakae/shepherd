@@ -36,6 +36,7 @@ export const agents = sqliteTable(
   {
     agent: text("agent"),
     agentSessionJson: text("agent_session_json"),
+    agentSessionHintJson: text("agent_session_hint_json"),
     agentStatus: text("agent_status", { enum: agentStatusValues }).notNull(),
     cwd: text("cwd"),
     firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull(),
@@ -47,6 +48,7 @@ export const agents = sqliteTable(
     id: text("id").primaryKey(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
     paneId: text("pane_id").notNull(),
+    paneRevision: integer("pane_revision"),
     tabId: text("tab_id"),
     terminalId: text("terminal_id"),
     workspaceId: text("workspace_id").notNull(),
@@ -56,6 +58,19 @@ export const agents = sqliteTable(
     uniqueIndex("agents_session_terminal_idx").on(table.herdrSessionName, table.terminalId),
   ],
 );
+
+export const agentContextSnapshots = sqliteTable("agent_context_snapshots", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  compactHistoryJson: text("compact_history_json").notNull(),
+  historyRefJson: text("history_ref_json"),
+  paneRevision: integer("pane_revision"),
+  sourcePath: text("source_path"),
+  sourceMtimeMs: integer("source_mtime_ms"),
+  sourceSize: integer("source_size"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
 
 export const agentEvents = sqliteTable(
   "agent_events",

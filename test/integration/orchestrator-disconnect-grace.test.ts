@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 import { ObservabilityRpcServer } from "@/daemon/observability-server.js";
+import { AgentContextService } from "@/observability/agent-context-service.js";
 import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import {
   cleanupTempDirs,
@@ -214,10 +215,19 @@ async function startServer(
   orchestrator: AgentOrchestratorService,
   scheduler: ManualScheduler,
 ) {
+  const history = createAgentHistoryService({ cache: setup.harness.agentHistoryCache });
+  const context = new AgentContextService({
+    history,
+    stores: {
+      agentContextSnapshots: setup.harness.agentContextSnapshots,
+      agents: setup.harness.agents,
+    },
+  });
   const server = new ObservabilityRpcServer({
     clearTimeout: (handle) => scheduler.clear(handle),
+    context,
     disconnectGraceMs: 50,
-    history: createAgentHistoryService({ cache: setup.harness.agentHistoryCache }),
+    history,
     orchestrator,
     setTimeout: (callback, delay) => scheduler.set(callback, delay),
     socketPath: setup.socketPath,
@@ -238,6 +248,12 @@ function register(client: RpcTestClient, subscriberId: string): Promise<unknown>
   return client.request("agent.orchestrator.register", {
     herdrSocketPath: "/tmp/herdr/herdr.sock",
     paneId: subscriberId === "observer" ? "wB:p-observer" : "wB:p-owner",
+    sessionRef: {
+      agent: "pi",
+      kind: "path",
+      source: "herdr:pi",
+      value: "/tmp/pi-session.jsonl",
+    },
     subscriberId,
     subscriberKind: "pi",
     workspaceId: "wB",

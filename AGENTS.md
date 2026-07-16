@@ -28,7 +28,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 
 ## 重要パス
 
-- `src/observability/`: agent contract、telemetry normalization、agent index、orchestrator service。
+- `src/observability/`: agent contract、cached agent context、agent index、orchestrator service。
 - `src/daemon/`: daemon JSON Lines RPC、process manager、service startup。
 - `src/cli/`: `shepherd` CLI entrypoint。
 - `src/config/`: runtime config schema と path/env 解決。

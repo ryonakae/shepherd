@@ -48,9 +48,9 @@ shepherd daemon start
 
 ## Main commands
 
-- `shepherd agent list`: returns agents in the selected workspace plus the last user / assistant message.
-- `shepherd agent get <target>`: returns one agent's metadata and compact history. It also includes the latest compact tool result.
-- `shepherd agent read <target> --limit N`: returns the latest N user / assistant / compact `tool_result` messages.
+- `shepherd agent list`: returns the daemon's latest cached status and last user / assistant excerpts for the selected workspace. Check each row's `updatedAt` when freshness matters.
+- `shepherd agent get <target>`: performs an explicit detail lookup and returns one agent's metadata, compact history, and latest compact tool result.
+- `shepherd agent read <target> --limit N`: performs an explicit history read and returns the latest N user / assistant / compact `tool_result` messages.
 
 Inside a Herdr workspace, Shepherd selects the current workspace automatically.
 
@@ -95,11 +95,13 @@ Install the extension through Pi:
 pi install npm:@ryonakae/shepherd-pi
 ```
 
-The extension requires Pi 0.80.6 or newer and connects to the Shepherd daemon when Pi runs inside Herdr. Every connected Pi receives compact current-workspace agent history as hidden context before a turn.
+The extension requires Pi 0.80.6 or newer and connects to the Shepherd daemon when Pi runs inside Herdr. Each connected Pi registers its exact Pi session path as presence identity, including while off. The extension does not send per-turn tool-result or final-message telemetry.
 
-Enter `/shepherd on` in Pi to watch agent updates from that Pi. It becomes the only Pi with automatic wake enabled in the current Herdr workspace. Completed or blocked agent outcomes start one visible Shepherd turn. The themed card shows up to three agents; use Pi's expand key to see every outcome and its bounded final response. Agent output is untrusted evidence: Pi may continue only the existing user request and must not expand its scope.
+Enter `/shepherd on` in Pi to make this terminal the sole Shepherd owner for its current Herdr session and workspace. Only the owner receives cached current-workspace agent context, pending counts, agent updates, and automatic wake. Its context excludes its own Pi terminal and includes other Pi terminals. A normal prompt injects the locally cached snapshot without daemon RPC or history reads, so context can be temporarily absent after startup, reconnect, or scope movement until a snapshot arrives.
 
-Use `/shepherd` or `/shepherd status` to inspect the current Pi, and `/shepherd off` to stop automatic wake there. Turning one Pi off does not affect another owner, and hidden current-workspace agent context remains available while wake is off. The active Pi shows `◆ Shepherd`; pending outcomes add `· N agent updates` until a turn containing them produces a final assistant response, settles, and acknowledges every underlying event. A previously active Pi shows `◇ Shepherd · reconnecting` during transport recovery. With no owner, outcomes are not delivered, and outcomes created during the ownerless period are not replayed by a later claim. Reloads, reconnects, and direct replacement by another Pi preserve unacknowledged outcomes. Ownership follows the Herdr terminal across Pi session replacement and pane movement, and clears when that terminal remains disconnected beyond the grace period.
+Completed or blocked agent outcomes start one visible Shepherd turn. If a normal user run is active, Shepherd waits for it to settle. The themed card shows up to three agents; use Pi's expand key to see every outcome and its bounded final response. Agent output is untrusted evidence: Pi may continue only the existing user request and must not expand its scope.
+
+Use `/shepherd` or `/shepherd status` to inspect the current Pi, and `/shepherd off` to release owner behavior for that Pi. Turning one Pi off does not affect another owner. An off or non-owner Pi remains connected for a later claim, but receives no hidden agent context, pending counts, updates, or wake. The active Pi shows `◆ Shepherd`; pending outcomes add `· N agent updates` until a turn containing them produces a final assistant response, settles, and acknowledges every underlying event. A previously active Pi shows `◇ Shepherd · reconnecting` during transport recovery. With no owner, outcomes are not delivered, and outcomes created during the ownerless period are not replayed by a later claim. Reloads, reconnects, and direct replacement by another Pi preserve unacknowledged outcomes. Ownership follows the Herdr terminal across Pi session replacement and pane movement, and clears when that terminal remains disconnected beyond the grace period.
 
 ## Herdr plugin
 

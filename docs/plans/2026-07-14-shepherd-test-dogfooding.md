@@ -2,9 +2,9 @@
 
 **Status:** Phase 1 core acceptance completed; extended routing/lifecycle phases pending
 
-**Goal:** Exercise Shepherd from `/Users/ryo.nakae/Dev/_sandbox/shepherd-test` as a real user would, covering structured agent history, the Shepherd Agent Skill, Pi hidden context, and selected-Pi updates without risking the normal Shepherd runtime state.
+**Goal:** Exercise Shepherd from `/Users/ryo.nakae/Dev/_sandbox/shepherd-test` as a real user would, covering structured agent history, the Shepherd Agent Skill, owner-only cached Pi context, and owner-only updates without risking the normal Shepherd runtime state.
 
-**Architecture:** Run one Pi wake owner, one Claude agent, and one shell observer in the same Herdr workspace. Complete a short core loop first, then add a second Pi for routing and lifecycle checks. Use an isolated `SHEPHERD_HOME` for restart, disconnect, and unread-transfer scenarios so the normal `~/.shepherd` database is not changed by destructive tests.
+**Architecture:** Run one owner Pi, one off Pi, one Claude agent, and one shell observer in the same Herdr workspace. The owner receives a daemon-cached snapshot locally during normal prompts; an off Pi receives neither context nor updates. Use an isolated `SHEPHERD_HOME` for restart, disconnect, owner transfer, and unread-transfer scenarios so the normal `~/.shepherd` database is not changed by destructive tests.
 
 **Tech Stack:** Shepherd 0.2.0, Herdr 0.7.2, Pi 0.80.6, Claude Code or another supported agent runtime, JSON CLI output.
 
@@ -14,6 +14,9 @@
 - Do not reuse recorded Herdr workspace or pane ids. Re-read them because public ids can compact.
 - Enter `/shepherd [on|off|status]` in Pi, not in a shell.
 - Use Shepherd for structured status/history and Herdr for raw terminal output or pane control.
+- `agent list` is a cached index view. Capture `updatedAt` and measured duration when freshness or latency matters; use `agent get/read` for explicit detail.
+- A normal Pi prompt must not wait for a daemon RPC or history read. A missing cache proceeds without Shepherd context.
+- Pi presence uses the exact Pi session path. The extension does not send tool-result or final-message telemetry.
 - Do not inspect raw session files unless a Shepherd result is demonstrably wrong and diagnosis is required.
 - Do not record credentials, complete session files, SQLite databases, or unredacted terminal dumps as evidence.
 - A `done` status is only observable while the completed agent pane has not been viewed.
@@ -35,12 +38,14 @@ Use one Herdr workspace with these panes:
 
 | Role | Process | Purpose |
 | --- | --- | --- |
-| Pi A | `pi` | Primary wake owner and hidden-context consumer |
+| Pi A | `pi` | Initial owner, cached-context consumer, and wake recipient |
+| Pi B | `pi` | Off Pi that receives no context or updates until it claims ownership |
 | Agent | `claude` initially | Produces status transitions, messages, and tool results |
 | Observer | shell | Runs `shepherd agent list/get/read` without changing pane focus |
-| Pi B | `pi` in the extended run | Tests owner replacement, non-owner behavior, and unread transfer |
 
-Start with Pi A, Agent, and Observer. Add Pi B only after the core loop passes.
+Start Pi A, Pi B, Agent, and Observer before the core loop. Keep Pi B off until the owner-transfer checks.
+
+The completed Phase 1 hidden-context evidence predates owner-only cached delivery. It remains historical evidence for owner Pi A and does not prove off-Pi behavior.
 
 ## Phase 1: Core Loop With Normal Runtime
 
@@ -90,7 +95,8 @@ Expected:
 
 - the first status may report no owner;
 - `on` identifies Pi A as owner for the current Herdr session/workspace;
-- Pi A's footer shows `◆ Shepherd`.
+- Pi A's footer shows `◆ Shepherd`;
+- Pi B remains off and receives no hidden agent context, pending count, update, or wake.
 
 - [x] **Step 4: Give the agent a harmless tool-using task**
 
@@ -203,7 +209,7 @@ Expected: the daemon creates a clean runtime home, and processes launched from t
 
 Before claiming, run `/shepherd status` in Pi A and Pi B and trigger one Agent transition.
 
-Expected: neither Pi receives pushed unread updates, but both still receive ordinary current-workspace agent context on their next turns.
+Expected: neither Pi receives pushed unread updates or normal hidden agent context. Both keep their daemon connection and presence identity for a later claim.
 
 Then claim once from Pi A:
 
@@ -230,6 +236,8 @@ Then run status from both Pi instances. In Pi A, also run:
 Expected:
 
 - the footer moves from Pi A to Pi B;
+- Pi A immediately loses cached context and wake;
+- Pi B receives the cached snapshot on its next run;
 - Pi A receives one transient notification naming Pi B's pane;
 - both status calls identify Pi B;
 - Pi A's non-owner `off` is a no-op and reports `Shepherd is off`.
@@ -241,7 +249,7 @@ Trigger an agent completion while Pi B owns wake. Then make Pi B perform a norma
 Expected:
 
 - the agent update reaches Pi B only;
-- Pi A receives no unread agent update;
+- Pi A receives no hidden context or unread agent update;
 - Pi B's own terminal event does not become an unread event in Pi B and does not cause a resume loop.
 
 - [ ] **Step 5: Transfer an unacknowledged event**
@@ -260,6 +268,20 @@ After the scope has already had an owner, turn the current owner off, trigger an
 
 Expected: Pi B receives the event created during the ownerless interval. This distinguishes initialized-scope replay from the intentional first-claim cursor behavior.
 
+- [ ] **Step 7: Verify cache freshness and prompt responsiveness**
+
+With Pi A as owner and Pi B off, run five `shepherd agent list --json` calls through `/usr/bin/time -p`. Record each real value and the rows' `updatedAt` values. `agent list` must return cached data; use `agent get/read` only after selecting an exact target that needs current detail.
+
+Create output while the agent is working and verify the owner's next normal run sees the cached excerpt within 10 seconds. With every agent idle, allow one 60-second recovery interval and verify a missed or manual history change appears. Confirm the daemon does not overlap refreshes for the same session.
+
+Submit five short prompts in Pi A while history roots are large. Confirm the working indicator starts without the former visible hitch. Use a diagnostic connection log if available to confirm normal prompt lifecycle hooks make no daemon RPC or history read. Pi A must exclude itself from normal context and include Pi B. Pi B must receive no context, pending count, update, or wake while off.
+
+Start a long normal Pi A turn, complete the agent while Pi A is busy, and verify that the normal turn is neither interrupted nor given `[SHEPHERD AGENT UPDATES]`. After it settles, one visible Shepherd wake starts and acknowledges only after its successful final response settles. Confirm no tool-result or final-message telemetry call occurs during either turn.
+
+- [ ] **Step 8: Verify a cache gap does not block a prompt**
+
+Start Pi before its first cache delivery or restart the disposable daemon and submit a prompt immediately. Confirm the turn starts without a hitch and receives no Shepherd context until a snapshot arrives. Reconnect within grace and verify that the same owner restores cached context through presence registration.
+
 ## Phase 3: Lifecycle and Topology
 
 **Objective:** Cover behavior that automated tests cannot visually prove.
@@ -268,7 +290,7 @@ Expected: Pi B receives the event created during the ownerless interval. This di
 
 With Pi B as owner, exercise `/new`, `/reload`, and one of `/resume` or `/fork` after suitable sessions/entries exist.
 
-Expected: the same Herdr terminal regains or retains `◆ Shepherd` without another `on`, and status continues to identify that terminal under the replacement Pi session.
+Expected: the same Herdr terminal regains or retains `◆ Shepherd` without another `on`, and status continues to identify that terminal under the replacement Pi session. Confirm the renewed presence registers the replacement Pi session's exact path.
 
 - [ ] **Step 2: Restart the disposable daemon**
 
@@ -296,6 +318,7 @@ Expected:
 - the source workspace becomes ownerless;
 - the moved terminal becomes owner in the destination under its new public pane id;
 - the previous destination owner loses the footer and receives one transient notification;
+- old context clears during the move, then the destination cached context arrives after role reconciliation;
 - subsequent hidden context and Agent updates use the destination workspace.
 
 ## Phase 4: Runtime Compatibility Matrix
@@ -341,6 +364,30 @@ Reproducible on second attempt: yes | no
 Do not keep raw session files or databases in the repository. A screenshot is useful only for footer, unread widget, or transient-notification defects that JSON cannot represent.
 
 ## Dogfood Findings
+
+### 2026-07-16: Cached owner context and prompt path passed
+
+Environment: Shepherd 0.3.1 local build, Herdr 0.7.2, Pi 0.80.6, Node.js 24.18.0. Destructive checks used a disposable `SHEPHERD_HOME` under `/tmp`; the normal Shepherd daemon and database were not restarted or modified.
+
+Observed topology in Herdr `default/wJ`:
+
+- Pi A: `wJ:p1`, owner candidate;
+- Pi B: temporary `wJ:p5`, off first and then owner;
+- Claude: `wJ:p2`;
+- Codex: `wJ:p3`.
+
+Results:
+
+- Five cached `agent list --session default --json` processes reported real times of 0.49, 0.47, 0.49, 0.48, and 0.48 seconds. Each returned the same three cached rows and history timestamps. The prior uncached RPC measurement was 3.76–3.90 seconds.
+- SQLite contained three `agent_context_snapshots` rows with persisted history refs, fingerprints, and pane revisions. A disposable daemon restart returned all three rows on the first reachable `agent list` call in 0.47 seconds.
+- A Claude response with a unique token appeared in cached `agent list` 7.85 seconds after submission, including Claude's new `updatedAt` and final assistant excerpt.
+- Raw daemon RPC owner claim for Pi A returned Claude and Codex while excluding Pi A's terminal. Releasing the owner returned `context: null`. The registered Pi path was stored in `agent_session_hint_json`, separate from the null Herdr-reported ref.
+- A real Pi RPC process claimed `/shepherd on`. Five normal prompts reached `agent_start` in 4.0, 0.3, 0.3, 0.3, and 0.3 milliseconds. The owner answered `claude` and `codex` from workspace context without tools. No extension error occurred.
+- A real temporary Pi B answered `None` while off. After `/shepherd on`, its footer changed to `◆ Shepherd` and the same no-tool prompt answered `Claude` and `Codex`. Pi A's completion arrived as a separate visible Shepherd wake after Pi B's normal answer rather than entering the normal answer.
+- Restarting the disposable daemon within grace restored a temporary owner's `◆ Shepherd` state without another claim. The exact replacement Pi session path appeared in the persisted hint.
+- Moving the temporary owner to a new workspace recovered ownership and the new public pane id on the next 60-second full rescan. The footer reported the destination scope. This confirms the idle recovery path; Herdr's filtered status subscription did not provide an immediate structural move notification in this run.
+- A prompt sent before owner registration completed proceeded without an extension error or a wait on Shepherd context. Automated call-count coverage separately proves that `agent_start` and `context` perform no daemon request or file read.
+- All temporary Pi panes/workspaces were closed. The disposable daemon was stopped, and `default/wJ` returned to its original Pi, Claude, and Codex panes.
 
 ### 2026-07-14: New workspace returned no agents
 

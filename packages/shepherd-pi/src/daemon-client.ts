@@ -20,6 +20,21 @@ export type CompactAgentHistory = {
   updatedAt?: string | null;
 };
 
+export type AgentContextListItem = {
+  agent?: string | null;
+  agentStatus?: string;
+  history?: CompactAgentHistory;
+  paneId?: string;
+  terminalId?: string | null;
+};
+
+export type AgentWorkspaceContextSnapshot = {
+  agents: AgentContextListItem[];
+  herdrSessionName: string;
+  updatedAt: string;
+  workspaceId: string;
+};
+
 export type AgentOrchestratorOwner = {
   paneId: string;
   terminalId: string;
@@ -41,6 +56,14 @@ export type AgentOrchestratorChanged = {
 
 export type DaemonStreamMessage =
   | { method: "agent.event"; params: { event: AgentEventWireRecord } }
+  | {
+      method: "agent.context.changed";
+      params: {
+        context: AgentWorkspaceContextSnapshot | null;
+        herdrSessionName: string;
+        workspaceId: string;
+      };
+    }
   | {
       method: "agent.orchestrator.changed";
       params: { change: AgentOrchestratorChanged };
@@ -178,7 +201,11 @@ export class ReconnectingDaemonClient {
       newline = this.#buffer.indexOf("\n");
       if (!line) continue;
       const message = JSON.parse(line) as RpcMessage;
-      if (message.method === "agent.event" || message.method === "agent.orchestrator.changed") {
+      if (
+        message.method === "agent.event" ||
+        message.method === "agent.context.changed" ||
+        message.method === "agent.orchestrator.changed"
+      ) {
         this.onStreamMessage?.(message as DaemonStreamMessage);
         continue;
       }

@@ -4,6 +4,7 @@ import { env, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { createAgentHistoryService } from "@/agent-history/service.js";
 import { resolveRuntime } from "@/config/runtime.js";
+import { AgentContextSnapshotStore } from "@/db/agent-context-snapshots.js";
 import { AgentEventStore } from "@/db/agent-events.js";
 import { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import { AgentOrchestratorScopeStore } from "@/db/agent-orchestrator-scopes.js";
@@ -13,6 +14,7 @@ import { openSqlite } from "@/db/client.js";
 import { HerdrSessionStore } from "@/db/herdr-sessions.js";
 import { HerdrWorkspaceStore } from "@/db/herdr-workspaces.js";
 import { createHerdrSessionListRunner } from "@/herdr/session-list.js";
+import { AgentContextService } from "@/observability/agent-context-service.js";
 import { AgentIndexService } from "@/observability/agent-index-service.js";
 import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import { HerdrSessionWatchManager } from "./herdr-session-watch-manager.js";
@@ -36,21 +38,29 @@ export async function runObservabilityDaemonService(
   const agents = new AgentStore(sqlite);
   const agentEvents = new AgentEventStore(sqlite);
   const agentHistoryCache = new AgentHistoryCacheStore(sqlite);
+  const agentContextSnapshots = new AgentContextSnapshotStore(sqlite);
   const agentOrchestratorScopes = new AgentOrchestratorScopeStore(sqlite);
   const history = createAgentHistoryService({ cache: agentHistoryCache });
+  const context = new AgentContextService({
+    history,
+    stores: { agentContextSnapshots, agents },
+  });
+  const daemonServices = { context, history };
   const orchestrator = new AgentOrchestratorService({
     agentEvents,
     agents,
     scopes: agentOrchestratorScopes,
   });
   const index = new AgentIndexService({
-    history,
+    context: daemonServices.context,
     stores: { agentEvents, agentHistoryCache, agents, herdrSessions, herdrWorkspaces },
   });
 
   const server = new ObservabilityRpcServer({
-    history,
+    context: daemonServices.context,
+    history: daemonServices.history,
     orchestrator,
+    registerPiSessionRef: (registration) => index.registerPiSessionRef(registration),
     socketPath: runtime.paths.socketPath,
     stores: { agentEvents, agents, herdrSessions, herdrWorkspaces },
   });
@@ -58,6 +68,7 @@ export async function runObservabilityDaemonService(
     agents,
     herdrSessions,
     index,
+    onAgentContextChanged: (scope) => server.publishAgentContext(scope),
     onAgentEvent: (event) => server.publishAgentEvent(event),
     onAgentIndexRefreshed: (refreshed) => server.reconcileAgentLocations(refreshed),
     sessionList: createHerdrSessionListRunner({ env: runtime.environment }),

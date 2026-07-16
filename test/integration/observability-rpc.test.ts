@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
-import { createAgentHistoryService } from "@/agent-history/service.js";
+import type { AgentHistoryService } from "@/agent-history/service.js";
+import { createAgentHistoryService, emptyCompactHistory } from "@/agent-history/service.js";
 import { ObservabilityRpcClient } from "@/daemon/client.js";
 import { ObservabilityRpcServer } from "@/daemon/observability-server.js";
+import { AgentContextService } from "@/observability/agent-context-service.js";
 import { AgentOrchestratorService } from "@/observability/agent-orchestrator-service.js";
 import {
   cleanupTempDirs,
@@ -52,6 +54,12 @@ describe("ObservabilityRpcServer", () => {
       client.request("agent.orchestrator.register", {
         herdrSocketPath: "/tmp/herdr/herdr.sock",
         paneId: "wB:p1",
+        sessionRef: {
+          agent: "pi",
+          kind: "path",
+          source: "herdr:pi",
+          value: "/tmp/pi-session.jsonl",
+        },
         subscriberId: "pi-session",
         subscriberKind: "pi",
         workspaceId: "wB",
@@ -68,6 +76,13 @@ describe("ObservabilityRpcServer", () => {
     ).resolves.toMatchObject({
       acknowledged: true,
     });
+    const removedMethod = ["agent", "telemetry"].join(".");
+    await expect(
+      client.request(removedMethod, {
+        event: {},
+        workspaceId: "wB",
+      }),
+    ).rejects.toThrow(`Unknown method: ${removedMethod}`);
 
     await expect(client.request("legacy.method", {})).rejects.toThrow("Unknown method");
     client.close();
@@ -279,6 +294,115 @@ describe("ObservabilityRpcServer", () => {
     harness.sqlite.close();
   });
 
+  test("serves cached lists and uses the persisted ref only for live detail reads", async () => {
+    const calls: string[] = [];
+    const liveHistory = {
+      async read(_input: unknown, options: { preferredRef?: { value: string } | null }) {
+        calls.push(`read:${options.preferredRef?.value}`);
+        return { historyRef: null, messages: [] };
+      },
+      async resolveCompactHistory(
+        _input: unknown,
+        options: { preferredRef?: { value: string } | null },
+      ) {
+        calls.push(`get:${options.preferredRef?.value}`);
+        return {
+          compactHistory: emptyCompactHistory("pi-jsonl"),
+          historyRef: null,
+          sourceFingerprint: null,
+        };
+      },
+    } as unknown as AgentHistoryService;
+    const { client, harness } = await openServer({ history: liveHistory });
+    seedAgent(harness);
+    const agent = harness.agents.findByPane({ herdrSessionName: "default", paneId: "wB:p1" });
+    if (!agent) throw new Error("missing seeded agent");
+    harness.agentContextSnapshots.put({
+      agentId: agent.id,
+      compactHistory: {
+        ...emptyCompactHistory("pi-jsonl"),
+        lastUserMessage: { ref: "cached", text: "cached user", timestamp: null },
+      },
+      historyRef: {
+        kind: "discovered_file",
+        path: "/tmp/history.jsonl",
+        source: "pi-jsonl",
+        value: "/tmp/history.jsonl",
+      },
+      paneRevision: null,
+      sourceFingerprint: { mtimeMs: 1, path: "/tmp/history.jsonl", size: 1 },
+    });
+    await expect(client.request("agent.list", { workspaceId: "wB" })).resolves.toMatchObject({
+      agents: [{ history: { lastUserMessage: { text: "cached user" } } }],
+    });
+    expect(calls).toEqual([]);
+    await client.request("agent.get", { target: "pi", workspaceId: "wB" });
+    await client.request("agent.read", { target: "pi", workspaceId: "wB" });
+    expect(calls).toEqual(["get:/tmp/history.jsonl", "read:/tmp/history.jsonl"]);
+    client.close();
+    harness.sqlite.close();
+  });
+
+  test("returns and pushes context only to the current owner, including null clearing snapshots", async () => {
+    const { harness, server, socketPath } = await openServerWithoutClient();
+    seedRoutingAgents(harness);
+    const agents = harness.agents.list({ workspaceId: "wB" });
+    for (const agent of agents) {
+      harness.agentContextSnapshots.put({
+        agentId: agent.id,
+        compactHistory: {
+          ...emptyCompactHistory("pi-jsonl"),
+          lastAssistantMessage: {
+            ref: agent.terminalId ?? "unknown",
+            text: agent.paneId,
+            timestamp: null,
+          },
+        },
+        historyRef: null,
+        paneRevision: null,
+        sourceFingerprint: null,
+      });
+    }
+    const [owner, off, other] = await Promise.all([
+      RpcTestClient.connect(socketPath),
+      RpcTestClient.connect(socketPath),
+      RpcTestClient.connect(socketPath),
+    ]);
+    await expect(register(owner, "wB:p-a", "owner", "wB")).resolves.toMatchObject({
+      context: null,
+    });
+    await register(off, "wB:p-b", "off", "wB");
+    await register(other, "wC:p-c", "other", "wC");
+    await expect(owner.request("agent.orchestrator.set", { enabled: true })).resolves.toMatchObject(
+      {
+        context: { agents: [{ terminalId: "term_b" }] },
+      },
+    );
+    await tick();
+    owner.clearNotifications();
+    off.clearNotifications();
+    other.clearNotifications();
+    server.publishAgentContext({ herdrSessionName: "default", workspaceId: "wB" });
+    await expect(owner.waitForNotification("agent.context.changed")).resolves.toMatchObject({
+      params: { context: { agents: [{ terminalId: "term_b" }] }, workspaceId: "wB" },
+    });
+    await tick();
+    expect(off.notifications).toEqual([]);
+    expect(other.notifications).toEqual([]);
+
+    const offAgent = agents.find((agent) => agent.terminalId === "term_b");
+    if (!offAgent) throw new Error("missing off agent");
+    harness.agentContextSnapshots.delete(offAgent.id);
+    server.publishAgentContext({ herdrSessionName: "default", workspaceId: "wB" });
+    await expect(owner.waitForNotification("agent.context.changed")).resolves.toMatchObject({
+      params: { context: null, workspaceId: "wB" },
+    });
+    owner.close();
+    off.close();
+    other.close();
+    harness.sqlite.close();
+  });
+
   test("validates indexed presence and resolves a stale pane alias from live Herdr", async () => {
     const { harness, socketPath } = await openServerWithoutClient({
       resolvePaneIdentity: async () => ({
@@ -306,6 +430,12 @@ describe("ObservabilityRpcServer", () => {
       client.request("agent.orchestrator.register", {
         herdrSocketPath: "/tmp/unknown.sock",
         paneId: "wB:p1",
+        sessionRef: {
+          agent: "pi",
+          kind: "path",
+          source: "herdr:pi",
+          value: "/tmp/pi-session.jsonl",
+        },
         subscriberId: "pi-unknown",
         subscriberKind: "pi",
         workspaceId: "wB",
@@ -315,6 +445,12 @@ describe("ObservabilityRpcServer", () => {
       client.request("agent.orchestrator.register", {
         herdrSocketPath: "/tmp/herdr/herdr.sock",
         paneId: "wB:p1",
+        sessionRef: {
+          agent: "pi",
+          kind: "path",
+          source: "herdr:pi",
+          value: "/tmp/pi-session.jsonl",
+        },
         subscriberId: "bad-kind",
         subscriberKind: "claude",
         workspaceId: "wB",
@@ -326,14 +462,15 @@ describe("ObservabilityRpcServer", () => {
   });
 });
 
-async function openServer() {
-  const { dir, harness, server, socketPath } = await openServerWithoutClient();
+async function openServer(options: Parameters<typeof openServerWithoutClient>[0] = {}) {
+  const { dir, harness, server, socketPath } = await openServerWithoutClient(options);
   const client = new ObservabilityRpcClient({ socketPath });
   return { client, dir, harness, server };
 }
 
 async function openServerWithoutClient(
   options: {
+    history?: AgentHistoryService;
     resolvePaneIdentity?: () => Promise<{
       paneId: string;
       terminalId: string;
@@ -346,8 +483,16 @@ async function openServerWithoutClient(
   const socketPath = join(dir, "rpc.sock");
   if (existsSync(socketPath)) unlinkSync(socketPath);
   const harness = openObservabilityDbHarness();
+  const history =
+    options.history ??
+    createAgentHistoryService({ cache: harness.agentHistoryCache, homeDir: dir });
+  const context = new AgentContextService({
+    history,
+    stores: { agentContextSnapshots: harness.agentContextSnapshots, agents: harness.agents },
+  });
   const server = new ObservabilityRpcServer({
-    history: createAgentHistoryService({ cache: harness.agentHistoryCache, homeDir: dir }),
+    context,
+    history,
     orchestrator: new AgentOrchestratorService({
       agentEvents: harness.agentEvents,
       agents: harness.agents,
@@ -376,6 +521,12 @@ function register(
   return client.request("agent.orchestrator.register", {
     herdrSocketPath: "/tmp/herdr/herdr.sock",
     paneId,
+    sessionRef: {
+      agent: "pi",
+      kind: "path",
+      source: "herdr:pi",
+      value: "/tmp/pi-session.jsonl",
+    },
     subscriberId,
     subscriberKind: "pi",
     workspaceId,

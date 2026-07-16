@@ -1,6 +1,12 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, test } from "vitest";
-import type { AgentEventRecord, AgentOrchestratorChanged } from "@/observability/contracts.js";
+import type {
+  AgentContextSnapshotRecord,
+  AgentEventRecord,
+  AgentIndexRecord,
+  AgentOrchestratorChanged,
+  AgentWorkspaceContextSnapshot,
+} from "@/observability/contracts.js";
 import {
   agentGetInputSchema,
   agentListInputSchema,
@@ -9,7 +15,6 @@ import {
   agentOrchestratorRegisterInputSchema,
   agentOrchestratorSetInputSchema,
   agentReadInputSchema,
-  agentTelemetryInputSchema,
 } from "@/observability/schemas.js";
 
 describe("agent observability contracts", () => {
@@ -30,15 +35,59 @@ describe("agent observability contracts", () => {
   });
 
   test("validates orchestrator connection-bound RPC inputs", () => {
+    const validPiRegistration = {
+      herdrSocketPath: "/tmp/herdr.sock",
+      paneId: "wB:p1",
+      sessionRef: {
+        agent: "pi",
+        kind: "path",
+        source: "herdr:pi",
+        value: "/tmp/pi-session.jsonl",
+      },
+      subscriberId: "pi-session",
+      subscriberKind: "pi",
+      workspaceId: "wB",
+    };
+    expect(Value.Check(agentOrchestratorRegisterInputSchema, validPiRegistration)).toBe(true);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ...validPiRegistration,
+        sessionRef: { ...validPiRegistration.sessionRef, kind: "id" },
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ...validPiRegistration,
+        sessionRef: { ...validPiRegistration.sessionRef, agent: "claude" },
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ...validPiRegistration,
+        sessionRef: { ...validPiRegistration.sessionRef, value: "" },
+      }),
+    ).toBe(false);
     expect(
       Value.Check(agentOrchestratorRegisterInputSchema, {
         herdrSocketPath: "/tmp/herdr.sock",
         paneId: "wB:p1",
-        subscriberId: "pi-session-1",
+        subscriberId: "pi-session",
         subscriberKind: "pi",
         workspaceId: "wB",
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ...validPiRegistration,
+        ["auto" + "Resume"]: true,
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(agentOrchestratorRegisterInputSchema, {
+        ...validPiRegistration,
+        subscriberKind: "claude",
+      }),
+    ).toBe(false);
     expect(
       Value.Check(agentOrchestratorRegisterInputSchema, {
         ["auto" + "Resume"]: true,
@@ -69,6 +118,49 @@ describe("agent observability contracts", () => {
         unexpected: "legacy",
       }),
     ).toBe(false);
+  });
+
+  test("exposes final cached-context types", () => {
+    const agent: AgentIndexRecord = {
+      agent: "pi",
+      agentSession: null,
+      agentStatus: "working",
+      cwd: "/workspace",
+      firstSeenAt: new Date(),
+      focused: true,
+      foregroundCwd: "/workspace",
+      herdrSessionName: "default",
+      id: "ag_1",
+      lastSeenAt: new Date(),
+      paneId: "wB:p1",
+      paneRevision: 42,
+      tabId: null,
+      terminalId: "term_1",
+      workspaceId: "wB",
+    };
+    const snapshot: AgentContextSnapshotRecord = {
+      agentId: agent.id,
+      compactHistory: {
+        historyRef: null,
+        lastAssistantMessage: null,
+        lastToolResult: null,
+        lastUserMessage: null,
+        messageCount: 0,
+        source: null,
+        updatedAt: null,
+      },
+      historyRef: null,
+      paneRevision: null,
+      sourceFingerprint: null,
+      updatedAt: new Date(),
+    };
+    const workspaceSnapshot: AgentWorkspaceContextSnapshot = {
+      agents: [{ ...agent, history: snapshot.compactHistory }],
+      herdrSessionName: "default",
+      updatedAt: "2026-07-16T00:00:00.000Z",
+      workspaceId: "wB",
+    };
+    expect(workspaceSnapshot.agents[0]?.paneRevision).toBe(42);
   });
 
   test("keeps terminal identity in orchestrator contracts", () => {
@@ -103,26 +195,5 @@ describe("agent observability contracts", () => {
     };
     expect(event.terminalId).toBe("term_1");
     expect(change.current.updatedAt).toMatch(/Z$/);
-  });
-
-  test("validates agent telemetry", () => {
-    expect(
-      Value.Check(agentTelemetryInputSchema, {
-        event: {
-          artifactRefs: [],
-          isError: false,
-          occurredAt: "2026-07-08T00:00:00.000Z",
-          outputExcerpt: "ok",
-          redactionApplied: false,
-          runtime: "pi",
-          sessionRef: null,
-          toolCallId: "tool-1",
-          toolName: "bash",
-          turnId: "turn-1",
-          type: "agent.tool.completed",
-        },
-        workspaceId: "wB",
-      }),
-    ).toBe(true);
   });
 });

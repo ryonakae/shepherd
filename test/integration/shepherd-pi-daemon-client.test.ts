@@ -50,6 +50,50 @@ describe("ReconnectingDaemonClient", () => {
     expect(sockets.length).toBeGreaterThan(0);
   });
 
+  test("decodes agent context change streams", async () => {
+    const resource = createResource();
+    const client = new ReconnectingDaemonClient({
+      reconnectDelaysMs: [5],
+      socketPath: resource.socketPath,
+    });
+    resource.client = client;
+    const streams: DaemonStreamMessage[] = [];
+    let connections = 0;
+    client.onStreamMessage = (message) => streams.push(message);
+    resource.server = await startServer(
+      resource.socketPath,
+      (socket, message) => {
+        socket.write(`${JSON.stringify({ id: message.id, result: {} })}\n`);
+        socket.write(
+          `${JSON.stringify({
+            method: "agent.context.changed",
+            params: {
+              context: {
+                agents: [],
+                herdrSessionName: "default",
+                updatedAt: "2026-07-16T00:00:00.000Z",
+                workspaceId: "wB",
+              },
+              herdrSessionName: "default",
+              workspaceId: "wB",
+            },
+          })}\n`,
+        );
+      },
+      () => {
+        connections += 1;
+      },
+    );
+
+    await waitFor(() => connections === 1);
+    await expect(client.request("agent.list", {})).resolves.toEqual({});
+    await waitFor(() => streams.length === 1);
+    expect(streams[0]).toMatchObject({
+      method: "agent.context.changed",
+      params: { context: { workspaceId: "wB" } },
+    });
+  });
+
   test("rejects in-flight work, reconnects once, and accepts later requests", async () => {
     const resource = createResource();
     let connectionCount = 0;

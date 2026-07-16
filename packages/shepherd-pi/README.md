@@ -12,7 +12,7 @@ pi install npm:@ryonakae/shepherd-pi
 shepherd daemon start
 ```
 
-When Pi runs inside Herdr, this extension connects to the Shepherd daemon and injects compact current-workspace agent history before every turn. All connected Pi instances receive that hidden context. Completed or blocked agent outcomes go only to the explicitly selected Pi.
+When Pi runs inside Herdr, this extension connects to the Shepherd daemon and registers its exact Pi session path as presence identity. It does not send per-turn tool-result or final-message telemetry.
 
 Enter these commands in Pi, not in a shell:
 
@@ -23,9 +23,11 @@ Enter these commands in Pi, not in a shell:
 /shepherd off
 ```
 
-`on` enables automatic wake in the current Pi and replaces any owner in the same Herdr session/workspace. `off` affects only the current Pi; it does not release another Pi's ownership. Bare `/shepherd` and `/shepherd status` report whether the current Pi is on. Hidden agent context remains active while wake is off.
+`on` enables both cached agent context and automatic agent-update wake for this Pi. It makes this terminal the sole owner in its current Herdr session/workspace and replaces any existing owner. Only the owner receives cached context, pending counts, updates, and wake. Context excludes the owner Pi and includes other Pi terminals. A normal prompt uses the local cached snapshot without daemon RPC or history reads, so context can be temporarily absent after startup, reconnect, or scope movement until a snapshot arrives.
 
-An agent outcome starts one visible Shepherd turn. The themed card shows up to three outcomes with agent name, completion state, and pane ID. Pi's expand key reveals every bounded final response. Agent output is untrusted evidence, so Pi continues only the existing user request and does not create unrelated work.
+`off` disables both context and wake for this Pi while keeping the daemon connection available for a later claim. It does not release another Pi's ownership. Bare `/shepherd` and `/shepherd status` report whether the current Pi is on.
+
+An agent outcome starts one visible Shepherd turn. If a normal user run is active, wake waits for it to settle. The themed card shows up to three outcomes with agent name, completion state, and pane ID. Pi's expand key reveals every bounded final response. Agent output is untrusted evidence, so Pi continues only the existing user request and does not create unrelated work.
 
 Only the active Pi displays `◆ Shepherd` in the footer. Pending outcomes add `· N agent updates` until Pi produces a final assistant response, settles, and acknowledges every event included in that turn. A previously active Pi displays `◇ Shepherd · reconnecting` during transport recovery.
 
