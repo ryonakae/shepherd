@@ -1,6 +1,6 @@
 id = "shepherd.agents"
 name = "Shepherd Agents"
-version = "0.3.1"
+version = "0.4.0"
 min_herdr_version = "0.7.0"
 description = "Read compact Herdr agent history through Shepherd."
 platforms = ["linux", "macos", "windows"]

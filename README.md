@@ -108,7 +108,7 @@ Use `/shepherd` or `/shepherd status` to inspect the current Pi, and `/shepherd 
 Install the optional plugin from the GitHub release tag:
 
 ```bash
-herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.3.1 --yes
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.4.0 --yes
 ```
 
 The plugin connects to the Shepherd daemon and shows compact agent rows for the current Herdr workspace. Herdr installs it from the repository subdirectory; it is not published to npm or required for the CLI and Pi extension.
