@@ -425,6 +425,7 @@ function sameIdentity(left: AgentIndexRecord, right: AgentIndexRecord): boolean 
 function sameContextMetadata(left: AgentIndexRecord, right: AgentIndexRecord): boolean {
   return (
     sameIdentity(left, right) &&
+    left.name === right.name &&
     left.agentStatus === right.agentStatus &&
     left.paneId === right.paneId &&
     left.tabId === right.tabId &&
@@ -478,6 +479,7 @@ function payload(agent: AgentIndexRecord, from: AgentStatus, to: AgentStatus) {
   return {
     agent: agent.agent,
     from,
+    name: agent.name,
     herdrSessionName: agent.herdrSessionName,
     paneId: agent.paneId,
     terminalId: agent.terminalId,

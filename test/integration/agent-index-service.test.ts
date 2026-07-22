@@ -86,6 +86,53 @@ describe("AgentIndexService", () => {
     harness.sqlite.close();
   });
 
+  test("publishes name-only changes without reparsing history and snapshots names in events", async () => {
+    const harness = openObservabilityDbHarness();
+    const calls: string[] = [];
+    let current = oneAgent("working", 10, "codex", "reviewer");
+    const index = new AgentIndexService({
+      clientFactory: () => ({
+        close() {},
+        async sessionSnapshot() {
+          return current;
+        },
+      }),
+      history: history((agent) => calls.push(agent.agent ?? "unknown")),
+      stores: harness,
+    });
+
+    await index.refreshHerdrSession(sessionInput());
+    calls.length = 0;
+    current = oneAgent("working", 10, "codex", "implementer");
+    const renamed = await index.refreshHerdrSession(sessionInput());
+
+    expect(calls).toEqual([]);
+    expect(renamed.contextChangedScopes).toEqual([
+      { herdrSessionName: "default", workspaceId: "wJ" },
+    ]);
+    expect(renamed.agents[0]).toMatchObject({
+      agent: "codex",
+      name: "implementer",
+      terminalId: "term_claude",
+    });
+
+    const status = await index.handleHerdrEvent({
+      event: { agent_status: "done", pane_id: "wJ:p2", type: "pane.agent_status_changed" },
+      ...sessionInput(),
+    });
+    expect(status.events).toContainEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          agent: "codex",
+          name: "implementer",
+          to: "done",
+        }),
+        type: "agent.done",
+      }),
+    );
+    harness.sqlite.close();
+  });
+
   test("refreshes status immediately and synthesizes an unknown-pane transition exactly once", async () => {
     const harness = openObservabilityDbHarness();
     const calls: string[] = [];
@@ -140,7 +187,7 @@ describe("AgentIndexService", () => {
     });
     expect(recovered.events).toEqual([
       expect.objectContaining({
-        payload: expect.objectContaining({ from: "unknown", to: "idle" }),
+        payload: expect.objectContaining({ from: "unknown", name: null, to: "idle" }),
         type: "agent.idle",
       }),
     ]);
@@ -294,12 +341,18 @@ function sessionInput() {
   return { herdrSessionName: "default", sessionDir: "/tmp/herdr", socketPath: "/tmp/herdr.sock" };
 }
 
-function oneAgent(status: string, revision: number, agentName = "claude") {
+function oneAgent(
+  status: string,
+  revision: number,
+  agentKind = "claude",
+  name: string | null = null,
+) {
   return snapshot(
     [
       agent({
-        agent: agentName,
+        agent: agentKind,
         agent_status: status,
+        name,
         pane_id: "wJ:p2",
         revision,
         terminal_id: "term_claude",
