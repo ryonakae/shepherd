@@ -634,7 +634,7 @@ git commit -m "docs: define Shepherd's Herdr v0.7.5 boundary"
 - Verified `reviewer · Codex` and unnamed fallback across Pi cached context, wake evidence, and visible cards.
 - Verified malformed/control-bearing identity tokens fall back before provider/UI insertion.
 - Surface validation passed 87 focused tests plus Pi and Herdr package checks; `pnpm check` passed with 226 tests.
-- Updated English/Japanese README, Shepherd skill, and Herdr plugin README.
+- Updated English/Japanese README, Shepherd skill, Pi package README, and Herdr plugin README.
 
 ## Risks, Tradeoffs, and Open Questions
 
