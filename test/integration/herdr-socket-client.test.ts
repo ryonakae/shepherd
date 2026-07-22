@@ -24,94 +24,28 @@ afterEach(async () => {
 });
 
 describe("HerdrSocketClient", () => {
-  test("sends newline-delimited Herdr socket requests", async () => {
+  test("gets pane metadata over the persistent Herdr socket", async () => {
     const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { type: "workspace_created" } }));
+      socket.write(
+        encodeJsonLine({
+          id: request.id,
+          result: { pane: { pane_id: "w1:p2", terminal_id: "term_2" } },
+        }),
+      );
     });
 
     const client = new HerdrSocketClient({ socketPath });
-    const result = await client.createWorkspace({ cwd: "/repo", label: "api" });
+    await expect(client.getPane({ pane_id: "w1:p2" })).resolves.toEqual({
+      pane: { pane_id: "w1:p2", terminal_id: "term_2" },
+    });
     client.close();
 
-    expect(result).toEqual({ type: "workspace_created" });
     expect(requests).toEqual([
       {
         id: "shepherd-1",
-        method: "workspace.create",
-        params: { cwd: "/repo", label: "api" },
+        method: "pane.get",
+        params: { pane_id: "w1:p2" },
       },
-    ]);
-  });
-
-  test("uses agent.send for agent messages", async () => {
-    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { type: "agent_input_sent" } }));
-    });
-
-    const client = new HerdrSocketClient({ socketPath });
-    await client.sendAgentMessage({ target: "w1:p1", text: "please review" });
-    client.close();
-
-    expect(requests[0]).toMatchObject({
-      method: "agent.send",
-      params: {
-        target: "w1:p1",
-        text: "please review",
-      },
-    });
-  });
-
-  test("uses agent.read for agent output", async () => {
-    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { text: "done" } }));
-    });
-
-    const client = new HerdrSocketClient({ socketPath });
-    await client.readAgent({ lines: 40, source: "recent", target: "w1:p1" });
-    client.close();
-
-    expect(requests[0]).toMatchObject({
-      method: "agent.read",
-      params: {
-        lines: 40,
-        source: "recent",
-        target: "w1:p1",
-      },
-    });
-  });
-
-  test("uses current pane and wait socket methods for terminal control", async () => {
-    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));
-    });
-
-    const client = new HerdrSocketClient({ socketPath });
-    await client.splitPane({ direction: "right", pane_id: "w1:p1", ratio: 0.5 });
-    await client.sendPaneInput({ pane_id: "w1:p2", text: "pnpm test" });
-    await client.readPane({ lines: 20, pane_id: "w1:p2", source: "recent" });
-    await client.waitForOutput({
-      match: "done",
-      pane_id: "w1:p2",
-      source: "recent",
-      timeout_ms: 1000,
-    });
-    await client.waitForEvent({ timeout_ms: 1000, workspace_id: "w1" });
-    client.close();
-
-    expect(requests).toMatchObject([
-      { method: "pane.split" },
-      { method: "pane.send_input", params: { pane_id: "w1:p2", text: "pnpm test" } },
-      { method: "pane.read" },
-      {
-        method: "pane.wait_for_output",
-        params: {
-          match: { type: "substring", value: "done" },
-          pane_id: "w1:p2",
-          source: "recent",
-          timeout_ms: 1000,
-        },
-      },
-      { method: "events.wait" },
     ]);
   });
 
@@ -240,7 +174,7 @@ describe("HerdrSocketClient", () => {
     const client = new HerdrSocketClient({ socketPath });
     const controller = new AbortController();
     const iterator = client
-      .subscribeEvents({ paneIds: ["w1:p1"], workspaceId: "w1" }, { signal: controller.signal })
+      .subscribeEvents({ paneIds: ["w1:p1"] }, { signal: controller.signal })
       [Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
@@ -282,40 +216,6 @@ describe("HerdrSocketClient", () => {
 
     await expect(nextEvent).rejects.toThrow("Herdr socket closed");
     client.close();
-  });
-
-  test("uses list/get/focus socket methods for Herdr inspection", async () => {
-    const { requests, socketPath } = await openFakeHerdrServer((socket, request) => {
-      socket.write(encodeJsonLine({ id: request.id, result: { ok: true } }));
-    });
-
-    const client = new HerdrSocketClient({ socketPath });
-    await client.listWorkspaces();
-    await client.getWorkspace({ workspace_id: "w1" });
-    await client.focusWorkspace({ workspace_id: "w1" });
-    await client.listTabs({ workspace_id: "w1" });
-    await client.getTab({ tab_id: "w1:t1" });
-    await client.listPanes({ tab_id: "w1:t1" });
-    await client.getPane({ pane_id: "w1:p1" });
-    await client.sendPaneInput({ pane_id: "w1:p1", text: "hello" });
-    await client.listAgents({ workspace_id: "w1" });
-    await client.getAgent({ target: "claude-impl" });
-    await client.focusAgent({ target: "claude-impl" });
-    client.close();
-
-    expect(requests.map((request) => request.method)).toEqual([
-      "workspace.list",
-      "workspace.get",
-      "workspace.focus",
-      "tab.list",
-      "tab.get",
-      "pane.list",
-      "pane.get",
-      "pane.send_input",
-      "agent.list",
-      "agent.get",
-      "agent.focus",
-    ]);
   });
 });
 
