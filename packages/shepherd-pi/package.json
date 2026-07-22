@@ -1,6 +1,6 @@
 {
   "name": "@ryonakae/shepherd-pi",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Pi extension bridge for Shepherd agent history.",
   "type": "module",
   "keywords": [
