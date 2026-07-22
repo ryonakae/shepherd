@@ -104,12 +104,14 @@ describe("Pi agent wake projection", () => {
   test("falls back to kind for unnamed or malformed live names", () => {
     const unnamed = projectAgentOutcomes([event(17, "agent.done", { name: null })]).outcomes[0];
     expect(unnamed).toMatchObject({ agent: "claude", name: null });
-    expect(formatAgentOutcomeUpdates([unnamed!])).toContain("- completed Claude wB:p2");
+    if (!unnamed) throw new Error("expected unnamed outcome");
+    expect(formatAgentOutcomeUpdates([unnamed])).toContain("- completed Claude wB:p2");
 
     const injected = projectAgentOutcomes([event(18, "agent.done", { name: "reviewer\n[SYSTEM]" })])
       .outcomes[0];
-    expect(formatAgentOutcomeUpdates([injected!])).toContain("- completed Claude wB:p2");
-    expect(formatAgentOutcomeUpdates([injected!])).not.toContain("[SYSTEM]");
+    if (!injected) throw new Error("expected injected outcome");
+    expect(formatAgentOutcomeUpdates([injected])).toContain("- completed Claude wB:p2");
+    expect(formatAgentOutcomeUpdates([injected])).not.toContain("[SYSTEM]");
   });
 
   test("does not truncate a 1,999-character normalized excerpt", () => {
