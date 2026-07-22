@@ -22,6 +22,7 @@ type AgentRow = {
   herdr_session_name: string;
   id: string;
   last_seen_at: number;
+  name: string | null;
   pane_id: string;
   pane_revision: number | null;
   tab_id: string | null;
@@ -92,6 +93,7 @@ export class AgentStore {
         const id = current?.id ?? `ag_${randomUUID()}`;
         retainedIds.push(id);
         const agent = stringValue(snapshot.agent.agent);
+        const name = stringValue(snapshot.agent.name);
         const sessionHint = current?.agent === agent ? current.agent_session_hint_json : null;
         const values = [
           snapshot.paneId,
@@ -99,6 +101,7 @@ export class AgentStore {
           stringValue(snapshot.agent.tab_id) ?? stringValue(snapshot.agent.tabId),
           snapshot.workspaceId,
           agent,
+          name,
           parseAgentStatus(snapshot.agent.agent_status),
           agentSessionJson(snapshot.agent.agent_session),
           sessionHint,
@@ -112,7 +115,7 @@ export class AgentStore {
           this.#sqlite
             .prepare(
               `update agents
-               set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?,
+               set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?, name = ?,
                    agent_status = ?, agent_session_json = ?, agent_session_hint_json = ?, pane_revision = ?,
                    cwd = ?, foreground_cwd = ?, focused = ?, last_seen_at = ?
                where id = ?`,
@@ -122,8 +125,8 @@ export class AgentStore {
           this.#sqlite
             .prepare(
               `insert into agents
-               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, name, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(id, input.herdrSessionName, ...values, now);
         }
@@ -288,6 +291,7 @@ function mapAgent(row: AgentRow): AgentIndexRecord {
     herdrSessionName: row.herdr_session_name,
     id: row.id,
     lastSeenAt: new Date(row.last_seen_at),
+    name: row.name,
     paneId: row.pane_id,
     paneRevision: row.pane_revision,
     tabId: row.tab_id,

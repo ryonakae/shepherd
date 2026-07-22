@@ -414,6 +414,7 @@ function agentRecord(
     herdrSessionName: "default",
     id: "ag_1",
     lastSeenAt: new Date(0),
+    name: null,
     paneId,
     paneRevision: null,
     tabId: null,

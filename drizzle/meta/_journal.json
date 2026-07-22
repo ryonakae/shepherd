@@ -29,6 +29,13 @@
       "when": 1784174081982,
       "tag": "0003_opposite_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784714691844,
+      "tag": "0004_serious_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

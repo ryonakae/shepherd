@@ -258,6 +258,7 @@ function otherSessionAgent(
     herdrSessionName: "other",
     id: "ag_other",
     lastSeenAt: new Date(),
+    name: null,
     paneId,
     paneRevision: null,
     tabId: null,

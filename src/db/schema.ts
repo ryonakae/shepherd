@@ -47,6 +47,7 @@ export const agents = sqliteTable(
       .references(() => herdrSessions.name, { onDelete: "cascade" }),
     id: text("id").primaryKey(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
+    name: text("name"),
     paneId: text("pane_id").notNull(),
     paneRevision: integer("pane_revision"),
     tabId: text("tab_id"),

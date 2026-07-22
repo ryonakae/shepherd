@@ -132,6 +132,7 @@ describe("agent observability contracts", () => {
       herdrSessionName: "default",
       id: "ag_1",
       lastSeenAt: new Date(),
+      name: null,
       paneId: "wB:p1",
       paneRevision: 42,
       tabId: null,

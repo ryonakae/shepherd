@@ -32,6 +32,7 @@ function replacePiAgent(
   input: {
     agent?: string;
     agentSession?: object | null;
+    name?: string | null;
     paneId?: string;
     revision?: number;
     terminalId?: string;
@@ -43,6 +44,7 @@ function replacePiAgent(
         agent: input.agent ?? "pi",
         agent_session: input.agentSession ?? null,
         agent_status: "working",
+        ...(Object.hasOwn(input, "name") ? { name: input.name } : {}),
         pane_id: input.paneId ?? "wA:p1",
         revision: input.revision,
         terminal_id: input.terminalId ?? "term_1",
@@ -216,6 +218,34 @@ describe("AgentStore terminal identity", () => {
     });
     expect(replacement?.id).not.toBe(initial.id);
     expect(agentContextSnapshots.get(initial.id)).toBeUndefined();
+  });
+
+  test("keeps identity and refs when a live name changes or clears", () => {
+    const { agents } = openHarness();
+    const initial = replacePiAgent(agents, {
+      agentSession: piSessionRef,
+      name: "reviewer",
+      revision: 41,
+    });
+    if (!initial) throw new Error("Expected initial agent");
+    agents.setSessionRefByTerminal({
+      agentSession: piSessionRef,
+      herdrSessionName: "default",
+      terminalId: "term_1",
+    });
+
+    expect(replacePiAgent(agents, { name: "implementer", revision: 42 })).toMatchObject({
+      agent: "pi",
+      agentSession: piSessionRef,
+      id: initial.id,
+      name: "implementer",
+      terminalId: "term_1",
+    });
+    expect(replacePiAgent(agents, { name: null, revision: 43 })).toMatchObject({
+      agentSession: piSessionRef,
+      id: initial.id,
+      name: null,
+    });
   });
 
   test("does not create an agent for an unknown terminal hint", () => {

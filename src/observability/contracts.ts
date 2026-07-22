@@ -36,6 +36,7 @@ export type AgentIndexRecord = {
   herdrSessionName: string;
   id: string;
   lastSeenAt: Date;
+  name: string | null;
   paneId: string;
   paneRevision: number | null;
   tabId: string | null;
