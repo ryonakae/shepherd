@@ -47,7 +47,7 @@ export class HerdrSocketClient {
     this.#socket.destroy();
   }
 
-  request(method: string, params: unknown = {}): Promise<unknown> {
+  #request(method: string, params: unknown = {}): Promise<unknown> {
     const id = `shepherd-${this.#nextId}`;
     this.#nextId += 1;
 
@@ -57,139 +57,8 @@ export class HerdrSocketClient {
     });
   }
 
-  createWorkspace(params: { cwd: string; label: string }): Promise<unknown> {
-    return this.request("workspace.create", params);
-  }
-
-  listWorkspaces(): Promise<unknown> {
-    return this.request("workspace.list");
-  }
-
-  getWorkspace(params: { workspace_id: string }): Promise<unknown> {
-    return this.request("workspace.get", params);
-  }
-
-  focusWorkspace(params: { workspace_id: string }): Promise<unknown> {
-    return this.request("workspace.focus", params);
-  }
-
-  createTab(params: { label: string; workspace_id?: string }): Promise<unknown> {
-    return this.request("tab.create", params);
-  }
-
-  listTabs(params: { workspace_id?: string } = {}): Promise<unknown> {
-    return this.request("tab.list", params);
-  }
-
-  getTab(params: { tab_id: string }): Promise<unknown> {
-    return this.request("tab.get", params);
-  }
-
-  splitPane(params: {
-    cwd?: string;
-    direction: "down" | "right";
-    focus?: boolean;
-    pane_id?: string;
-    ratio?: number;
-    tab_id?: string;
-    workspace_id?: string;
-  }): Promise<unknown> {
-    return this.request("pane.split", params);
-  }
-
-  listPanes(params: { tab_id?: string; workspace_id?: string } = {}): Promise<unknown> {
-    return this.request("pane.list", params);
-  }
-
   getPane(params: { pane_id: string }): Promise<unknown> {
-    return this.request("pane.get", params);
-  }
-
-  sendPaneInput(params: { pane_id: string; text: string }): Promise<unknown> {
-    return this.request("pane.send_input", params);
-  }
-
-  sendPaneText(params: { pane_id: string; text: string }): Promise<unknown> {
-    return this.sendPaneInput(params);
-  }
-
-  runPaneCommand(params: { command: string; pane_id: string }): Promise<unknown> {
-    return this.sendPaneInput({ pane_id: params.pane_id, text: params.command });
-  }
-
-  readPane(params: {
-    lines?: number;
-    pane_id: string;
-    source?: "all" | "recent";
-  }): Promise<unknown> {
-    return this.request("pane.read", params);
-  }
-
-  readAgent(params: {
-    lines?: number;
-    source?: "detection" | "recent" | "recent-unwrapped" | "visible";
-    target: string;
-  }): Promise<unknown> {
-    return this.request("agent.read", params);
-  }
-
-  listAgents(params: { workspace_id?: string } = {}): Promise<unknown> {
-    return this.request("agent.list", params);
-  }
-
-  getAgent(params: { target: string }): Promise<unknown> {
-    return this.request("agent.get", params);
-  }
-
-  focusAgent(params: { target: string }): Promise<unknown> {
-    return this.request("agent.focus", params);
-  }
-
-  startAgent(params: {
-    args?: string[];
-    command: string;
-    cwd?: string;
-    name: string;
-    tab_id?: string;
-    workspace_id?: string;
-  }): Promise<unknown> {
-    return this.request("agent.start", params);
-  }
-
-  sendAgentMessage(params: { target: string; text: string }): Promise<unknown> {
-    return this.request("agent.send", params);
-  }
-
-  waitForAgent(params: {
-    status: "blocked" | "done" | "idle" | "unknown" | "working";
-    target: string;
-    timeout_ms?: number;
-  }): Promise<unknown> {
-    return this.request("agent.wait", params);
-  }
-
-  waitForOutput(params: {
-    lines?: number;
-    match: string;
-    pane_id: string;
-    regex?: boolean;
-    source?: "recent" | "recent-unwrapped" | "visible";
-    timeout_ms?: number;
-  }): Promise<unknown> {
-    return this.request("pane.wait_for_output", {
-      ...(params.lines !== undefined ? { lines: params.lines } : {}),
-      match:
-        params.regex === true
-          ? { type: "regex", value: params.match }
-          : { type: "substring", value: params.match },
-      pane_id: params.pane_id,
-      source: params.source ?? "recent",
-      ...(params.timeout_ms !== undefined ? { timeout_ms: params.timeout_ms } : {}),
-    });
-  }
-
-  waitForEvent(params: Record<string, unknown> = {}): Promise<unknown> {
-    return this.request("events.wait", params);
+    return this.#request("pane.get", params);
   }
 
   async sessionSnapshot(): Promise<unknown> {
@@ -225,7 +94,7 @@ export class HerdrSocketClient {
   }
 
   async *subscribeEvents(
-    params: { paneIds?: string[]; workspaceId?: string } = {},
+    params: { paneIds?: string[] } = {},
     options: { signal?: AbortSignal } = {},
   ): AsyncIterable<unknown> {
     const queue: unknown[] = [];
@@ -246,7 +115,7 @@ export class HerdrSocketClient {
     if (options.signal?.aborted) return;
     this.#subscribers.add(subscriber);
     try {
-      await this.request("events.subscribe", {
+      await this.#request("events.subscribe", {
         subscriptions: (params.paneIds ?? []).map((pane_id) => ({
           pane_id,
           type: "pane.agent_status_changed" as const,
