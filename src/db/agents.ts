@@ -243,23 +243,19 @@ export class AgentStore {
   }
 
   resolveTarget(scope: AgentQueryScope, target: string): AgentIndexRecord {
-    const candidates = this.list(scope).filter(
-      (agent) =>
-        agent.paneId === target ||
-        agent.terminalId === target ||
-        agent.agent === target ||
-        agent.id === target,
-    );
-    if (candidates.length === 1) return candidates[0] as AgentIndexRecord;
-    if (candidates.length === 0) throw new Error(`agent target not found: ${target}`);
-    throw new Error(
-      `agent target ${target} is ambiguous; candidates: ${candidates
-        .map(
-          (agent) =>
-            `session=${agent.herdrSessionName} workspace=${agent.workspaceId} pane=${agent.paneId} terminal=${agent.terminalId ?? "unknown"} agent=${agent.agent ?? "unknown"}`,
-        )
-        .join("; ")}`,
-    );
+    const agents = this.list(scope);
+    const candidateGroups = [
+      agents.filter(
+        (agent) => agent.paneId === target || agent.terminalId === target || agent.id === target,
+      ),
+      agents.filter((agent) => agent.name === target),
+      agents.filter((agent) => agent.agent === target),
+    ];
+    for (const candidates of candidateGroups) {
+      if (candidates.length === 1) return candidates[0] as AgentIndexRecord;
+      if (candidates.length > 1) throw ambiguousTargetError(target, candidates);
+    }
+    throw new Error(`agent target not found: ${target}`);
   }
 
   #transaction<T>(operation: () => T): T {
@@ -342,6 +338,17 @@ function parseAgentSession(value: string | null): AgentSessionRef | null {
     return null;
   }
   return null;
+}
+
+function ambiguousTargetError(target: string, candidates: AgentIndexRecord[]): Error {
+  return new Error(
+    `agent target ${target} is ambiguous; candidates: ${candidates
+      .map(
+        (agent) =>
+          `session=${agent.herdrSessionName} workspace=${agent.workspaceId} pane=${agent.paneId} terminal=${agent.terminalId ?? "unknown"} name=${agent.name ?? "unnamed"} agent=${agent.agent ?? "unknown"}`,
+      )
+      .join("; ")}`,
+  );
 }
 
 function integerValue(value: unknown): number | null {

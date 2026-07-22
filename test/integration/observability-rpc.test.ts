@@ -89,6 +89,79 @@ describe("ObservabilityRpcServer", () => {
     harness.sqlite.close();
   });
 
+  test("resolves identifiers before live names and live names before kinds", async () => {
+    const { client, harness } = await openServer();
+    seedTargetAgents(harness);
+    const listed = (await client.request("agent.list", { workspaceId: "wB" })) as {
+      agents: Array<{ id: string; paneId: string }>;
+    };
+    const firstId = listed.agents.find((agent) => agent.paneId === "wB:p1")?.id;
+    if (!firstId) throw new Error("Expected first agent id");
+    seedTargetAgents(harness, firstId);
+
+    await expect(
+      client.request("agent.get", { target: "term_1", workspaceId: "wB" }),
+    ).resolves.toMatchObject({ agent: { paneId: "wB:p1" } });
+    await expect(
+      client.request("agent.get", { target: firstId, workspaceId: "wB" }),
+    ).resolves.toMatchObject({ agent: { paneId: "wB:p1" } });
+    await expect(
+      client.request("agent.get", { target: "reviewer", workspaceId: "wB" }),
+    ).resolves.toMatchObject({ agent: { name: "reviewer", paneId: "wB:p1" } });
+    await expect(
+      client.request("agent.get", { target: "codex", workspaceId: "wB" }),
+    ).resolves.toMatchObject({ agent: { name: "codex", paneId: "wB:p2" } });
+    await expect(
+      client.request("agent.get", { target: "claude", workspaceId: "wB" }),
+    ).resolves.toMatchObject({ agent: { agent: "claude", paneId: "wB:p3" } });
+
+    client.close();
+    harness.sqlite.close();
+  });
+
+  test("reports ambiguity at the highest matching target priority", async () => {
+    const { client, harness } = await openServer();
+    seedAmbiguousTargetAgents(harness);
+
+    const nameError = await client
+      .request("agent.get", { target: "shared", workspaceId: "wB" })
+      .catch((error: unknown) => error);
+    expect(nameError).toBeInstanceOf(Error);
+    expect((nameError as Error).message).toContain(
+      "pane=wB:p1 terminal=term_1 name=shared agent=codex",
+    );
+    expect((nameError as Error).message).toContain(
+      "pane=wB:p2 terminal=term_2 name=shared agent=reviewer",
+    );
+    expect((nameError as Error).message).not.toContain("pane=wB:p3");
+
+    harness.agents.replaceForSession({
+      agents: [
+        {
+          agent: "pi",
+          agent_status: "idle",
+          pane_id: "wB:p1",
+          terminal_id: "term_1",
+          workspace_id: "wB",
+        },
+        {
+          agent: "pi",
+          agent_status: "idle",
+          pane_id: "wB:p2",
+          terminal_id: "term_2",
+          workspace_id: "wB",
+        },
+      ],
+      herdrSessionName: "default",
+    });
+    await expect(client.request("agent.get", { target: "pi", workspaceId: "wB" })).rejects.toThrow(
+      "pane=wB:p1 terminal=term_1 name=unnamed agent=pi; session=default workspace=wB pane=wB:p2 terminal=term_2 name=unnamed agent=pi",
+    );
+
+    client.close();
+    harness.sqlite.close();
+  });
+
   test("hides retained agents after their Herdr session stops", async () => {
     const { client, harness } = await openServer();
     seedAgent(harness);
@@ -597,6 +670,83 @@ function seedAdditionalRuntimeAgents(harness: ReturnType<typeof openObservabilit
         cwd: "/repo-gemini",
         pane_id: "wB:p-gemini",
         terminal_id: "term_gemini",
+        workspace_id: "wB",
+      },
+    ],
+    herdrSessionName: "default",
+  });
+}
+
+function seedAmbiguousTargetAgents(harness: ReturnType<typeof openObservabilityDbHarness>) {
+  harness.herdrSessions.upsertRunning({
+    name: "default",
+    sessionDir: "/tmp/herdr",
+    socketPath: "/tmp/herdr/herdr.sock",
+  });
+  harness.agents.replaceForSession({
+    agents: [
+      {
+        agent: "codex",
+        agent_status: "idle",
+        name: "shared",
+        pane_id: "wB:p1",
+        terminal_id: "term_1",
+        workspace_id: "wB",
+      },
+      {
+        agent: "reviewer",
+        agent_status: "idle",
+        name: "shared",
+        pane_id: "wB:p2",
+        terminal_id: "term_2",
+        workspace_id: "wB",
+      },
+      {
+        agent: "shared",
+        agent_status: "idle",
+        name: "other",
+        pane_id: "wB:p3",
+        terminal_id: "term_3",
+        workspace_id: "wB",
+      },
+    ],
+    herdrSessionName: "default",
+  });
+}
+
+function seedTargetAgents(
+  harness: ReturnType<typeof openObservabilityDbHarness>,
+  firstAgentId?: string,
+) {
+  harness.herdrSessions.upsertRunning({
+    name: "default",
+    sessionDir: "/tmp/herdr",
+    socketPath: "/tmp/herdr/herdr.sock",
+  });
+  harness.agents.replaceForSession({
+    agents: [
+      {
+        agent: "codex",
+        agent_status: "idle",
+        name: "reviewer",
+        pane_id: "wB:p1",
+        terminal_id: "term_1",
+        workspace_id: "wB",
+      },
+      {
+        agent: "reviewer",
+        agent_status: "idle",
+        name: "codex",
+        pane_id: "wB:p2",
+        terminal_id: "term_2",
+        workspace_id: "wB",
+      },
+      {
+        agent: "claude",
+        agent_status: "idle",
+        name: firstAgentId ?? "term_1",
+        pane_id: "wB:p3",
+        terminal_id: "term_3",
         workspace_id: "wB",
       },
     ],
