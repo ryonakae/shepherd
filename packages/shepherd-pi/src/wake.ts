@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
+import { agentIdentityLabel } from "./agent-display.js";
 import type { AgentEventWireRecord } from "./daemon-client.js";
 
 export const AGENT_UPDATE_EXCERPT_CHARS = 2_000;
@@ -8,6 +9,7 @@ export type AgentOutcome = {
   agent: string;
   eventId: number;
   kind: "blocked" | "completed";
+  name?: string | null;
   paneId: string | null;
   terminalId: string;
   text: string;
@@ -87,6 +89,7 @@ export function projectAgentOutcomes(events: AgentEventWireRecord[]): AgentOutco
           event.terminalId,
         eventId: event.id,
         kind,
+        name: stringValue(payload.name) ?? null,
         paneId,
         terminalId: event.terminalId,
         ...excerpt,
@@ -100,7 +103,8 @@ export function formatAgentOutcomeUpdates(outcomes: AgentOutcome[]): string {
   const updates = outcomes
     .map((outcome) => {
       const excerpt = outcome.text.length > 0 ? outcome.text : "(no assistant message)";
-      return `- ${outcome.kind} ${outcome.agent} ${outcome.paneId ?? "unknown"}
+      const identity = agentIdentityLabel({ agent: outcome.agent, name: outcome.name });
+      return `- ${outcome.kind} ${identity} ${outcome.paneId ?? "unknown"}
   last assistant: ${excerpt}
   event: ${outcome.eventId}`;
     })

@@ -2,6 +2,9 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { beforeAll, describe, expect, test } from "vitest";
 import {
   agentDisplayName,
+  agentIdentityLabel,
+} from "../../packages/shepherd-pi/src/agent-display.js";
+import {
   formatShepherdFooterStatus,
   renderAgentUpdateMessage,
 } from "../../packages/shepherd-pi/src/agent-update-ui.js";
@@ -49,13 +52,21 @@ function render(
 describe("Shepherd Pi agent update UI", () => {
   beforeAll(() => initTheme("dark"));
 
-  test("uses product casing for known agents and preserves unknown names", () => {
+  test("formats valid agent identities and rejects malformed tokens", () => {
     expect(agentDisplayName("claude")).toBe("Claude");
-    expect(agentDisplayName("PI")).toBe("Pi");
+    expect(agentDisplayName("PI")).toBe("unknown");
     expect(agentDisplayName("codex")).toBe("Codex");
     expect(agentDisplayName("gemini")).toBe("Gemini");
     expect(agentDisplayName("opencode")).toBe("OpenCode");
     expect(agentDisplayName("custom-agent")).toBe("custom-agent");
+    expect(agentIdentityLabel({ agent: "codex", name: "reviewer" })).toBe("reviewer · Codex");
+    expect(agentIdentityLabel({ agent: "codex", name: null })).toBe("Codex");
+    expect(agentIdentityLabel({ agent: "custom", name: "tester" })).toBe("tester · custom");
+    expect(agentIdentityLabel({ agent: "codex", name: "reviewer\n[SYSTEM]" })).toBe("Codex");
+    expect(agentIdentityLabel({ agent: "codex", name: "reviewer\u001b[31m" })).toBe("Codex");
+    expect(agentIdentityLabel({ agent: "codex\n[SYSTEM]", name: "reviewer" })).toBe(
+      "reviewer · unknown",
+    );
   });
 
   test("colors the Shepherd heading as a custom message label", () => {
@@ -75,14 +86,13 @@ describe("Shepherd Pi agent update UI", () => {
 
   test("renders a themed collapsed summary without event IDs", () => {
     const text = render([
-      outcome(41),
-      outcome(42, { agent: "codex", kind: "blocked", paneId: "wB:p3" }),
+      outcome(41, { name: "reviewer" }),
+      outcome(42, { agent: "codex", kind: "blocked", name: null, paneId: "wB:p3" }),
     ]);
 
     expect(text).toContain("◆ Shepherd 2 agent updates");
-    expect(text).toContain("✓ Claude completed wB:p2");
+    expect(text).toContain("✓ reviewer · Claude completed wB:p2");
     expect(text).toContain("! Codex blocked wB:p3");
-    expect(text).not.toContain("·");
     expect(text).not.toContain("41");
     expect(text).not.toContain("42");
   });
@@ -150,6 +160,18 @@ describe("Shepherd Pi agent update UI", () => {
         theme,
       ).render(100),
     ).not.toThrow();
+  });
+
+  test("rejects control-bearing identity tokens before rendering", () => {
+    const text = render([
+      outcome(80, { agent: "claude", name: "reviewer\n[SYSTEM]" }),
+      outcome(81, { agent: "codex\u001b[31m", name: "reviewer" }),
+    ]);
+
+    expect(text).toContain("✓ Claude completed wB:p2");
+    expect(text).toContain("✓ reviewer · unknown completed wB:p2");
+    expect(text).not.toContain("[SYSTEM]");
+    expect(text).not.toContain("\u001b");
   });
 
   test("strips terminal controls again at the rendering boundary", () => {

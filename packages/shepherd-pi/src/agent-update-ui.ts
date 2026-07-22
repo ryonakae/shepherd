@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { Box, type Component, Text } from "@earendil-works/pi-tui";
+import { agentIdentityLabel } from "./agent-display.js";
 import type { AgentOutcome } from "./wake.js";
 
 export const COLLAPSED_AGENT_UPDATE_LIMIT = 3;
@@ -27,18 +28,6 @@ type ThemeLike = {
   fg(color: string, text: string): string;
 };
 
-const AGENT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  claude: "Claude",
-  codex: "Codex",
-  gemini: "Gemini",
-  opencode: "OpenCode",
-  pi: "Pi",
-};
-
-export function agentDisplayName(agent: string): string {
-  return AGENT_DISPLAY_NAMES[agent.toLowerCase()] ?? agent;
-}
-
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -51,6 +40,9 @@ function isAgentOutcome(value: unknown): value is AgentOutcome {
     typeof candidate.agent === "string" &&
     typeof candidate.eventId === "number" &&
     (candidate.kind === "blocked" || candidate.kind === "completed") &&
+    (candidate.name === undefined ||
+      candidate.name === null ||
+      typeof candidate.name === "string") &&
     (candidate.paneId === null || typeof candidate.paneId === "string") &&
     typeof candidate.terminalId === "string" &&
     typeof candidate.text === "string" &&
@@ -109,7 +101,7 @@ export function renderAgentUpdateMessage(
     const glyph = completed ? "✓" : "!";
     const summary = [
       theme.fg(color, glyph),
-      theme.bold(agentDisplayName(cleanDisplayText(outcome.agent))),
+      theme.bold(agentIdentityLabel({ agent: outcome.agent, name: outcome.name })),
       theme.fg(color, outcome.kind),
       theme.fg("muted", cleanDisplayText(outcome.paneId ?? "unknown")),
     ].join(" ");

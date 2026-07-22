@@ -1,3 +1,4 @@
+import { agentIdentityLabel } from "./agent-display.js";
 import {
   type AgentContextListItem,
   type AgentEventWireRecord,
@@ -742,8 +743,12 @@ export function formatHiddenAgentContext(input: {
     `Current Herdr workspace: ${input.workspaceId}`,
     ...input.agents.map((agent) => {
       const history = agent.history ?? {};
+      const identity = agentIdentityLabel({
+        agent: agent.agent ?? "unknown",
+        name: agent.name,
+      });
       return [
-        `- ${agent.agent ?? "unknown"} ${agent.paneId ?? "unknown"} ${agent.agentStatus ?? "unknown"}`,
+        `- ${identity} ${agent.paneId ?? "unknown"} ${agent.agentStatus ?? "unknown"}`,
         `  last user: ${oneLine(history.lastUserMessage?.text ?? "")}`,
         `  last assistant: ${oneLine(history.lastAssistantMessage?.text ?? "")}`,
       ].join("\n");
@@ -758,8 +763,12 @@ export function formatHiddenAgentUpdates(events: AgentEventWireRecord[]): string
     ...events.map((event) => {
       const payload = record(event.payload);
       const history = event.compactHistory ?? {};
+      const identity = agentIdentityLabel({
+        agent: stringValue(payload.agent) ?? "unknown",
+        name: stringValue(payload.name),
+      });
       return [
-        `- ${event.type} ${stringValue(payload.agent) ?? "unknown"} ${event.paneId ?? "unknown"}`,
+        `- ${event.type} ${identity} ${event.paneId ?? "unknown"}`,
         `  last assistant: ${oneLine(history.lastAssistantMessage?.text ?? "")}`,
         `  event: ${event.id}`,
       ].join("\n");

@@ -24,6 +24,7 @@ export type AgentContextListItem = {
   agent?: string | null;
   agentStatus?: string;
   history?: CompactAgentHistory;
+  name?: string | null;
   paneId?: string;
   terminalId?: string | null;
 };
