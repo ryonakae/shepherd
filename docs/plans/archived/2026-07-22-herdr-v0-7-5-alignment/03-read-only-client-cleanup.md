@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Delete Shepherd's unused Herdr control and named-session management code, reduce `HerdrSocketClient` to observability operations, and validate the complete v0.7.5 alignment.
 
@@ -95,7 +95,7 @@ Use it only from `getPane()` and `subscribeEvents()`. Keep `#requestOnce()` for 
 - Produces: focused coverage for `getPane`, snapshot, fallback, event normalization, stream close, and watch-manager consumers.
 - Removes from the test contract: every control/mutation wrapper.
 
-- [ ] **Step 1: Replace the broad inspection/control test with a pane-get test**
+- [x] **Step 1: Replace the broad inspection/control test with a pane-get test**
 
 Keep or add this focused interaction in `test/integration/herdr-socket-client.test.ts`:
 
@@ -126,7 +126,7 @@ Keep these existing behavior tests:
 
 Remove `workspaceId: "w1"` from the subscription test input because production subscriptions use only pane IDs and the client never reads that option.
 
-- [ ] **Step 2: Run the retained baseline tests**
+- [x] **Step 2: Run the retained baseline tests**
 
 Run:
 
@@ -136,7 +136,7 @@ pnpm test test/integration/herdr-socket-client.test.ts test/integration/herdr-pa
 
 Expected: all retained observability behavior passes before production deletion.
 
-- [ ] **Step 3: Commit the narrowed test contract**
+- [x] **Step 3: Commit the narrowed test contract**
 
 ```bash
 git add test/integration/herdr-socket-client.test.ts
@@ -164,11 +164,11 @@ git commit -m "test(herdr): narrow socket client contract"
 - Consumes: focused retained tests from Task 1.
 - Produces: the reduced `HerdrSocketClient` interface from this plan.
 
-- [ ] **Step 1: Delete isolated files and tests**
+- [x] **Step 1: Delete isolated files and tests**
 
 Delete the ten files listed above. Do not leave empty exports, deprecated aliases, comments about deleted APIs, or compatibility shims.
 
-- [ ] **Step 2: Remove unused HerdrSocketClient methods**
+- [x] **Step 2: Remove unused HerdrSocketClient methods**
 
 Delete these methods from `src/herdr/socket-client.ts`:
 
@@ -223,7 +223,7 @@ Narrow `subscribeEvents()` params to `{ paneIds?: string[] }`, then call `this.#
 
 Do not alter `#requestOnce()`, `#handleData()`, notification normalization, snapshot fallback helpers, or close/error handling except for names required by the private-method rename.
 
-- [ ] **Step 3: Search for stale imports and control APIs**
+- [x] **Step 3: Search for stale imports and control APIs**
 
 Run:
 
@@ -241,7 +241,7 @@ rg -n "workspace\.create|tab\.create|pane\.send_input|pane\.wait_for_output|even
 
 Expected: no Shepherd implementation advertises or wraps these methods. A README/SKILL statement that delegates control to official Herdr may mention command concepts in prose, but must not define Shepherd wrappers.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run:
 
@@ -252,7 +252,7 @@ pnpm typecheck
 
 Expected: retained client behavior and every production import compile after deletion.
 
-- [ ] **Step 5: Build to catch stale emitted imports**
+- [x] **Step 5: Build to catch stale emitted imports**
 
 Run:
 
@@ -262,7 +262,7 @@ pnpm build
 
 Expected: clean `dist` generation succeeds; no output import points to a deleted Herdr module.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A src/herdr test/integration/herdr-socket-client.test.ts test/integration/managed-herdr-socket-client.test.ts test/unit/herdr-session-lifecycle.test.ts test/unit/herdr-session.test.ts test/unit/herdr-naming.test.ts test/unit/herdr-client-pool.test.ts
@@ -283,7 +283,7 @@ git commit -m "refactor(herdr): remove unused control layer"
 - Consumes: every implementation and test commit from all child plans.
 - Produces: completed plan status and recorded command evidence.
 
-- [ ] **Step 1: Run focused core and surface suites**
+- [x] **Step 1: Run focused core and surface suites**
 
 Run:
 
@@ -293,7 +293,7 @@ pnpm test test/unit/observability-contracts.test.ts test/integration/sqlite-migr
 
 Expected: every named/unnamed, target-priority, event, UI, notification, socket, and migration test passes.
 
-- [ ] **Step 2: Run all repository gates**
+- [x] **Step 2: Run all repository gates**
 
 Run:
 
@@ -321,7 +321,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/installs/pnpm/11.9.0/bin:$PATH" pnpm package:check
 ```
 
-- [ ] **Step 3: Run repository and package-content audits**
+- [x] **Step 3: Run repository and package-content audits**
 
 Run:
 
@@ -341,7 +341,7 @@ Expected:
 - no whitespace errors;
 - only the intended implementation/plan changes remain before final commits.
 
-- [ ] **Step 4: Record completion evidence**
+- [x] **Step 4: Record completion evidence**
 
 Update every child `Status` to `Completed`, check completed tasks, and add a short `Completion Evidence` section with:
 
@@ -353,7 +353,7 @@ Update every child `Status` to `Completed`, check completed tasks, and add a sho
 
 Update the parent `Status` to `Completed`, check all child progress items, and summarize the same evidence without copying detailed logs.
 
-- [ ] **Step 5: Commit plan completion separately**
+- [x] **Step 5: Commit plan completion separately**
 
 ```bash
 git add docs/plans/2026-07-22-herdr-v0-7-5-alignment.md docs/plans/2026-07-22-herdr-v0-7-5-alignment/
@@ -368,6 +368,14 @@ git commit -m "docs: complete Herdr v0.7.5 alignment plan"
 - `pnpm db:check` — migration `0004` remains valid.
 - dead-symbol `rg` searches return no matches.
 - plan status and completion evidence match actual command results.
+
+## Completion Evidence
+
+- Deleted five unused Herdr production modules and their five dedicated test files.
+- Reduced `HerdrSocketClient` to `close`, `getPane`, `sessionSnapshot`, `subscribeEvents`, and private protocol helpers.
+- Retained pane lookup, snapshot compatibility fallback, event normalization, and socket-close behavior; 17 focused tests passed.
+- Dead-symbol and control-method searches returned no matches.
+- `pnpm check`, `pnpm build`, and `pnpm package:check` passed.
 
 ## Risks, Tradeoffs, and Open Questions
 

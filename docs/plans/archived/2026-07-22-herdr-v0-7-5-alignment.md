@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute the child plans task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Align Shepherd with Herdr v0.7.5 by indexing Herdr live agent names, preserving Shepherd's structured-history and Pi notification roles, and deleting the unused Herdr control layer.
 
@@ -89,9 +89,9 @@
 
 ## Progress
 
-- [ ] Child 01: named agent core
-- [ ] Child 02: named agent surfaces
-- [ ] Child 03: read-only client cleanup and final validation
+- [x] Child 01: named agent core
+- [x] Child 02: named agent surfaces
+- [x] Child 03: read-only client cleanup and final validation
 
 ## Validation
 
@@ -104,6 +104,16 @@
 - `pnpm package:check` — the root tarball includes only the intended runtime files and contains no stale imports.
 - `git diff --check` — no whitespace errors.
 - `git status --short` — only planned source, test, migration, docs, and deleted dead-layer files appear before commits; the final worktree is clean after commits.
+
+## Completion Evidence
+
+- Completed: 2026-07-22.
+- Generated migration: `drizzle/0004_serious_lorna_dane.sql` (one nullable `agents.name` column).
+- Final focused validation: 15 test files and 144 tests passed.
+- Full repository validation: `pnpm check` passed with 30 test files and 226 tests, TypeScript, Biome, Drizzle, root package, Pi package, and Herdr plugin gates.
+- `pnpm build` and `pnpm package:check` passed; the root tarball contains 183 allowlisted files.
+- Dead control/session symbols returned no matches, and clean `dist/src/herdr` output contains only pane identity, session list/snapshot, and socket client modules.
+- No manual Herdr or Pi UI session was run; CLI, plugin, Pi context/wake/card, socket, and package behavior were verified by automated tests.
 
 ## Risks, Tradeoffs, and Open Questions
 

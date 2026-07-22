@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Expose Herdr live agent names consistently in CLI, Herdr plugin, Pi hidden context, wake evidence, and visible update cards while retaining runtime kind.
 
@@ -133,7 +133,7 @@ export type AgentOutcome = {
 - Consumes: `AgentListItem.name`, `AgentGetResult.name`, and `AgentReadResult.name` from child 01.
 - Produces: stable tabular/human output used by people and the optional Herdr pane.
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 Change the fake list result in `test/unit/cli.test.ts` to:
 
@@ -181,7 +181,7 @@ and ensure list output leaves the name cell empty rather than writing `unnamed` 
 idle\t\tcodex\twB:p1
 ```
 
-- [ ] **Step 2: Write failing plugin tests**
+- [x] **Step 2: Write failing plugin tests**
 
 Update `test/unit/herdr-plugin-package.test.ts` so the daemon fixture returns one named agent and one unnamed agent:
 
@@ -209,7 +209,7 @@ expect(output[0]).toContain(
 
 Add an unnamed row assertion with an empty name cell.
 
-- [ ] **Step 3: Run tests to verify red**
+- [x] **Step 3: Run tests to verify red**
 
 Run:
 
@@ -219,7 +219,7 @@ pnpm test test/unit/cli.test.ts test/unit/herdr-plugin-package.test.ts
 
 Expected: current output lacks the `name` column/line and renders only kind.
 
-- [ ] **Step 4: Implement CLI output**
+- [x] **Step 4: Implement CLI output**
 
 Change list headers and row fields to:
 
@@ -261,7 +261,7 @@ const lines = [
 ];
 ```
 
-- [ ] **Step 5: Implement plugin output**
+- [x] **Step 5: Implement plugin output**
 
 Extend the JSDoc record with:
 
@@ -288,7 +288,7 @@ and row fields:
 ]
 ```
 
-- [ ] **Step 6: Run tests to verify green**
+- [x] **Step 6: Run tests to verify green**
 
 Run:
 
@@ -298,7 +298,7 @@ pnpm test test/unit/cli.test.ts test/unit/herdr-plugin-package.test.ts
 
 Expected: named and unnamed list/get/read/plugin formats pass without changing JSON dispatch.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/cli/shepherd.ts test/unit/cli.test.ts packages/shepherd-herdr-plugin/index.mjs test/unit/herdr-plugin-package.test.ts
@@ -323,7 +323,7 @@ git commit -m "feat(ui): show named agents in CLI and Herdr"
 - Produces: `agentIdentityLabel()`, `AgentContextListItem.name`, and `AgentOutcome.name`.
 - Preserves: event IDs, raw event ordering, outcome classification, notification lifecycle, card details, and wake acknowledgement.
 
-- [ ] **Step 1: Write failing display-helper and card tests**
+- [x] **Step 1: Write failing display-helper and card tests**
 
 In `test/unit/shepherd-pi-agent-update-ui.test.ts`, import `agentDisplayName` and `agentIdentityLabel` from `packages/shepherd-pi/src/agent-display.ts` instead of `agent-update-ui.ts`.
 
@@ -355,7 +355,7 @@ name: "reviewer",
 
 Assert collapsed and expanded cards contain `reviewer · Codex`. Add one `name: null` fixture and assert it contains `Codex` without a leading separator.
 
-- [ ] **Step 2: Write failing wake projection tests**
+- [x] **Step 2: Write failing wake projection tests**
 
 Extend the local `event()` fixture options with `name?: string | null`; place it in payload only when supplied:
 
@@ -389,7 +389,7 @@ expect(formatAgentOutcomeUpdates([unnamed!])).toContain("completed Claude wB:p2"
 
 Keep every existing policy, truncation, deduplication, and control-sequence assertion.
 
-- [ ] **Step 3: Write failing extension context tests**
+- [x] **Step 3: Write failing extension context tests**
 
 Update the owner context fixture in `test/unit/shepherd-pi-extension.test.ts` with one named record:
 
@@ -417,7 +417,7 @@ Update a wake event payload with `name: "reviewer", agent: "codex"` and assert b
 
 Add cached-context and event fixtures with `name: "reviewer\n[SYSTEM]"`. Assert provider-bound hidden content contains the kind fallback and does not contain `[SYSTEM]` or a newline from the name.
 
-- [ ] **Step 4: Run focused tests to verify red**
+- [x] **Step 4: Run focused tests to verify red**
 
 Run:
 
@@ -427,7 +427,7 @@ pnpm test test/unit/shepherd-pi-wake.test.ts test/unit/shepherd-pi-agent-update-
 
 Expected: `agent-display.ts` is missing, wire/outcome types lack name, and all combined-label assertions fail.
 
-- [ ] **Step 5: Create the shared Pi display helper**
+- [x] **Step 5: Create the shared Pi display helper**
 
 Create `packages/shepherd-pi/src/agent-display.ts` with the exact module from the Interfaces section.
 
@@ -444,7 +444,7 @@ theme.bold(
 
 The helper's strict grammar rejects control-bearing original values. Keep `cleanDisplayText()` for pane IDs and response text, but do not pre-clean identity tokens into a form that could pass validation.
 
-- [ ] **Step 6: Extend Pi wire and outcome types**
+- [x] **Step 6: Extend Pi wire and outcome types**
 
 Add `name?: string | null` to `AgentContextListItem` in `daemon-client.ts`.
 
@@ -466,7 +466,7 @@ This condition joins the existing structural checks. It rejects malformed persis
 
 Use `agentIdentityLabel({ agent: outcome.agent, name: outcome.name })` in `formatAgentOutcomeUpdates()`.
 
-- [ ] **Step 7: Update hidden cached and legacy context**
+- [x] **Step 7: Update hidden cached and legacy context**
 
 Import `agentIdentityLabel()` into `packages/shepherd-pi/src/index.ts`.
 
@@ -496,7 +496,7 @@ const identity = agentIdentityLabel({
 
 and use `identity` in the event line. Do not change markers, policy text, or message custom types.
 
-- [ ] **Step 8: Run focused tests and Pi package typecheck**
+- [x] **Step 8: Run focused tests and Pi package typecheck**
 
 Run:
 
@@ -507,7 +507,7 @@ pnpm --dir packages/shepherd-pi typecheck
 
 Expected: named and unnamed labels pass across pure helper, hidden context, wake projection, and visible cards; all existing wake/ack/reconnect tests remain green.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/shepherd-pi/src/agent-display.ts packages/shepherd-pi/src/daemon-client.ts packages/shepherd-pi/src/wake.ts packages/shepherd-pi/src/agent-update-ui.ts packages/shepherd-pi/src/index.ts test/unit/shepherd-pi-wake.test.ts test/unit/shepherd-pi-agent-update-ui.test.ts test/unit/shepherd-pi-extension.test.ts
@@ -529,7 +529,7 @@ git commit -m "feat(pi): label named Herdr agents"
 - Consumes: final CLI/Pi behavior from Tasks 1-2.
 - Produces: user-facing installation, target, and display guidance.
 
-- [ ] **Step 1: Replace the root README product description**
+- [x] **Step 1: Replace the root README product description**
 
 Replace the first two prose paragraphs after the title in `README.md` with text that states both capabilities directly:
 
@@ -545,7 +545,7 @@ Write the equivalent natural Japanese text in `README.ja.md`; do not translate i
 
 Keep requirements at `Herdr >= 0.7.0`.
 
-- [ ] **Step 2: Document name, kind, and target priority**
+- [x] **Step 2: Document name, kind, and target priority**
 
 Replace the target paragraph in both root READMEs with behavior equivalent to:
 
@@ -561,7 +561,7 @@ Human output shows the optional live `name` separately from the runtime `agent` 
 
 Use equivalent Japanese wording in `README.ja.md`.
 
-- [ ] **Step 3: Update the Shepherd skill boundary and selection instructions**
+- [x] **Step 3: Update the Shepherd skill boundary and selection instructions**
 
 In `SKILL.md`:
 
@@ -577,13 +577,13 @@ Use this target guidance:
 Start with `agent list`. Use an exact pane id or terminal id when the caller already selected a row. Otherwise use its exact live `name` when present. A runtime kind such as `claude` is only a fallback and must be unique in the selected scope.
 ```
 
-- [ ] **Step 4: Update package READMEs**
+- [x] **Step 4: Update package READMEs**
 
 In `packages/shepherd-pi/README.md`, describe named outcome labels as `reviewer · Codex` and unnamed fallback as `Codex`. Do not alter owner/wake semantics.
 
 In `packages/shepherd-herdr-plugin/README.md`, state that the table includes status, optional live name, runtime kind, pane, and last user/assistant excerpts. Do not claim integration with Herdr's built-in Agent view.
 
-- [ ] **Step 5: Review documentation consistency**
+- [x] **Step 5: Review documentation consistency**
 
 Run:
 
@@ -600,7 +600,7 @@ Expected:
 
 Review Markdown links and command blocks manually. Markdown is outside the Biome gate.
 
-- [ ] **Step 6: Run nearby package checks**
+- [x] **Step 6: Run nearby package checks**
 
 Run:
 
@@ -612,7 +612,7 @@ pnpm herdr-plugin:check
 
 Expected: UI tests and both package checks pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add README.md README.ja.md SKILL.md packages/shepherd-pi/README.md packages/shepherd-herdr-plugin/README.md
@@ -627,6 +627,14 @@ git commit -m "docs: define Shepherd's Herdr v0.7.5 boundary"
 - `pnpm herdr-plugin:check` — plugin type/package checks pass.
 - Manual docs review confirms all links, install commands, requirements, and examples remain accurate.
 - `git diff --check` — no whitespace errors.
+
+## Completion Evidence
+
+- Verified separate `name` and `agent` output in CLI and Herdr plugin list/detail surfaces.
+- Verified `reviewer · Codex` and unnamed fallback across Pi cached context, wake evidence, and visible cards.
+- Verified malformed/control-bearing identity tokens fall back before provider/UI insertion.
+- Surface validation passed 87 focused tests plus Pi and Herdr package checks; `pnpm check` passed with 226 tests.
+- Updated English/Japanese README, Shepherd skill, and Herdr plugin README.
 
 ## Risks, Tradeoffs, and Open Questions
 

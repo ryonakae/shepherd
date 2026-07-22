@@ -2,7 +2,7 @@
 
 > **For implementers:** Execute this plan task-by-task. Complete each checkbox step, run the listed validation, and commit after each task.
 
-**Status:** Planned
+**Status:** Completed
 
 **Goal:** Persist Herdr v0.7.5 live agent names as mutable metadata, resolve named targets before kind fallbacks, and snapshot the observed name into Shepherd events without changing stable identity.
 
@@ -122,7 +122,7 @@ Status/outcome payloads use this additive shape:
 - Produces: `AgentIndexRecord.name: string | null` and persisted `agents.name`.
 - Preserves: terminal-first matching, `agent` kind, reported/Pi session refs, pane revisions, and context snapshot cascade behavior.
 
-- [ ] **Step 1: Write failing contract, migration, and store tests**
+- [x] **Step 1: Write failing contract, migration, and store tests**
 
 In `test/unit/observability-contracts.test.ts`, update the complete `AgentIndexRecord` fixture with:
 
@@ -197,7 +197,7 @@ Ensure the helper distinguishes omitted name from explicit null:
 ...(Object.hasOwn(input, "name") ? { name: input.name } : {}),
 ```
 
-- [ ] **Step 2: Run focused tests to verify red**
+- [x] **Step 2: Run focused tests to verify red**
 
 Run:
 
@@ -207,7 +207,7 @@ pnpm test test/unit/observability-contracts.test.ts test/integration/sqlite-migr
 
 Expected: TypeScript reports missing `AgentIndexRecord.name`, the migration assertion cannot find `name`, and store results omit live names.
 
-- [ ] **Step 3: Add the contract and Drizzle column**
+- [x] **Step 3: Add the contract and Drizzle column**
 
 Add the exact contract field:
 
@@ -223,7 +223,7 @@ name: text("name"),
 
 Do not add a default, `notNull()`, or an index.
 
-- [ ] **Step 4: Map the live name through AgentStore**
+- [x] **Step 4: Map the live name through AgentStore**
 
 Add `name: string | null` to `AgentRow`.
 
@@ -244,7 +244,7 @@ name: row.name,
 
 Do not change row matching, `setSessionRefByTerminal()`, or snapshot deletion.
 
-- [ ] **Step 5: Generate and inspect migration 0004**
+- [x] **Step 5: Generate and inspect migration 0004**
 
 Run:
 
@@ -262,7 +262,7 @@ ALTER TABLE `agents` ADD `name` text;
 
 It must not recreate tables, drop data, modify migrations `0000` through `0003`, or add an index.
 
-- [ ] **Step 6: Update every complete typed fixture**
+- [x] **Step 6: Update every complete typed fixture**
 
 Run:
 
@@ -281,7 +281,7 @@ Add `name: null` to complete records in the files reported by TypeScript, expect
 
 Do not add name to raw Herdr fixtures unless a test exercises a named agent; omission must continue to map to null.
 
-- [ ] **Step 7: Run focused tests and typecheck to verify green**
+- [x] **Step 7: Run focused tests and typecheck to verify green**
 
 Run:
 
@@ -293,7 +293,7 @@ pnpm typecheck
 
 Expected: contract, migration, stable-ID rename/clear, fixture compatibility, Drizzle, and typecheck pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Use the actual generated migration filename:
 
@@ -315,7 +315,7 @@ git commit -m "feat(observability): persist Herdr agent names"
 - Consumes: `AgentIndexRecord.name` from Task 1.
 - Produces: deterministic `AgentStore.resolveTarget(scope, target)` priority used by `agent.get` and `agent.read`.
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
 
 Add a focused store test that seeds these agents in one workspace:
 
@@ -389,7 +389,7 @@ await expect(
 ).resolves.toMatchObject({ agent: { name: "reviewer", messages: [] } });
 ```
 
-- [ ] **Step 2: Run tests to verify red**
+- [x] **Step 2: Run tests to verify red**
 
 Run:
 
@@ -399,7 +399,7 @@ pnpm test test/integration/agent-store-terminal-identity.test.ts test/integratio
 
 Expected: the current merged candidate search reports `claude` as ambiguous instead of preferring the explicit name, and RPC lookup by `reviewer` fails.
 
-- [ ] **Step 3: Implement ordered candidate groups**
+- [x] **Step 3: Implement ordered candidate groups**
 
 Replace the current single `candidates` filter with:
 
@@ -429,7 +429,7 @@ resolveTarget(scope: AgentQueryScope, target: string): AgentIndexRecord {
 
 Do not fall through to lower-priority groups after a non-empty group is found.
 
-- [ ] **Step 4: Run tests to verify green**
+- [x] **Step 4: Run tests to verify green**
 
 Run:
 
@@ -439,7 +439,7 @@ pnpm test test/integration/agent-store-terminal-identity.test.ts test/integratio
 
 Expected: ID priority, live-name priority, unique-kind fallback, same-priority ambiguity, diagnostics, and RPC named lookup pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/db/agents.ts test/integration/agent-store-terminal-identity.test.ts test/integration/observability-rpc.test.ts
@@ -459,7 +459,7 @@ git commit -m "feat(observability): prioritize named agent targets"
 - Produces: name-sensitive context metadata and additive event payload `name`.
 - Preserves: `sameIdentity()` behavior and history refresh decisions.
 
-- [ ] **Step 1: Write failing index/event tests**
+- [x] **Step 1: Write failing index/event tests**
 
 Extend the `oneAgent()` or raw agent fixture helper in `test/integration/agent-index-service.test.ts` to accept a nullable live name independently of agent kind.
 
@@ -516,7 +516,7 @@ expect(status.events).toContainEqual(
 
 Also assert an unnamed snapshot creates payload `name: null`; do not omit the key on new events.
 
-- [ ] **Step 2: Run the focused test to verify red**
+- [x] **Step 2: Run the focused test to verify red**
 
 Run:
 
@@ -526,7 +526,7 @@ pnpm test test/integration/agent-index-service.test.ts
 
 Expected: indexed agents omit `name`, name-only refresh does not publish the expected scope, and event payloads omit `name`.
 
-- [ ] **Step 3: Update metadata and event payload rules**
+- [x] **Step 3: Update metadata and event payload rules**
 
 Keep `sameIdentity()` unchanged. Add name only to `sameContextMetadata()`:
 
@@ -551,7 +551,7 @@ name: agent.name,
 
 Do not add name to `sameIdentity()`, `idempotencyKey()`, history lookup input, or terminal session keys.
 
-- [ ] **Step 4: Run the index test and typecheck to verify green**
+- [x] **Step 4: Run the index test and typecheck to verify green**
 
 Run:
 
@@ -562,7 +562,7 @@ pnpm typecheck
 
 Expected: name-only changes publish context without a history call, events snapshot name, unnamed compatibility passes, and the repository still typechecks.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/observability/agent-index-service.ts test/integration/agent-index-service.test.ts
@@ -575,6 +575,14 @@ git commit -m "feat(observability): publish named agent metadata"
 - `pnpm db:check` — schema and migration metadata agree.
 - `pnpm typecheck` — every complete `AgentIndexRecord` supplies nullable name.
 - `git diff --check` — no whitespace errors.
+
+## Completion Evidence
+
+- Generated `drizzle/0004_serious_lorna_dane.sql` and matching Drizzle metadata.
+- Verified terminal identity and session refs survive live-name rename and clear.
+- Verified ID, live-name, and kind target priority plus priority-local ambiguity diagnostics over RPC.
+- Verified name-only context publication without a history read and event-time name snapshots for named and unnamed agents.
+- Final focused validation included all core suites; `pnpm check` passed with 226 tests.
 
 ## Risks, Tradeoffs, and Open Questions
 
