@@ -195,11 +195,14 @@ function formatHumanResult(command: CliCommand, result: unknown): string {
 function formatAgentList(result: { agents?: AgentListItem[] }): string {
   const agents = result.agents ?? [];
   if (agents.length === 0) return "No Shepherd agents indexed.";
-  const lines = [["status", "agent", "pane", "last user", "last assistant", "updated"].join("\t")];
+  const lines = [
+    ["status", "name", "agent", "pane", "last user", "last assistant", "updated"].join("\t"),
+  ];
   for (const agent of agents) {
     lines.push(
       [
         agent.agentStatus,
+        agent.name ?? "",
         agent.agent ?? "unknown",
         agent.paneId,
         oneLine(agent.history.lastUserMessage?.text ?? ""),
@@ -215,6 +218,7 @@ function formatAgentGet(result: { agent?: AgentGetResult }): string {
   const agent = result.agent;
   if (!agent) return "Agent not found.";
   return [
+    `name: ${agent.name ?? "unnamed"}`,
     `agent: ${agent.agent ?? "unknown"}`,
     `status: ${agent.agentStatus}`,
     `pane: ${agent.paneId}`,
@@ -232,7 +236,12 @@ function formatAgentGet(result: { agent?: AgentGetResult }): string {
 function formatAgentRead(result: { agent?: AgentReadResult }): string {
   const agent = result.agent;
   if (!agent) return "Agent not found.";
-  const lines = [`agent: ${agent.agent ?? "unknown"} ${agent.paneId}`, ""];
+  const lines = [
+    `name: ${agent.name ?? "unnamed"}`,
+    `agent: ${agent.agent ?? "unknown"}`,
+    `pane: ${agent.paneId}`,
+    "",
+  ];
   for (const message of agent.messages) {
     lines.push(
       [

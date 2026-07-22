@@ -9,7 +9,7 @@ const CURRENT_HERDR_CONTEXT_ERROR =
 /** @typedef {{ env: NodeJS.ProcessEnv, output(line: string): void, clientFactory(): DaemonClient }} PluginDeps */
 /** @typedef {{ text?: string | null }} CompactText */
 /** @typedef {{ lastAssistantMessage?: CompactText | null, lastUserMessage?: CompactText | null }} CompactAgentHistory */
-/** @typedef {{ agent?: string | null, agentStatus?: string | null, history?: CompactAgentHistory | null, paneId?: string | null }} AgentListItem */
+/** @typedef {{ agent?: string | null, agentStatus?: string | null, history?: CompactAgentHistory | null, name?: string | null, paneId?: string | null }} AgentListItem */
 /** @typedef {{ agents?: AgentListItem[] }} AgentListResult */
 
 /**
@@ -39,10 +39,11 @@ export function renderAgents(input) {
   const agents = input.agents ?? [];
   if (agents.length === 0) return "No Shepherd agents indexed.";
   return [
-    ["status", "agent", "pane", "last user", "last assistant"].join("\t"),
+    ["status", "name", "agent", "pane", "last user", "last assistant"].join("\t"),
     ...agents.map((agent) =>
       [
         agent.agentStatus ?? "unknown",
+        agent.name ?? "",
         agent.agent ?? "unknown",
         agent.paneId ?? "unknown",
         oneLine(agent.history?.lastUserMessage?.text ?? ""),

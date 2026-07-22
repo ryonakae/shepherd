@@ -31,7 +31,11 @@ describe("shepherd Herdr plugin package", () => {
     ).resolves.toBe(0);
 
     expect(client.calls).toEqual([["agent.list", { workspaceId: "wB" }], ["close"]]);
-    expect(output[0]).toContain("idle\tpi\twB:p1\tfix bug\tdone");
+    expect(output[0]).toContain("status\tname\tagent\tpane\tlast user\tlast assistant");
+    expect(output[0]).toContain(
+      "done\treviewer\tcodex\twB:p2\tReview the diff\tNo blocking issues",
+    );
+    expect(output[0]).toContain("idle\t\tcodex\twB:p3");
   });
 
   test("rejects missing Herdr context", async () => {
@@ -88,13 +92,21 @@ function createFakeClient(): FakeClient {
         return {
           agents: [
             {
-              agent: "pi",
-              agentStatus: "idle",
+              agent: "codex",
+              agentStatus: "done",
               history: {
-                lastAssistantMessage: { text: "done" },
-                lastUserMessage: { text: "fix bug" },
+                lastAssistantMessage: { text: "No blocking issues" },
+                lastUserMessage: { text: "Review the diff" },
               },
-              paneId: "wB:p1",
+              name: "reviewer",
+              paneId: "wB:p2",
+            },
+            {
+              agent: "codex",
+              agentStatus: "idle",
+              history: {},
+              name: null,
+              paneId: "wB:p3",
             },
           ],
         };

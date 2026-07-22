@@ -95,7 +95,9 @@ describe("shepherd CLI", () => {
       ["agent.read", { limit: 10, target: "claude", workspaceId: "wB" }],
       ["close"],
     ]);
-    expect(JSON.parse(output[0] ?? "")).toEqual({ agent: { messages: [] } });
+    expect(JSON.parse(output[0] ?? "")).toMatchObject({
+      agent: { agent: "codex", messages: [], name: "reviewer" },
+    });
   });
 
   test("renders human agent list", async () => {
@@ -109,13 +111,52 @@ describe("shepherd CLI", () => {
         socketPath: "/tmp/s.sock",
       },
     );
-    expect(output[0]).toContain("status\tagent\tpane\tlast user\tlast assistant\tupdated");
-    expect(output[0]).toContain("idle\tpi\twB:p1\tfix bug\tdone");
+    expect(output[0]).toContain("status\tname\tagent\tpane\tlast user\tlast assistant\tupdated");
+    expect(output[0]).toContain("idle\treviewer\tcodex\twB:p1\tfix bug\tdone");
+    expect(output[0]).toContain("idle\t\tcodex\twB:p2");
+  });
+
+  test("renders separate live name and agent kind in human get and read output", async () => {
+    const client = createFakeClient();
+    const getOutput: string[] = [];
+    await runCliCommand(
+      { command: "agent-get", json: false, target: "reviewer", workspaceId: "wB" },
+      {
+        connect: async () => client,
+        output: (line) => getOutput.push(line),
+        socketPath: "/tmp/s.sock",
+      },
+    );
+    expect(getOutput[0]).toContain("name: reviewer\nagent: codex");
+
+    const readOutput: string[] = [];
+    await runCliCommand(
+      { command: "agent-read", json: false, target: "reviewer", workspaceId: "wB" },
+      {
+        connect: async () => client,
+        output: (line) => readOutput.push(line),
+        socketPath: "/tmp/s.sock",
+      },
+    );
+    expect(readOutput[0]).toContain("name: reviewer\nagent: codex\npane: wB:p1");
+
+    const unnamedOutput: string[] = [];
+    const unnamed = createFakeClient({ name: null });
+    await runCliCommand(
+      { command: "agent-get", json: false, target: "codex", workspaceId: "wB" },
+      {
+        connect: async () => unnamed,
+        output: (line) => unnamedOutput.push(line),
+        socketPath: "/tmp/s.sock",
+      },
+    );
+    expect(unnamedOutput[0]).toContain("name: unnamed\nagent: codex");
   });
 });
 
-function createFakeClient(): FakeClient {
+function createFakeClient(overrides: { name?: string | null } = {}): FakeClient {
   const calls: unknown[] = [];
+  const name = Object.hasOwn(overrides, "name") ? overrides.name : "reviewer";
   return {
     calls,
     close: () => calls.push(["close"]),
@@ -125,21 +166,44 @@ function createFakeClient(): FakeClient {
         return {
           agents: [
             {
-              agent: "pi",
+              agent: "codex",
               agentStatus: "idle",
               history: {
                 lastAssistantMessage: { text: "done", timestamp: null, ref: "r2" },
                 lastUserMessage: { text: "fix bug", timestamp: null, ref: "r1" },
-                source: "pi-jsonl",
-                updatedAt: "2026-07-08T00:00:00.000Z",
+                source: "codex-jsonl",
+                updatedAt: "2026-07-22T00:00:00.000Z",
               },
+              name,
               paneId: "wB:p1",
+            },
+            {
+              agent: "codex",
+              agentStatus: "idle",
+              history: {},
+              name: null,
+              paneId: "wB:p2",
             },
           ],
         };
       }
-      if (method === "agent.get") return { agent: { agent: "pi", history: {}, paneId: "wB:p1" } };
-      if (method === "agent.read") return { agent: { messages: [] } };
+      if (method === "agent.get") {
+        return {
+          agent: {
+            agent: "codex",
+            agentStatus: "idle",
+            herdrSessionName: "default",
+            history: {},
+            name,
+            paneId: "wB:p1",
+            terminalId: "term_1",
+            workspaceId: "wB",
+          },
+        };
+      }
+      if (method === "agent.read") {
+        return { agent: { agent: "codex", messages: [], name, paneId: "wB:p1" } };
+      }
       return {};
     },
   };
