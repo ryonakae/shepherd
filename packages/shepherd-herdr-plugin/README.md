@@ -15,4 +15,4 @@ npm install --global @ryonakae/shepherd
 shepherd daemon start
 ```
 
-It shows compact rows from `shepherd agent list` for the current Herdr workspace and uses the daemon RPC method `agent.list` with `HERDR_WORKSPACE_ID`.
+It shows compact rows from `shepherd agent list` for the current Herdr workspace and uses the daemon RPC method `agent.list` with `HERDR_WORKSPACE_ID`. Each row keeps the optional Herdr live name separate from the runtime agent kind and includes the latest cached user and assistant excerpts.

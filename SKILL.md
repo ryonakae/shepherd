@@ -41,11 +41,11 @@ shepherd agent list --workspace <workspace-id> --json
 shepherd agent list --all --json
 ```
 
-Use `--session <name>` when workspace ids or agent names are ambiguous across running Herdr sessions.
+Use `--session <name>` when workspace ids or agent targets are ambiguous across running Herdr sessions.
 
 ## Inspect an agent
 
-Start with `agent list` and select the exact pane id, terminal id, or unique agent name from its result. `agent list` is the fast cached discovery and index view; inspect `updatedAt` when freshness matters. Do not call it repeatedly in a polling loop or assume names such as `claude` or `codex` are unique.
+Start with `agent list`. Each row contains an optional Herdr live `name`, such as `reviewer`, and a runtime `agent` kind, such as `codex`. Shepherd resolves an exact pane id, terminal id, or Shepherd agent id first; an exact live name second; and a unique runtime kind only as a fallback. Use an exact pane id or terminal id when the caller has already selected a row. Otherwise use its live name when present. Do not call `agent list` repeatedly in a polling loop, and inspect `updatedAt` when freshness matters.
 
 Use `agent get` or `agent read` for explicit current detail after selecting the exact target.
 
@@ -78,4 +78,5 @@ Do not copy or guess Herdr CLI commands in this skill.
 
 - Shepherd returns agents from running Herdr sessions only.
 - Use Shepherd for structured semantic history, not raw terminal fidelity.
+- Shepherd does not start, prompt, wait for, focus, or send terminal input to agents.
 - Use the official `herdr` skill for live terminal state and control.
