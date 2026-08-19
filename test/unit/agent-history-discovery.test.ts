@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -43,6 +43,22 @@ describe("agent history discovery", () => {
         value: "/tmp/g.json",
       }),
     ).toBe("gemini-json");
+    expect(
+      historySourceFromSessionRef({
+        agent: "agy",
+        kind: "path",
+        source: "herdr:agy",
+        value: "/tmp/transcript.jsonl",
+      }),
+    ).toBe("agy-jsonl");
+    expect(
+      historySourceFromSessionRef({
+        agent: "antigravity_cli",
+        kind: "id",
+        source: "herdr:antigravity",
+        value: "sess-1",
+      }),
+    ).toBe("agy-jsonl");
   });
 
   test("discovers Codex JSONL by session_meta cwd", async () => {
@@ -139,6 +155,101 @@ describe("agent history discovery", () => {
       path: sessionPath,
       source: "gemini-json",
       value: sessionPath,
+    });
+  });
+
+  test("discovers Antigravity JSONL session from brain directory", async () => {
+    const homeDir = await tempHome("shepherd-agy-home-");
+    const brainDir = join(homeDir, ".gemini", "antigravity-cli", "brain");
+    const sessDir = join(brainDir, "sess-123", ".system_generated", "logs");
+    await mkdir(sessDir, { recursive: true });
+    const transcriptPath = join(sessDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "hello" })}\n`,
+    );
+
+    await expect(
+      discoverAgentHistory({
+        agent: "agy",
+        agentSession: null,
+        cwd: null,
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toMatchObject({
+      kind: "discovered_file",
+      path: transcriptPath,
+      source: "agy-jsonl",
+      value: transcriptPath,
+    });
+  });
+
+  test("discovers latest Antigravity session ordered by mtime when multiple sessions exist", async () => {
+    const homeDir = await tempHome("shepherd-agy-multi-home-");
+    const brainDir = join(homeDir, ".gemini", "antigravity-cli", "brain");
+    const olderSessDir = join(brainDir, "sess-older", ".system_generated", "logs");
+    const newerSessDir = join(brainDir, "sess-newer", ".system_generated", "logs");
+    await mkdir(olderSessDir, { recursive: true });
+    await mkdir(newerSessDir, { recursive: true });
+    const olderTranscript = join(olderSessDir, "transcript.jsonl");
+    const newerTranscript = join(newerSessDir, "transcript.jsonl");
+    await writeFile(
+      olderTranscript,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "older" })}\n`,
+    );
+    await writeFile(
+      newerTranscript,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "newer" })}\n`,
+    );
+    await utimes(olderTranscript, new Date(1000), new Date(1000));
+    await utimes(newerTranscript, new Date(2000), new Date(2000));
+
+    await expect(
+      discoverAgentHistory({
+        agent: "agy",
+        agentSession: null,
+        cwd: null,
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toMatchObject({
+      kind: "discovered_file",
+      path: newerTranscript,
+      source: "agy-jsonl",
+      value: newerTranscript,
+    });
+  });
+
+  test("discovers Antigravity session by id", async () => {
+    const homeDir = await tempHome("shepherd-agy-id-home-");
+    const brainDir = join(homeDir, ".gemini", "antigravity-cli", "brain");
+    const sessDir = join(brainDir, "sess-456", ".system_generated", "logs");
+    await mkdir(sessDir, { recursive: true });
+    const transcriptPath = join(sessDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "hello" })}\n`,
+    );
+
+    await expect(
+      discoverAgentHistory({
+        agent: "agy",
+        agentSession: {
+          agent: "agy",
+          kind: "id",
+          source: "herdr:agy",
+          value: "sess-456",
+        },
+        cwd: null,
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toMatchObject({
+      kind: "agent_session",
+      path: transcriptPath,
+      source: "agy-jsonl",
+      value: "sess-456",
     });
   });
 });
