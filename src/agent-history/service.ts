@@ -6,6 +6,7 @@ import type {
   AgentHistorySourceFingerprint,
   CompactAgentHistory,
 } from "@/observability/contracts.js";
+import { AgyHistoryReader } from "./agy-reader.js";
 import { ClaudeHistoryReader } from "./claude-reader.js";
 import { CodexHistoryReader } from "./codex-reader.js";
 import { type AgentHistoryLookupInput, discoverAgentHistory } from "./discovery.js";
@@ -39,6 +40,7 @@ export function createAgentHistoryService(
     new CodexHistoryReader(),
     new OpenCodeHistoryReader(),
     new GeminiHistoryReader(),
+    new AgyHistoryReader(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
   ];
   const discover: Discovery =
     options.discover ??

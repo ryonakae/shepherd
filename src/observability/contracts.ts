@@ -48,6 +48,7 @@ export type AgentHistoryRef = {
   kind: "agent_session" | "discovered_file";
   path?: string;
   source:
+    | "agy-jsonl"
     | "claude-jsonl"
     | "codex-jsonl"
     | "gemini-json"

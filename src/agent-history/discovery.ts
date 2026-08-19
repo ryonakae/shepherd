@@ -41,6 +41,26 @@ export async function discoverAgentHistory(
       const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: input.agentSession.value });
       if (ref) return { ...ref, kind: "agent_session" };
     }
+    if (source === "agy-jsonl") {
+      const path = join(
+        homeDir,
+        ".gemini",
+        "antigravity-cli",
+        "brain",
+        input.agentSession.value,
+        ".system_generated",
+        "logs",
+        "transcript.jsonl",
+      );
+      if (existsSync(path)) {
+        return {
+          kind: "agent_session",
+          path,
+          source: "agy-jsonl",
+          value: input.agentSession.value,
+        };
+      }
+    }
   }
 
   const agent = input.agent?.toLowerCase() ?? input.agentSession?.agent.toLowerCase() ?? "";
@@ -56,6 +76,14 @@ export async function discoverAgentHistory(
   }
   if (agent === "gemini") {
     candidates.push(...(await scanGeminiRoot(join(homeDir, ".gemini", "tmp"))));
+  }
+  if (
+    agent === "agy" ||
+    agent === "antigravity" ||
+    agent.includes("antigravity") ||
+    agent.includes("agy")
+  ) {
+    candidates.push(...(await scanAgyRoot(join(homeDir, ".gemini", "antigravity-cli", "brain"))));
   }
   if (agent === "opencode") {
     const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: null });
@@ -82,6 +110,13 @@ export function historySourceFromSessionRef(ref: AgentSessionRef): AgentHistoryR
   if (agent === "codex" || source.includes("codex")) return "codex-jsonl";
   if (agent === "opencode" || source.includes("opencode")) return "opencode-sqlite";
   if (agent === "gemini" || source.includes("gemini")) return "gemini-json";
+  if (
+    agent === "agy" ||
+    agent === "antigravity" ||
+    source.includes("antigravity") ||
+    source.includes("agy")
+  )
+    return "agy-jsonl";
   return "unknown";
 }
 
@@ -146,6 +181,25 @@ async function scanGeminiRoot(root: string): Promise<Candidate[]> {
       if (!stats?.isFile()) continue;
       candidates.push({ cwd, mtimeMs: stats.mtimeMs, path, source: "gemini-json" });
     }
+  }
+  return candidates;
+}
+
+async function scanAgyRoot(root: string): Promise<Candidate[]> {
+  if (!existsSync(root)) return [];
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const candidates: Candidate[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = join(root, entry.name, ".system_generated", "logs", "transcript.jsonl");
+    const stats = await stat(path).catch(() => null);
+    if (!stats?.isFile()) continue;
+    candidates.push({
+      cwd: await readCandidateCwd(path),
+      mtimeMs: stats.mtimeMs,
+      path,
+      source: "agy-jsonl",
+    });
   }
   return candidates;
 }
