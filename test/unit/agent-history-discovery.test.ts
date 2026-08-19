@@ -252,4 +252,87 @@ describe("agent history discovery", () => {
       value: "sess-456",
     });
   });
+
+  test("filters Antigravity discovery by cwd matching conversation summaries workspace_uris", async () => {
+    const homeDir = await tempHome("shepherd-agy-summaries-home-");
+    const cliDir = join(homeDir, ".gemini", "antigravity-cli");
+    const brainDir = join(cliDir, "brain");
+    const olderSessDir = join(brainDir, "sess-older", ".system_generated", "logs");
+    const newerSessDir = join(brainDir, "sess-newer", ".system_generated", "logs");
+    await mkdir(olderSessDir, { recursive: true });
+    await mkdir(newerSessDir, { recursive: true });
+    const olderTranscript = join(olderSessDir, "transcript.jsonl");
+    const newerTranscript = join(newerSessDir, "transcript.jsonl");
+    await writeFile(
+      olderTranscript,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "repo-a transcript" })}\n`,
+    );
+    await writeFile(
+      newerTranscript,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "repo-b transcript" })}\n`,
+    );
+    await utimes(olderTranscript, new Date(1000), new Date(1000));
+    await utimes(newerTranscript, new Date(2000), new Date(2000));
+
+    const dbPath = join(cliDir, "conversation_summaries.db");
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(
+      "create table conversation_summaries (conversation_id text primary key, workspace_uris text not null)",
+    );
+    sqlite
+      .prepare("insert into conversation_summaries (conversation_id, workspace_uris) values (?, ?)")
+      .run("sess-older", JSON.stringify(["file:///repo-a"]));
+    sqlite
+      .prepare("insert into conversation_summaries (conversation_id, workspace_uris) values (?, ?)")
+      .run("sess-newer", JSON.stringify(["file:///repo-b"]));
+    sqlite.close();
+
+    await expect(
+      discoverAgentHistory({
+        agent: "agy",
+        agentSession: null,
+        cwd: "/repo-a",
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toMatchObject({
+      kind: "discovered_file",
+      path: olderTranscript,
+      source: "agy-jsonl",
+      value: olderTranscript,
+    });
+  });
+
+  test("returns null when no Antigravity conversation matches the agent cwd", async () => {
+    const homeDir = await tempHome("shepherd-agy-nomatch-home-");
+    const cliDir = join(homeDir, ".gemini", "antigravity-cli");
+    const brainDir = join(cliDir, "brain");
+    const sessDir = join(brainDir, "sess-1", ".system_generated", "logs");
+    await mkdir(sessDir, { recursive: true });
+    const transcriptPath = join(sessDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "content" })}\n`,
+    );
+
+    const dbPath = join(cliDir, "conversation_summaries.db");
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(
+      "create table conversation_summaries (conversation_id text primary key, workspace_uris text not null)",
+    );
+    sqlite
+      .prepare("insert into conversation_summaries (conversation_id, workspace_uris) values (?, ?)")
+      .run("sess-1", JSON.stringify(["file:///repo-other"]));
+    sqlite.close();
+
+    await expect(
+      discoverAgentHistory({
+        agent: "agy",
+        agentSession: null,
+        cwd: "/repo-unmatched",
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toBeNull();
+  });
 });
