@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: version
+        name: Validate stable tag and main ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Unsupported release tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          test "$(node --print 'require("./package.json").version')" = "$version"
+          git fetch origin main:refs/remotes/origin/main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: pnpm check
+      - run: pnpm build
+      - name: Build and smoke-test release tarballs
+        run: pnpm package:smoke --output "$RUNNER_TEMP/release-artifacts"
+      - name: Check preexisting registry state
+        run: node scripts/release-registry.mjs check "$RUNNER_TEMP/release-artifacts"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-packages
+          path: ${{ runner.temp }}/release-artifacts
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      version: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-packages
+          path: ${{ runner.temp }}/release-artifacts
+      - name: Reverify downloaded tarballs
+        run: node scripts/verify-release-packages.mjs "$RUNNER_TEMP/release-artifacts"
+      - name: Publish absent packages and verify registry integrity
+        run: node scripts/release-registry.mjs publish "$RUNNER_TEMP/release-artifacts"
+
+  registry-smoke:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+      - name: Install exact registry versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d)"
+          trap 'rm -rf "$install_root"' EXIT
+
+          npm install --global --prefix "$install_root/root-prefix" \
+            --ignore-scripts --no-audit --no-fund \
+            "@ryonakae/shepherd@$VERSION"
+          "$install_root/root-prefix/bin/shepherd" help
+
+          npm install --prefix "$install_root/pi-prefix" \
+            --ignore-scripts --no-audit --no-fund \
+            "@ryonakae/shepherd-pi@$VERSION"
+          pi_root="$install_root/pi-prefix/node_modules/@ryonakae/shepherd-pi"
+          test -f "$pi_root/src/index.ts"
+          test ! -f "$pi_root/tsconfig.json"
+
+  github-release:
+    needs: registry-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if existing="$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease 2>/dev/null)"; then
+            jq -e \
+              --arg tag "$GITHUB_REF_NAME" \
+              '.tagName == $tag and .isDraft == false and .isPrerelease == false' \
+              <<<"$existing" >/dev/null
+            echo "GitHub Release $GITHUB_REF_NAME already exists and is complete"
+            exit 0
+          fi
+
+          generated="$(gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" \
+            -f target_commitish="$GITHUB_SHA")"
+          generated_body="$(jq --raw-output .body <<<"$generated")"
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat >"$notes" <<EOF
+          ## Install
+
+          \`npm install --global @ryonakae/shepherd\`
+
+          \`pi install npm:@ryonakae/shepherd-pi\`
+
+          The optional Herdr plugin remains distributed from this GitHub tag:
+          \`herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref $GITHUB_REF_NAME --yes\`
+
+          ## Changes
+
+          $generated_body
+          EOF
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$notes" \
+            --latest

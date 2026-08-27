@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyReleasePackages } from "./verify-release-packages.mjs";
 
 const args = process.argv.slice(2);
 if (args[0] === "--") args.shift();
@@ -73,6 +74,7 @@ try {
   if (outputEntries.join("\n") !== expectedEntries.join("\n")) {
     throw new Error(`Unexpected release artifacts: ${outputEntries.join(", ")}`);
   }
+  await verifyReleasePackages(output);
 
   const installRoot = join(workRoot, "install");
   const rootPrefix = join(installRoot, "root-prefix");

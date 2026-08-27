@@ -1,10 +1,10 @@
 # npm CI and Release Automation Implementation Plan
 
-**Status:** Active — approved requirements, awaiting implementation approval
+**Status:** Active — repository implementation complete; awaiting independent review and external activation
 
-**Progress:** 2 of 4 tasks complete
+**Progress:** 3 of 4 tasks complete
 
-**Next steps:** Execute Task 3 test-first. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** Run full local validation and independent review, then push the implementation once before Task 4 external activation. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -90,6 +90,8 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 - Create: `.github/workflows/release.yml` — stable-tag validation, approval-gated Trusted Publishing, registry smoke, and GitHub Release creation.
 - Create: `scripts/prepare-release.mjs` — stable-version validation and synchronized release-file updates.
 - Create: `scripts/check-release-packages.mjs` — tarball creation and isolated package smoke checks, with an output mode usable by the release workflow.
+- Create: `scripts/verify-release-packages.mjs` — bounded artifact-set and post-download integrity verification shared by package smoke and release publication.
+- Create: `scripts/release-registry.mjs` — resumable registry-state classification and root-before-Pi publication of verified tarball paths.
 - Create: `test/unit/release-automation.test.ts` — release preparation, version-reference, workflow trigger, permission, and publication-order contracts.
 - Modify: `package.json` — expose release preparation and package smoke scripts without changing published files.
 - Modify: `test/unit/package-publication.test.ts` — retain publication metadata invariants and add any closely related manifest assertions not owned by the new test.
@@ -110,7 +112,7 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 
 - [x] Task 1: Deterministic release preparation and version contracts
 - [x] Task 2: Reusable package smoke validation and hosted CI
-- [ ] Task 3: Approval-gated Trusted Publishing and release documentation
+- [x] Task 3: Approval-gated Trusted Publishing and release documentation
 - [ ] Task 4: External GitHub/npm trust configuration and non-publishing verification
 
 Implementers must reflect minor file or implementation differences in the relevant task. They must ask the user before changing requirements, Out of Scope, or public contracts.
@@ -212,6 +214,9 @@ Implementers must reflect minor file or implementation differences in the releva
 
 **Files:**
 - Create: `.github/workflows/release.yml`
+- Create: `scripts/verify-release-packages.mjs`
+- Create: `scripts/release-registry.mjs`
+- Modify: `scripts/check-release-packages.mjs`
 - Modify: `test/unit/release-automation.test.ts`
 - Modify: `docs/releasing.md`
 - Modify: `AGENTS.md`
@@ -250,6 +255,12 @@ Implementers must reflect minor file or implementation differences in the releva
 - Expected: No long-lived npm credential or OTP path is present; any output must be an explicit negative warning in documentation and reviewed manually.
 - Run: `pnpm vitest run test/unit/release-automation.test.ts -t 'release workflow'`
 - Expected: Trigger, main ancestry, artifact integrity, state classification, concrete publish flags, permission boundaries, unprivileged smoke, and release ordering contracts pass.
+
+**Implementation record (2026-08-28):**
+- Added the stable-tag release workflow with strict tag/main validation, verified artifact upload/download, `npm` Environment approval, OIDC publication, unprivileged registry smoke, and generated GitHub Release notes.
+- Added bounded artifact integrity verification and resumable registry-state publication helpers; fake-registry tests verify root-before-Pi tarball publication with public provenance flags.
+- Replaced manual publication documentation with Trusted Publishing setup, approval, immutable-tag, idempotent rerun, and conflict recovery procedures; updated AGENTS workflow ownership.
+- Validation passed: actionlint for both workflows, typecheck, 2 focused files / 20 tests, credential-reference check, and the Task 2 package smoke rerun after integrating artifact verification.
 
 ### Task 4: External GitHub/npm Trust Configuration and Non-Publishing Verification
 

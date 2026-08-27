@@ -55,6 +55,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 ## Plan / docs 運用
 
 - npmとGitHubのrelease手順は`docs/releasing.md`を正とする。公開するnpm packageはrootと`packages/shepherd-pi`の2つだけ。
+- `.github/workflows/ci.yml`はPR/`main`の検証、`.github/workflows/release.yml`はstable tagのTrusted PublishingとGitHub Releaseを担う。npmを手動publishしない。
 - Active plan は `docs/plans/` 配下に置く。完了済み plan は `docs/plans/archived/` 配下に移す。
 - 大きな plan は親 plan と子 plan に分ける。親は目的、方針、進捗、子 plan link に絞る。
 - 子 plan ディレクトリ名は親 plan ファイル名から `.md` を除いた名前と一致させる。

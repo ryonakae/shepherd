@@ -1,6 +1,6 @@
 # Releasing Shepherd
 
-Shepherd publishes two npm packages and one GitHub-distributed Herdr integration.
+Shepherd publishes two npm packages from GitHub Actions and distributes the Herdr integration from the same Git tag.
 
 | Artifact | Distribution |
 | --- | --- |
@@ -8,14 +8,54 @@ Shepherd publishes two npm packages and one GitHub-distributed Herdr integration
 | `@ryonakae/shepherd-pi` | Public npm package installed by Pi |
 | `packages/shepherd-herdr-plugin` | GitHub repository subdirectory installed by Herdr |
 
-Do not run `npm publish` from `packages/shepherd-herdr-plugin`. Its private package manifest supports local validation only.
+Do not run `npm publish` manually and do not publish `packages/shepherd-herdr-plugin`. Its private package manifest supports local validation only.
 
-## Preconditions
+## One-time trusted publishing setup
 
-Run releases from the repository root on `main`. Replace the version below with the version being released.
+The release workflow must exist as `.github/workflows/release.yml` on the default branch before configuring npm. The trusted publisher identity includes the repository, workflow filename, and GitHub Environment name, so renaming either `release.yml` or `npm` requires updating both npm packages.
+
+Create the `npm` Environment with `ryonakae` as required reviewer. Self-review remains allowed because the repository has one maintainer.
 
 ```bash
-export VERSION=0.3.1
+printf '%s\n' '{"wait_timer":0,"prevent_self_review":false,"reviewers":[{"type":"User","id":6018455}]}' \
+  | gh api --method PUT repos/ryonakae/shepherd/environments/npm --input -
+
+gh api repos/ryonakae/shepherd/environments/npm \
+  | jq -e 'any(.protection_rules[]; .type == "required_reviewers" and .prevent_self_review == false and any(.reviewers[]; .reviewer.id == 6018455))'
+```
+
+Use Node.js `24.18.0` so npm is new enough for Trusted Publishing. Authenticate npm interactively, then bind both packages to the workflow. This changes npm package settings; it does not create an npm token or repository secret.
+
+```bash
+mise exec node@24.18.0 -- npm whoami
+
+mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd \
+  --file release.yml \
+  --repo ryonakae/shepherd \
+  --env npm \
+  --allow-publish \
+  --yes
+
+mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd-pi \
+  --file release.yml \
+  --repo ryonakae/shepherd \
+  --env npm \
+  --allow-publish \
+  --yes
+
+mise exec node@24.18.0 -- npm trust list @ryonakae/shepherd --json
+mise exec node@24.18.0 -- npm trust list @ryonakae/shepherd-pi --json
+gh api repos/ryonakae/shepherd/actions/secrets --jq '.secrets[].name'
+```
+
+Both trust listings must name repository `ryonakae/shepherd`, workflow `release.yml`, Environment `npm`, and publish permission. No npm credential should be added to the Actions secret list.
+
+## Prepare a stable release
+
+Releases use stable `X.Y.Z` versions only. Run from the repository root on `main` with a clean tree synchronized to `origin/main`.
+
+```bash
+export VERSION=0.6.0
 export TAG="v$VERSION"
 export PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/installs/pnpm/11.9.0/bin:$PATH"
 
@@ -23,221 +63,128 @@ git fetch origin main
 test "$(git branch --show-current)" = "main"
 test -z "$(git status --porcelain)"
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
-test "$(npm whoami)" = "ryonakae"
-npm profile get --json | node -e '
-let input = "";
-process.stdin.on("data", (chunk) => (input += chunk));
-process.stdin.on("end", () => {
-  const profile = JSON.parse(input);
-  if (profile.email_verified !== true || profile.tfa?.mode !== "auth-and-writes") {
-    process.exit(1);
-  }
-});'
-gh auth status
 ```
 
-The npm account must have verified email and write 2FA. Never put an npm token or OTP in the repository, shell history, release notes, or chat.
-
-Confirm the version does not exist:
+Confirm neither npm version exists. Both commands must return `E404`. Stop if either prints a version or fails for another reason.
 
 ```bash
 npm view "@ryonakae/shepherd@$VERSION" version
 npm view "@ryonakae/shepherd-pi@$VERSION" version
 ```
 
-Both commands must return `E404`. Stop if either command prints a version.
-
-## Update versions
-
-Keep these files synchronized:
-
-- `package.json`
-- `packages/shepherd-pi/package.json`
-- `packages/shepherd-herdr-plugin/package.json`
-- `packages/shepherd-herdr-plugin/herdr-plugin.toml`
-
-The following command updates all four:
+Update every release-owned version reference and review the result.
 
 ```bash
-node --input-type=module <<'NODE'
-import { readFile, writeFile } from "node:fs/promises";
-
-const version = process.env.VERSION;
-if (!version) throw new Error("VERSION is required");
-
-for (const path of [
-  "package.json",
-  "packages/shepherd-pi/package.json",
-  "packages/shepherd-herdr-plugin/package.json",
-]) {
-  const manifest = JSON.parse(await readFile(path, "utf8"));
-  manifest.version = version;
-  await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
-}
-
-const tomlPath = "packages/shepherd-herdr-plugin/herdr-plugin.toml";
-const toml = await readFile(tomlPath, "utf8");
-const updated = toml.replace(/^version = "[^"]+"$/m, `version = "${version}"`);
-if (updated === toml) throw new Error("Herdr plugin version was not updated");
-await writeFile(tomlPath, updated);
-NODE
+pnpm release:prepare "$VERSION"
+git diff -- \
+  package.json \
+  packages/shepherd-pi/package.json \
+  packages/shepherd-herdr-plugin/package.json \
+  packages/shepherd-herdr-plugin/herdr-plugin.toml \
+  README.md \
+  README.ja.md \
+  packages/shepherd-herdr-plugin/README.md
 ```
 
-Review the four-file diff before continuing.
+The command accepts no `v` prefix, prerelease suffix, or build metadata. It refuses to update an already-divergent manifest or install example.
 
-## Validate source and package contents
+Validate the exact package boundary locally.
 
 ```bash
 pnpm check
 pnpm build
+pnpm package:smoke
 git diff --check
 ```
 
-`pnpm check` includes root, Pi, and Herdr package checks. The root package checker rebuilds from a clean `dist` directory and rejects source, tests, plans, nested packages, assets, and stale `worker` paths.
+`pnpm package:smoke` creates the root and Pi tarballs in a temporary directory, records their npm integrity, installs both into isolated prefixes, invokes the installed CLI, and checks the Pi package include/exclude contract.
 
-Create the two public tarballs outside the repository:
-
-```bash
-export RELEASE_TMP="$(mktemp -d)"
-npm pack --pack-destination "$RELEASE_TMP"
-(
-  cd packages/shepherd-pi
-  npm pack --pack-destination "$RELEASE_TMP"
-)
-
-EXPECTED_TARBALLS="$(printf '%s\n' \
-  "ryonakae-shepherd-$VERSION.tgz" \
-  "ryonakae-shepherd-pi-$VERSION.tgz")"
-ACTUAL_TARBALLS="$(find "$RELEASE_TMP" -maxdepth 1 -type f -name '*.tgz' \
-  -exec basename {} \; | sort)"
-test "$ACTUAL_TARBALLS" = "$EXPECTED_TARBALLS"
-```
-
-Install both tarballs in isolated prefixes:
-
-```bash
-npm install --global --prefix "$RELEASE_TMP/root-prefix" \
-  "$RELEASE_TMP/ryonakae-shepherd-$VERSION.tgz"
-"$RELEASE_TMP/root-prefix/bin/shepherd" help
-
-npm install --prefix "$RELEASE_TMP/pi-prefix" --ignore-scripts \
-  "$RELEASE_TMP/ryonakae-shepherd-pi-$VERSION.tgz"
-test -f "$RELEASE_TMP/pi-prefix/node_modules/@ryonakae/shepherd-pi/src/index.ts"
-test ! -f "$RELEASE_TMP/pi-prefix/node_modules/@ryonakae/shepherd-pi/tsconfig.json"
-```
-
-Do not continue unless both installations pass.
-
-## Commit and create a local tag
+Commit and push the reviewed version change. Wait for the `CI` workflow on `main` to succeed before creating the tag.
 
 ```bash
 git add \
   package.json \
   packages/shepherd-pi/package.json \
   packages/shepherd-herdr-plugin/package.json \
-  packages/shepherd-herdr-plugin/herdr-plugin.toml
+  packages/shepherd-herdr-plugin/herdr-plugin.toml \
+  README.md \
+  README.ja.md \
+  packages/shepherd-herdr-plugin/README.md
 git commit -m "chore(release): $VERSION"
-test -z "$(git status --porcelain)"
 git push origin main
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
-git tag -a "$TAG" -m "$TAG"
-test "$(git rev-list -n 1 "$TAG")" = "$(git rev-parse HEAD)"
 ```
 
-Keep the tag local until both npm packages have been published and verified.
+## Trigger and approve publication
 
-## Publish to npm
-
-The repository owner must run each `npm publish` command manually from an interactive terminal and let npm request the second factor. Coding agents and release automation must stop before each publication, ask the user to run the command, and continue only after the user confirms completion. Do not invoke `npm publish` from a non-interactive process or pass an OTP through `--otp`, because command arguments can be visible to other local processes.
-
-Ask the user to publish the root package from the repository root:
+Create an annotated tag on the release commit and push it once. Remote release tags are immutable: do not delete, move, or reuse one after pushing it.
 
 ```bash
-npm publish --access public
+git tag -a "$TAG" -m "$TAG"
+test "$(git rev-list -n 1 "$TAG")" = "$(git rev-parse HEAD)"
+git push origin "$TAG"
 ```
 
-After the user confirms completion, verify the exact version:
+The `Release` workflow then performs these stages:
+
+1. Validates stable tag syntax, synchronized versions, and that the tagged commit belongs to `origin/main`.
+2. Runs `pnpm check`, builds, packs, and smoke-tests both tarballs.
+3. Recomputes tarball integrity, checks existing registry state, and uploads only the two tarballs plus `release-packages.json`.
+4. Waits at the protected `npm` Environment. Review the run and approve this deployment in GitHub Actions.
+5. Downloads and re-verifies the same tarballs, then publishes the root package followed by the Pi package through npm Trusted Publishing with provenance.
+6. Installs both exact versions from npm in an unprivileged job.
+7. Creates the GitHub Release from generated changes plus install and Herdr plugin instructions.
+
+Do not approve publication if validation reports a tag/version mismatch, a commit outside `main`, an unexpected artifact, or conflicting registry integrity.
+
+## Verify the completed release
+
+After the workflow succeeds, verify every external artifact.
 
 ```bash
 npm view "@ryonakae/shepherd@$VERSION" \
-  name version dist-tags.latest repository bin --json
-```
-
-Then ask the user to publish the Pi package in a separate interactive command:
-
-```bash
-(
-  cd packages/shepherd-pi
-  npm publish --access public
-)
-```
-
-After the user confirms completion, verify the exact version:
-
-```bash
+  name version dist-tags.latest dist.integrity repository bin --json
 npm view "@ryonakae/shepherd-pi@$VERSION" \
-  name version dist-tags.latest repository peerDependencies --json
-```
-
-After a timeout or network error, query the exact version before retrying. Do not retry when `npm view` shows that version.
-
-## Verify registry installation
-
-Use a new directory so this check cannot read the local tarballs:
-
-```bash
-export REGISTRY_TMP="$(mktemp -d)"
-npm install --global --prefix "$REGISTRY_TMP/root-prefix" \
-  "@ryonakae/shepherd@$VERSION"
-"$REGISTRY_TMP/root-prefix/bin/shepherd" help
-
-npm install --prefix "$REGISTRY_TMP/pi-prefix" --ignore-scripts \
-  "@ryonakae/shepherd-pi@$VERSION"
-test -f "$REGISTRY_TMP/pi-prefix/node_modules/@ryonakae/shepherd-pi/src/index.ts"
-```
-
-## Publish the tag and GitHub Release
-
-Write release notes to `/tmp/shepherd-$VERSION-release-notes.md`. Include both npm install commands, package-content changes, validation, and the fact that Herdr still installs its plugin from GitHub.
-
-```bash
-git push origin "$TAG"
-gh release create "$TAG" \
-  --verify-tag \
-  --title "$TAG" \
-  --notes-file "/tmp/shepherd-$VERSION-release-notes.md" \
-  --latest
-```
-
-Verify every external artifact:
-
-```bash
-npm view "@ryonakae/shepherd@$VERSION" version
-npm view "@ryonakae/shepherd-pi@$VERSION" version
+  name version dist-tags.latest dist.integrity repository peerDependencies --json
 gh release view "$TAG" --json tagName,name,isDraft,isPrerelease,url,publishedAt
 gh api repos/ryonakae/shepherd/releases/latest --jq .tag_name
 git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
 test -z "$(git status --porcelain)"
 ```
 
-## Recover from a partial publication
+Both npm versions must equal `$VERSION`, both `latest` tags must point to it, and the GitHub Release must be non-draft and non-prerelease at `$TAG`.
 
-Two npm publishes cannot be atomic. Use these rules when the root version exists but the Pi package needs a content change:
+## Recover from a failed run
 
-1. Confirm the Pi version is absent with `npm view`.
-2. Delete only the local, unpushed tag: `git tag -d "$TAG"`.
-3. Export the next unused patch version: `export VERSION=0.3.2 TAG=v0.3.2`.
-4. Update all four version files and replace the Herdr tag in `README.md`, `README.ja.md`, and `packages/shepherd-herdr-plugin/README.md`.
-5. Rebuild and reinstall both tarballs.
-6. Commit the replacement version and documentation, confirm the tree is clean, push `main`, and verify `HEAD` equals `origin/main`.
-7. Create a new local tag from the pushed replacement commit.
-8. Publish and verify both packages at the replacement version.
-9. Push only the replacement tag and create only its GitHub Release.
-10. After the complete replacement exists, deprecate the orphaned root version:
+The workflow classifies each exact npm version against the verified tarball integrity:
+
+- `absent`: the version is not published.
+- `expected`: the published integrity equals the verified tarball.
+- `conflict`: the version exists with different content.
+
+Safe recovery depends on that state.
+
+### Nothing was published
+
+For a transient validation, network, or approval failure with both versions absent, rerun the same workflow on the existing tag. Do not push the tag again.
+
+### Root matches and Pi is absent
+
+Rerun the workflow. It verifies and skips the matching root version, then publishes the Pi tarball. This is the only supported partial-publication continuation.
+
+### Both packages match
+
+If registry smoke or GitHub Release creation failed, rerun the failed workflow jobs. Publication verifies and skips both matching versions before continuing downstream.
+
+### Registry content conflicts
+
+Stop if either version is `conflict`, or if Pi exists while root is absent. Do not overwrite, unpublish, move the remote tag, or blindly retry `npm publish`.
+
+Prepare the next unused patch version on `main`, run the complete validation again, and create a new tag. After the replacement release is complete, deprecate an orphaned package version if one exists:
 
 ```bash
-npm deprecate @ryonakae/shepherd@0.3.1 \
-  "Incomplete paired release; use 0.3.2"
+npm deprecate @ryonakae/shepherd@0.6.0 \
+  "Incomplete paired release; use 0.6.1"
 ```
 
-Do not move a remote tag, overwrite a GitHub Release, reuse an npm version, or unpublish a package to repair a release.
+Use the actual orphaned package and replacement versions. Never put npm tokens, OTPs, or authentication output in the repository, shell history, release notes, or chat.
