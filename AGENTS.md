@@ -11,6 +11,8 @@ Shepherd は Herdr 管理の coding agent から agent snapshot、`agent.*` even
 - `pnpm test:watch`: Vitest の watch。
 - `pnpm build`: 古い`dist`を削除してTypeScriptを出力し、`tsc-alias`でimport aliasを解決する。
 - `pnpm package:check`: root npm packageをbuildし、tarballのfile allowlistを検証する。
+- `pnpm package:smoke`: build済みのroot/Pi packageをtarball化し、隔離prefixへinstallして公開内容を検証する。
+- `pnpm release:prepare <X.Y.Z>`: 3 package manifest、Herdr plugin manifest、install例のstable versionを同期する。
 - `pnpm lint:fix`: Biome の lint/import/format fix を適用する。
 - `pnpm db:generate`: `src/db/schema.ts` から SQL migration を生成する。
 - `SHEPHERD_HOME=/tmp/shepherd pnpm db:migrate`: 指定した Shepherd home の SQLite DB に migration を適用する。

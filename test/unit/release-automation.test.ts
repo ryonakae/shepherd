@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 const execFileAsync = promisify(execFile);
 const prepareReleaseScript = new URL("../../scripts/prepare-release.mjs", import.meta.url);
@@ -65,12 +66,50 @@ afterEach(async () => {
   await Promise.all(fixtureRoots.splice(0).map((root) => rm(root, { recursive: true })));
 });
 
+describe("hosted CI", () => {
+  test("runs full package validation on pull requests and main pushes", async () => {
+    const source = await readFile(
+      new URL("../../.github/workflows/ci.yml", import.meta.url),
+      "utf8",
+    );
+    const workflow = parseYaml(source) as {
+      jobs: Record<
+        string,
+        {
+          "runs-on": string;
+          steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }>;
+        }
+      >;
+      on: { pull_request: unknown; push: { branches: string[] } };
+      permissions: Record<string, string>;
+    };
+
+    expect(workflow.on.pull_request).toBeDefined();
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    const [job] = Object.values(workflow.jobs);
+    expect(job?.["runs-on"]).toBe("ubuntu-latest");
+    const setupNode = job?.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+    const setupPnpm = job?.steps.find((step) => step.uses?.startsWith("pnpm/action-setup@"));
+    expect(setupNode?.with?.["node-version"]).toBe("24.18.0");
+    expect(setupPnpm).toBeDefined();
+    const commands = job?.steps.flatMap((step) => step.run ?? []).join("\n") ?? "";
+    expect(commands).toContain("pnpm install --frozen-lockfile");
+    expect(commands).toContain("pnpm check");
+    expect(commands).toContain("pnpm build");
+    expect(commands).toContain("pnpm package:smoke");
+    expect(commands).not.toContain("npm publish");
+  });
+});
+
 describe("release preparation", () => {
   test("keeps repository release references synchronized", async () => {
     const root = JSON.parse(
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
-    ) as { scripts?: Record<string, string>; version: string };
+    ) as { packageManager?: string; scripts?: Record<string, string>; version: string };
+    expect(root.packageManager).toBe("pnpm@11.9.0");
     expect(root.scripts?.["release:prepare"]).toBe("node scripts/prepare-release.mjs");
+    expect(root.scripts?.["package:smoke"]).toBe("node scripts/check-release-packages.mjs");
 
     for (const path of [
       "packages/shepherd-pi/package.json",

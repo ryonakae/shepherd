@@ -36,6 +36,7 @@ describe("npm publication metadata", () => {
     expect(root.scripts).toMatchObject({
       "clean:dist": "node scripts/clean-dist.mjs",
       "package:check": "node scripts/check-root-package.mjs",
+      "package:smoke": "node scripts/check-release-packages.mjs",
       "pnpm:devPreinstall": "husky",
       "release:prepare": "node scripts/prepare-release.mjs",
       prepack: "pnpm build",

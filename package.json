@@ -46,6 +46,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "package:check": "node scripts/check-root-package.mjs",
+    "package:smoke": "node scripts/check-release-packages.mjs",
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
     "pnpm:devPreinstall": "husky",
     "prepack": "pnpm build",

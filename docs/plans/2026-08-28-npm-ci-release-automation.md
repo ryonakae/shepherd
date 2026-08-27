@@ -2,9 +2,9 @@
 
 **Status:** Active — approved requirements, awaiting implementation approval
 
-**Progress:** 1 of 4 tasks complete
+**Progress:** 2 of 4 tasks complete
 
-**Next steps:** Execute Task 2 test-first. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** Execute Task 3 test-first. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -109,7 +109,7 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 ## Progress
 
 - [x] Task 1: Deterministic release preparation and version contracts
-- [ ] Task 2: Reusable package smoke validation and hosted CI
+- [x] Task 2: Reusable package smoke validation and hosted CI
 - [ ] Task 3: Approval-gated Trusted Publishing and release documentation
 - [ ] Task 4: External GitHub/npm trust configuration and non-publishing verification
 
@@ -198,6 +198,11 @@ Implementers must reflect minor file or implementation differences in the releva
 - Expected: Workflow and package metadata contracts pass.
 - Run: `pnpm build && pnpm package:smoke`
 - Expected: Two tarballs are packed and installed in isolation; installed CLI and Pi content checks pass.
+
+**Implementation record (2026-08-28):**
+- Added SHA-pinned Ubuntu CI for pull requests and `main`, using Node.js `24.18.0`, package-manager-pinned pnpm, frozen install, full checks, build, and package smoke.
+- Added `scripts/check-release-packages.mjs` and `pnpm package:smoke`; it packs build output without rerunning lifecycle scripts, writes two tarballs plus `release-packages.json`, and verifies isolated root/Pi installations.
+- Validation passed: 3 focused files / 18 tests, clean build, and real smoke installation for both `0.5.0` tarballs.
 
 ### Task 3: Approval-Gated Trusted Publishing and Release Documentation
 
