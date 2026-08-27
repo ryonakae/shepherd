@@ -49,6 +49,7 @@
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
     "pnpm:devPreinstall": "husky",
     "prepack": "pnpm build",
+    "release:prepare": "node scripts/prepare-release.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"

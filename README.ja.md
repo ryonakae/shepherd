@@ -108,7 +108,7 @@ agentが完了またはblockedになると、visibleなShepherd turnを1回開�
 任意のpluginはGitHub Releaseのtagからインストールします。
 
 ```bash
-herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.4.0 --yes
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.5.0 --yes
 ```
 
 plugin は Shepherd daemon に接続し、current Herdr workspace の compact agent row を Herdr UI に表示します。row には live name と runtime kind の column、cached history の抜粋が含まれます。Herdrはrepository subdirectoryからpluginをインストールします。npmには公開せず、CLIとPi extensionだけを使う場合は不要です。
