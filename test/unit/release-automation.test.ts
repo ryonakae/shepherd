@@ -267,7 +267,8 @@ describe("release registry state", () => {
   test.each([
     ["Pi exists before root", ["absent", "expected"]],
     ["root conflicts", ["conflict", "absent"]],
-    ["Pi conflicts", ["expected", "conflict"]],
+    ["Pi conflicts after a matching root", ["expected", "conflict"]],
+    ["Pi conflicts after an absent root", ["absent", "conflict"]],
   ] as const)("rejects %s before publishing", async (_label, states) => {
     const root = await createArtifactFixture();
     const harness = await createFakeRegistryHarness(root, [...states]);
@@ -284,9 +285,9 @@ describe("release registry state", () => {
   });
 
   test.each([
-    "ambiguous",
-    "delayed",
-  ] as const)("verifies %s publication results before continuing", async (mode) => {
+    ["ambiguous", 1],
+    ["delayed", 2],
+  ] as const)("verifies %s publication results before continuing", async (mode, rootViews) => {
     const root = await createArtifactFixture();
     const harness = await createFakeRegistryHarness(root, ["absent", "absent"], {
       "@ryonakae/shepherd": mode,
@@ -296,10 +297,28 @@ describe("release registry state", () => {
       env: harness.env,
     });
 
-    const published = (await readNpmCalls(harness.logPath)).filter(
-      ([command]) => command === "publish",
+    const calls = await readNpmCalls(harness.logPath);
+    const rootPublish = calls.findIndex(
+      ([command, path]) => command === "publish" && path?.includes("shepherd-0.6.0.tgz"),
     );
-    expect(published).toHaveLength(2);
+    const piPublish = calls.findIndex(
+      ([command, path]) => command === "publish" && path?.includes("shepherd-pi-0.6.0.tgz"),
+    );
+    expect(rootPublish).toBeGreaterThan(-1);
+    expect(piPublish).toBeGreaterThan(rootPublish);
+    expect(
+      calls
+        .slice(rootPublish + 1, piPublish)
+        .filter(
+          ([command, specifier]) => command === "view" && specifier === "@ryonakae/shepherd@0.6.0",
+        ),
+    ).toHaveLength(rootViews);
+    expect(calls.slice(piPublish + 1)).toContainEqual([
+      "view",
+      "@ryonakae/shepherd-pi@0.6.0",
+      "dist.integrity",
+      "--json",
+    ]);
   });
 
   test("stops before Pi when published root integrity conflicts", async () => {
@@ -348,14 +367,28 @@ describe("release tag validation", () => {
     fixtureRoots.push(root);
     await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
     const gitLog = join(root, "git.log");
+    await writeFile(gitLog, "");
+    const gitPath = join(root, "fake-git.mjs");
+    await writeFile(
+      gitPath,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_GIT_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+`,
+    );
+    await chmod(gitPath, 0o755);
 
     await expect(
       execFileAsync(process.execPath, [validateReleaseTagScript.pathname, tag, "commit"], {
         cwd: root,
-        env: { ...process.env, SHEPHERD_GIT_COMMAND: join(root, "missing-git") },
+        env: {
+          ...process.env,
+          FAKE_GIT_LOG: gitLog,
+          SHEPHERD_GIT_COMMAND: gitPath,
+        },
       }),
-    ).rejects.toThrow();
-    await expect(readFile(gitLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toThrow(/Usage: node scripts\/validate-release-tag/);
+    expect(await readFile(gitLog, "utf8")).toBe("");
   });
 
   test("rejects a stable tag whose version differs from package.json", async () => {

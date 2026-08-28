@@ -263,7 +263,8 @@ Implementers must reflect minor file or implementation differences in the releva
 - Added bounded artifact integrity verification and resumable registry-state publication helpers; fake-registry tests verify root-before-Pi tarball publication with public provenance flags.
 - Replaced manual publication documentation with Trusted Publishing setup, approval, immutable-tag, idempotent rerun, and conflict recovery procedures; updated AGENTS workflow ownership.
 - Initial validation passed: actionlint for both workflows, typecheck, 2 focused files / 20 tests, credential-reference check, and the Task 2 package smoke rerun after integrating artifact verification.
-- Independent review correction cycle 1 added executable stable tag/version/main ancestry tests, every allowed and rejected registry-state combination, ambiguous publication, delayed visibility retry, post-publish integrity conflict, and artifact-before-registry ordering. Corrected validation passed: actionlint, typecheck, and 2 focused files / 36 tests.
+- Independent review correction cycle 1 added executable stable tag/version/main ancestry tests, registry-state process tests, ambiguous publication, delayed visibility retry, post-publish integrity conflict, and artifact-before-registry ordering. Corrected validation passed: actionlint, typecheck, and 2 focused files / 36 tests.
+- Scoped re-review correction cycle 2 closed three remaining false-positive paths: `absent/conflict` now proves zero publication, ambiguous/delayed modes assert ordered registry verification before Pi publication, and malformed tags assert the validation-specific error with zero Git calls. Corrected validation passed: actionlint, typecheck, and 2 focused files / 37 tests.
 
 ### Task 4: External GitHub/npm Trust Configuration and Non-Publishing Verification
 
