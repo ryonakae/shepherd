@@ -17,13 +17,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.18.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm rebuild
       - id: version
         name: Validate stable tag and main ancestry
         shell: bash
@@ -31,6 +27,9 @@ jobs:
           set -euo pipefail
           version="$(node scripts/validate-release-tag.mjs "$GITHUB_REF_NAME" "$GITHUB_SHA")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm rebuild
       - name: Render release notes before publication
         shell: bash
         run: |

@@ -463,6 +463,12 @@ _2026-08-28_
       /unknown category Highlights/i,
     ],
     [
+      "category preamble prose",
+      validChangelog.replace("_2026-08-28_", "Release summary."),
+      "0.6.0",
+      /invalid text before its categories/i,
+    ],
+    [
       "empty category",
       validChangelog.replace("### Added\n\n- Adds contextual CLI help.\n", "### Added\n"),
       "0.6.0",
@@ -471,6 +477,18 @@ _2026-08-28_
     [
       "section without a bullet",
       validChangelog.replaceAll(/^- .*$/gm, "Description without a bullet."),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "bullet hidden in a code fence",
+      validChangelog.replace("- Adds contextual CLI help.", "```text\n- Hidden list marker.\n```"),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "bullet hidden in an HTML comment",
+      validChangelog.replace("- Adds contextual CLI help.", "<!--\n- Hidden list marker.\n-->"),
       "0.6.0",
       /category Added.*at least one bullet/i,
     ],
@@ -519,6 +537,19 @@ _2026-08-28_
     await expect(runReleaseNotes(root, "verify", "0.6.0", bodyPath)).resolves.toMatchObject({
       stdout: "0.6.0\n",
     });
+  });
+
+  test("rejects required blocks hidden in an HTML comment", async () => {
+    const root = await createChangelogFixture(validChangelog);
+    const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
+    const bodyPath = join(root, "release-body.md");
+    await writeFile(bodyPath, `<!--\n${rendered}\n-->\n\nVisible replacement text.\n`);
+
+    const error = await runReleaseNotes(root, "verify", "0.6.0", bodyPath).catch(
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toMatchObject({ stderr: expect.stringMatching(/required release block/i) });
   });
 
   test.each([
@@ -727,6 +758,11 @@ describe("release workflow", () => {
     expect(commands(validate)).toContain("pnpm package:smoke");
     expect(commands(validate)).toContain("release-registry.mjs check");
     expect(commands(validate)).not.toContain("|| true");
+    const validateTag = validate?.steps.findIndex((step) =>
+      step.run?.includes("validate-release-tag.mjs"),
+    );
+    const validateInstall = validate?.steps.findIndex((step) => step.run?.includes("pnpm install"));
+    const validateRebuild = validate?.steps.findIndex((step) => step.run?.includes("pnpm rebuild"));
     const validateRender = validate?.steps.findIndex((step) =>
       step.run?.includes("release-notes.mjs render"),
     );
@@ -738,7 +774,10 @@ describe("release workflow", () => {
     const validateUpload = validate?.steps.findIndex((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
-    expect(validateRender).toBeGreaterThan(-1);
+    expect(validateTag).toBeGreaterThan(-1);
+    expect(validateInstall).toBeGreaterThan(validateTag ?? -1);
+    expect(validateRebuild).toBeGreaterThan(validateInstall ?? -1);
+    expect(validateRender).toBeGreaterThan(validateRebuild ?? -1);
     expect(validateBuild).toBeGreaterThan(validateRender ?? -1);
     expect(validateSmoke).toBeGreaterThan(validateBuild ?? -1);
     expect(validateRegistry).toBeGreaterThan(validateSmoke ?? -1);

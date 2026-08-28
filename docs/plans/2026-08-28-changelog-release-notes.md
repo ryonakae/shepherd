@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** Validation and independent review
+**Status:** Correction cycle 1 validation
 
-**Next steps:** Commit the completed maintainer documentation, run every Final Validation command, obtain independent review of `947f77b..HEAD`, resolve any blocking findings, and archive the plan.
+**Next steps:** Self-review and validate the scanner, recovery verifier, workflow order, and clarified documentation; commit the correction and request a full re-review because the Contract changed.
 
 ## Problem Statement
 
@@ -66,7 +66,7 @@ _2026-09-01_
 - **Breaking:** A removed or incompatible behavior.
 ```
 
-- The italic ISO date line is preserved when present but is not required by the validator.
+- Before the first category, a section may contain either no content or one italic ISO date line. Other prose, comments, or Markdown blocks are invalid.
 - Every category present must contain at least one top-level `- ` bullet; wrapped bullet continuation lines remain part of the authored Markdown.
 - The first release heading is the latest release. Default repository validation compares it with `package.json.version`.
 - The release-note tool exposes CLI operations equivalent to:
@@ -342,6 +342,19 @@ Implementers must reflect minor file changes or implementation differences in th
 - [ ] Requirement Coverage has no unsupported or unverified row.
 - [ ] Plan and implementation diff agree; Progress reflects completed validations.
 - [ ] After every item above succeeds and the implementation commit is complete, move this file unchanged in name to `docs/plans/archived/2026-08-28-changelog-release-notes.md` and commit that move separately as docs-only.
+
+## Independent Review Gate
+
+- Review range: `947f77bc1765b1d4a58003f137d623bafad76409..6f87e5844f9a0b04332ef3162b23d569f8619640`.
+- Validation supplied to reviewer: focused tests 55 passed; full suite 303 passed; `pnpm check`, build, package smoke, render/verify, history-source checks, and `git diff --check` passed on the reviewed HEAD.
+- Adopted high finding: top-level bullet validation currently counts `- ` lines hidden inside fenced code or HTML comments; R2/R3 require visible top-level bullets.
+- Adopted high finding: existing-release verification currently accepts all required blocks hidden inside an HTML comment; R9 requires visible top-level authored/generated sections.
+- Adopted high finding: workflow executes `pnpm rebuild` before tag/package/changelog/main-ancestry validation; R7 requires the gate before package build or lifecycle execution.
+- Resolved decision: the user confirmed that only the optional italic ISO date may appear before the first category; other prose remains invalid.
+- Medium/low left for completion report: renderer metadata is hard-coded rather than derived from package metadata; documentation overstates all-I/O-failure atomicity instead of limiting the guarantee to validation failures.
+- Correction cycle 1 implementation: added comment/fence-aware top-level Markdown scanning, visible ordered required-section verification, and pre-install tag validation; documented the date-only preamble contract.
+- Correction cycle 1 affected validation: release automation passed all 58 tests, including the four reviewer reproductions.
+- Correction cycles completed: 0 of 2; the cycle completes after correction commit and re-review.
 
 ## Risks and Open Questions
 

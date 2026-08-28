@@ -72,7 +72,7 @@ npm view "@ryonakae/shepherd@$VERSION" version
 npm view "@ryonakae/shepherd-pi@$VERSION" version
 ```
 
-Add the target section to the top of `CHANGELOG.md` before changing package versions. Use a `## vX.Y.Z` heading and at least one bullet under an allowed category: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`. Start an incompatible-change bullet with `**Breaking:**`.
+Add the target section to the top of `CHANGELOG.md` before changing package versions. Use a `## vX.Y.Z` heading and at least one bullet under an allowed category: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`. Before the first category, include only the optional italic ISO date; do not add summary prose, comments, or other Markdown blocks. Start an incompatible-change bullet with `**Breaking:**`.
 
 ```markdown
 ## v0.7.0

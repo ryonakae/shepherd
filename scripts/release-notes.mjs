@@ -23,20 +23,96 @@ function compareVersions(left, right) {
   return 0;
 }
 
+function fenceMarker(line) {
+  const match = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return match ? { character: match[1][0], length: match[1].length } : undefined;
+}
+
+function closesFence(line, fence) {
+  const content = /^ {0,3}(\S.*)$/.exec(line)?.[1]?.trimEnd();
+  return (
+    content?.length >= fence.length &&
+    [...content].every((character) => character === fence.character)
+  );
+}
+
+function maskHtmlComments(source) {
+  let fence;
+  let inComment = false;
+  return source
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => {
+      if (fence) {
+        if (closesFence(line, fence)) fence = undefined;
+        return line;
+      }
+
+      const masked = [...line];
+      let cursor = 0;
+      while (cursor < line.length) {
+        if (inComment) {
+          const end = line.indexOf("-->", cursor);
+          const limit = end === -1 ? line.length : end + 3;
+          masked.fill(" ", cursor, limit);
+          cursor = limit;
+          if (end === -1) break;
+          inComment = false;
+          continue;
+        }
+
+        const start = line.indexOf("<!--", cursor);
+        if (start === -1) break;
+        const end = line.indexOf("-->", start + 4);
+        const limit = end === -1 ? line.length : end + 3;
+        masked.fill(" ", start, limit);
+        cursor = limit;
+        inComment = end === -1;
+      }
+
+      const result = masked.join("");
+      fence = fenceMarker(result);
+      return result;
+    })
+    .join("\n");
+}
+
+function visibleTopLevelLines(source) {
+  const masked = maskHtmlComments(source);
+  const lines = [];
+  let fence;
+  let offset = 0;
+  for (const line of masked.split("\n")) {
+    if (fence) {
+      if (closesFence(line, fence)) fence = undefined;
+    } else {
+      const opening = fenceMarker(line);
+      if (opening) {
+        fence = opening;
+      } else {
+        lines.push({ end: offset + line.length, start: offset, text: line.trimEnd() });
+      }
+    }
+    offset += line.length + 1;
+  }
+  return lines;
+}
+
 function validateReleaseBody(version, body) {
-  const categories = [...body.matchAll(/^### (.+)$/gm)];
+  const visibleLines = visibleTopLevelLines(body);
+  const categories = visibleLines.filter((line) => /^### .+$/.test(line.text));
   if (categories.length === 0) {
     throw new Error(`CHANGELOG.md: version ${version} requires at least one category`);
   }
 
-  const preamble = body.slice(0, categories[0].index).trim();
+  const preamble = body.slice(0, categories[0].start).trim();
   if (preamble && !/^_\d{4}-\d{2}-\d{2}_$/.test(preamble)) {
     throw new Error(`CHANGELOG.md: version ${version} has invalid text before its categories`);
   }
 
   const seen = new Set();
-  for (const [index, categoryMatch] of categories.entries()) {
-    const category = categoryMatch[1].trim();
+  for (const [index, categoryLine] of categories.entries()) {
+    const category = categoryLine.text.slice(4).trim();
     if (!allowedCategories.has(category)) {
       throw new Error(`CHANGELOG.md: version ${version} has unknown category ${category}`);
     }
@@ -45,10 +121,11 @@ function validateReleaseBody(version, body) {
     }
     seen.add(category);
 
-    const contentStart = categoryMatch.index + categoryMatch[0].length;
-    const contentEnd = categories[index + 1]?.index ?? body.length;
-    const categoryBody = body.slice(contentStart, contentEnd);
-    if (!/^- \S.*$/m.test(categoryBody)) {
+    const contentEnd = categories[index + 1]?.start ?? body.length;
+    const hasBullet = visibleLines.some(
+      (line) => line.start >= categoryLine.end && line.start < contentEnd && /^- \S/.test(line.text),
+    );
+    if (!hasBullet) {
       throw new Error(
         `CHANGELOG.md: version ${version} category ${category} requires at least one bullet`,
       );
@@ -56,8 +133,9 @@ function validateReleaseBody(version, body) {
   }
 }
 
-export function parseChangelog(source) {
-  const headings = [...source.matchAll(/^## (.+)$/gm)];
+export function parseChangelog(input) {
+  const source = input.replace(/\r\n?/g, "\n");
+  const headings = visibleTopLevelLines(source).filter((line) => /^## .+$/.test(line.text));
   if (headings.length === 0) {
     throw new Error("CHANGELOG.md: requires at least one version section");
   }
@@ -65,7 +143,7 @@ export function parseChangelog(source) {
   const releases = [];
   const seen = new Set();
   for (const [index, heading] of headings.entries()) {
-    const title = heading[1].trim();
+    const title = heading.text.slice(3).trim();
     const match = /^v(.+)$/.exec(title);
     if (!match || !stableVersion.test(match[1])) {
       throw new Error(`CHANGELOG.md: invalid release heading ${title}`);
@@ -76,8 +154,8 @@ export function parseChangelog(source) {
     }
     seen.add(version);
 
-    const bodyStart = heading.index + heading[0].length;
-    const bodyEnd = headings[index + 1]?.index ?? source.length;
+    const bodyStart = heading.end;
+    const bodyEnd = headings[index + 1]?.start ?? source.length;
     const body = source.slice(bodyStart, bodyEnd).trim();
     validateReleaseBody(version, body);
     releases.push({ body, version });
@@ -120,15 +198,25 @@ function normalizeMarkdown(source) {
     .trim();
 }
 
+function releaseStructure(markdown) {
+  const normalized = normalizeMarkdown(markdown);
+  const visibleLines = visibleTopLevelLines(normalized);
+  const title = visibleLines.find((line) => /^# Shepherd v\S+$/.test(line.text));
+  const headings = visibleLines.filter((line) => /^## .+$/.test(line.text));
+  return { headings, normalized, title, visibleLines };
+}
+
 function requiredReleaseBlocks(rendered) {
-  const normalized = normalizeMarkdown(rendered);
-  const headings = [...normalized.matchAll(/^## (Release Notes|Install|Validation|Full changelog)$/gm)];
-  const blocks = [`# Shepherd ${/^# Shepherd (v\S+)$/m.exec(normalized)?.[1]}`];
-  for (const [index, heading] of headings.entries()) {
-    const end = headings[index + 1]?.index ?? normalized.length;
-    blocks.push(normalized.slice(heading.index, end).trim());
-  }
-  return blocks;
+  const { headings, normalized, title } = releaseStructure(rendered);
+  return {
+    blocks: headings.map((heading, index) => ({
+      content: normalizeMarkdown(
+        normalized.slice(heading.start, headings[index + 1]?.start ?? normalized.length),
+      ),
+      heading: heading.text,
+    })),
+    title: title?.text,
+  };
 }
 
 export async function renderReleaseNotes(version, root = process.cwd()) {
@@ -176,12 +264,28 @@ https://github.com/ryonakae/shepherd/compare/v${previous.version}...v${version}
 }
 
 export async function verifyReleaseNotesBody(version, body, root = process.cwd()) {
-  const expected = await renderReleaseNotes(version, root);
-  const normalizedBody = normalizeMarkdown(body);
-  for (const block of requiredReleaseBlocks(expected)) {
-    if (!normalizedBody.includes(block)) {
-      throw new Error(`GitHub Release v${version}: missing or altered required release block ${block.split("\n")[0]}`);
+  const expected = requiredReleaseBlocks(await renderReleaseNotes(version, root));
+  const actual = releaseStructure(maskHtmlComments(body));
+  if (!expected.title || !actual.visibleLines?.some((line) => line.text === expected.title)) {
+    throw new Error(`GitHub Release v${version}: missing or altered required release block ${expected.title}`);
+  }
+
+  let headingIndex = 0;
+  for (const block of expected.blocks) {
+    const matchIndex = actual.headings.findIndex(
+      (heading, index) => index >= headingIndex && heading.text === block.heading,
+    );
+    if (matchIndex === -1) {
+      throw new Error(`GitHub Release v${version}: missing or altered required release block ${block.heading}`);
     }
+    const heading = actual.headings[matchIndex];
+    const content = normalizeMarkdown(
+      actual.normalized.slice(heading.start, actual.headings[matchIndex + 1]?.start ?? actual.normalized.length),
+    );
+    if (!content.startsWith(block.content)) {
+      throw new Error(`GitHub Release v${version}: missing or altered required release block ${block.heading}`);
+    }
+    headingIndex = matchIndex + 1;
   }
 }
 
