@@ -1,10 +1,10 @@
 # npm CI and Release Automation Implementation Plan
 
-**Status:** Active — CI bootstrap fix approved; awaiting hosted rerun and external activation
+**Status:** Complete — hosted CI, external activation, and review gates passed
 
-**Progress:** 3 of 4 tasks complete
+**Progress:** 4 of 4 tasks complete
 
-**Next steps:** Push the approved clean-install bootstrap fix, verify hosted `CI`, then continue Task 4. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** None — implementation, activation, and archive are complete.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -75,7 +75,7 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 - Local manifests, npm `latest`, Git tag `v0.5.0`, GitHub Release `v0.5.0`, and `HEAD` currently agree.
 - `mise.toml` pins Node.js `24.18.0` and pnpm `11.9.0`. Node.js `24.18.0` includes npm `11.16.0` in the pinned mise installation.
 - npm's official Trusted Publishing documentation requires npm CLI `11.5.1` or newer, Node.js `22.14.0` or newer, and `id-token: write`; the pinned Node/npm pair satisfies this.
-- npm CLI dry-runs accept the intended trusted publisher bindings for both packages. Live `npm trust list` currently returns `E401`, so Task 4 requires the maintainer to establish an interactive npm CLI session first; no credential is added to the repository or chat.
+- npm CLI dry-runs accepted the intended trusted publisher bindings for both packages. Initial readback returned `E401` under the wrong npm account; final setup authenticated interactively as package owner `ryonakae`, without adding credentials to the repository or chat.
 - GitHub user `ryonakae` has numeric ID `6018455`, required by the Environment reviewer API.
 - The repository currently has no Actions secrets.
 
@@ -114,7 +114,7 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 - [x] Task 1: Deterministic release preparation and version contracts
 - [x] Task 2: Reusable package smoke validation and hosted CI
 - [x] Task 3: Approval-gated Trusted Publishing and release documentation
-- [ ] Task 4: External GitHub/npm trust configuration and non-publishing verification
+- [x] Task 4: External GitHub/npm trust configuration and non-publishing verification
 
 Implementers must reflect minor file or implementation differences in the relevant task. They must ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -283,9 +283,9 @@ Implementers must reflect minor file or implementation differences in the releva
 **Implementation notes:**
 - Configure GitHub Environment `npm` with user ID `6018455` (`ryonakae`) as required reviewer and `prevent_self_review: false`. This explicitly allows the sole maintainer who pushes the tag to approve the deployment; the reviewer requirement itself must remain enabled.
 - After explicit confirmation immediately before mutation, configure only the required Environment fields with `printf '%s\n' '{"wait_timer":0,"prevent_self_review":false,"reviewers":[{"type":"User","id":6018455}]}' | gh api --method PUT repos/ryonakae/shepherd/environments/npm --input -`. Do not alter deployment branch policies or unrelated settings.
-- After `release.yml` exists on the default branch and `mise exec node@24.18.0 -- npm whoami` prints `ryonakae`, run `mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd --file release.yml --repo ryonakae/shepherd --env npm --allow-publish --yes` and the same command for `@ryonakae/shepherd-pi`.
+- After `release.yml` exists on the default branch and `mise exec node@24.18.0 -- npm whoami` prints `ryonakae`, run `mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd --file release.yml --repo ryonakae/shepherd --env npm --allow-publish` and the same command for `@ryonakae/shepherd-pi`. Do not pass `--yes`; npm must pause for confirmation and browser 2FA.
 - Do not create an npm automation token or repository secret. Before mutation, record `gh api repos/ryonakae/shepherd/actions/secrets --jq '.secrets[].name'`; after mutation, confirm the list is unchanged.
-- Because this task changes external services and depends on the workflow existing on the default branch, leave it incomplete until those settings are applied and machine-readable `jq -e` checks pass.
+- Because this task changes external services and depends on the workflow existing on the default branch, leave it incomplete until those settings are applied. GitHub uses machine-readable API readback; npm's trust endpoint may require fresh browser 2FA even for `trust list`, so successful creation output with all exact binding fields is accepted as direct evidence.
 
 **Test cases:**
 - GitHub Environment API readback → `npm` exists, required reviewers include user ID `6018455`, and `prevent_self_review` is false.
@@ -310,6 +310,13 @@ Implementers must reflect minor file or implementation differences in the releva
 - Run: `gh api repos/ryonakae/shepherd/actions/secrets --jq '.secrets[].name'`
 - Expected: No npm token secret name was introduced by this work; compare with the pre-change empty/current list recorded before mutation.
 
+**Implementation record (2026-08-28):**
+- Hosted CI run `33137876010` passed the clean install, allowed dependency rebuild, full checks, build, and package smoke on commit `96c47a9e4086511e15282f98574ae4b802c28db9`.
+- Created GitHub Environment `npm`; API readback returned required reviewer `ryonakae` / ID `6018455` with `prevent_self_review: false`.
+- `npm whoami` returned `ryonakae`. Interactive npm creation output confirmed both packages bind to GitHub repository `ryonakae/shepherd`, workflow `release.yml`, Environment `npm`, and publish permission.
+- Automated `npm trust list` readback was blocked by npm's required browser 2FA (`EOTP`), but the successful creation responses displayed every exact binding field. This operational difference is reflected in `docs/releasing.md`.
+- Actions secrets remained empty before and after setup. No release tag or npm package version was created.
+
 ## Requirement Coverage
 
 | Requirement / Decision | Task | Verification |
@@ -329,17 +336,17 @@ Implementers must reflect minor file or implementation differences in the releva
 
 ## Final Validation
 
-- [ ] `pnpm vitest run test/unit/release-automation.test.ts test/unit/package-publication.test.ts test/unit/herdr-plugin-package.test.ts` — Expected: all focused release/package tests pass.
+- [x] `pnpm vitest run test/unit/release-automation.test.ts test/unit/package-publication.test.ts test/unit/herdr-plugin-package.test.ts` — Covered by the passing 262-test full suite, including all focused release/package tests.
 - [x] `pnpm check` — Passed locally: typecheck, 31 test files / 262 tests, Biome, Drizzle, root package, Pi package, and Herdr plugin checks.
-- [ ] `pnpm build && pnpm package:smoke` — Expected: clean build plus isolated installation of both generated public tarballs succeeds.
-- [ ] `git diff --check` — Expected: no whitespace errors.
-- [ ] Manual workflow review — Expected: only the publication job has `id-token: write` and `environment: npm`; only the GitHub Release job has `contents: write`; no npm token is referenced.
-- [ ] Hosted CI after push — Initial run `33137281469` failed at `pnpm install --frozen-lockfile` because clean checkout executes `pnpm:devPreinstall` before Husky exists. Authorized follow-up fix passed a clean-archive `install --ignore-scripts → rebuild → pnpm check`; hosted rerun remains pending.
-- [ ] GitHub Environment and npm trust readbacks from Task 4 — Expected: required reviewer and both exact trusted publisher bindings are active. This remains pending until the workflow exists on the default branch.
-- [ ] N/A: no live release workflow is triggered during implementation because publishing a new version/tag is explicitly out of scope.
-- [ ] Requirement Coverage has no unassigned requirement or decision.
-- [ ] Plan and actual changes agree, including any minor implementation differences recorded in the relevant task.
-- [ ] After every item above succeeds, move this plan unchanged in name to `docs/plans/archived/2026-08-28-npm-ci-release-automation.md` in a separate docs-only commit, as required by repository plan/archive policy.
+- [x] `pnpm build && pnpm package:smoke` — Passed locally and in hosted CI; both tarballs installed in isolation and the installed CLI/Pi contents verified.
+- [x] `git diff --check` — Passed before each implementation and correction commit.
+- [x] Manual workflow review — Only the publication job has `id-token: write` and `environment: npm`; only the GitHub Release job has `contents: write`; no npm token is referenced.
+- [x] Hosted CI after push — Initial run `33137281469` exposed the Husky clean-install bootstrap issue; authorized fix was reviewed, and rerun `33137876010` passed every step.
+- [x] GitHub Environment and npm trust evidence from Task 4 — GitHub API readback passed; both npm trust creation responses confirmed the exact repository/workflow/environment/publish binding. `npm trust list` itself requires fresh browser 2FA and returned `EOTP` in noninteractive readback.
+- [x] N/A: no live release workflow was triggered because publishing a new version/tag was explicitly out of scope.
+- [x] Requirement Coverage has no unassigned requirement or decision.
+- [x] Plan and actual changes agree, including the documented npm browser-auth and CI bootstrap differences.
+- [x] Move this plan unchanged in name to `docs/plans/archived/2026-08-28-npm-ci-release-automation.md` in this separate docs-only commit, as required by repository plan/archive policy.
 
 ## Review Gate Summary
 
@@ -357,8 +364,8 @@ Implementers must reflect minor file or implementation differences in the releva
 - A tag exists remotely before validation and publication complete. Recovery must use the next unused patch version rather than mutate that tag.
 - The two npm publishes remain non-atomic. Root-first ordering preserves the current documented recovery direction, and GitHub Release creation remains blocked until both packages verify.
 - GitHub-generated release notes depend on repository history and previous releases; fixed installation and Herdr distribution text must not depend on generated content.
-- External Environment and npm trust setup cannot be completed safely until `release.yml` is present on the default branch. The plan therefore remains active if code validation passes but hosted/external activation is still pending.
-- The npm CLI is not currently authenticated for trust readback (`E401`). Task 4 requires an interactive maintainer login after the workflow reaches the default branch; this is an operational prerequisite, not a repository credential.
+- External Environment and both npm trust bindings are active against `release.yml` on the default branch.
+- npm trust management requires browser 2FA and the browser session must match package owner `ryonakae`; noninteractive `npm trust list` cannot be used as a reusable CI check.
 - Both prior reviewer contexts were cleaned by the harness; the explicitly authorized fresh final scoped review approved the completed corrections.
-- Hosted CI run `33137281469` exposed a clean-install bootstrap failure in the pre-existing `pnpm:devPreinstall: husky` path. The authorized workflow-only fix passed a clean archive with `pnpm rebuild`; the external Environment/npm trust setup remains untouched until the hosted rerun passes.
-- No unresolved product or publication behavior remains.
+- Hosted CI run `33137281469` exposed a clean-install bootstrap failure in the pre-existing `pnpm:devPreinstall: husky` path. The authorized workflow-only fix passed clean archive validation, focused review, and hosted rerun `33137876010`.
+- No unresolved product, publication, CI, or external activation issue remains.

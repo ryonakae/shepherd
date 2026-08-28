@@ -24,7 +24,9 @@ gh api repos/ryonakae/shepherd/environments/npm \
   | jq -e 'any(.protection_rules[]; .type == "required_reviewers" and .prevent_self_review == false and any(.reviewers[]; .reviewer.id == 6018455))'
 ```
 
-Use Node.js `24.18.0` so npm is new enough for Trusted Publishing. Authenticate npm interactively, then bind both packages to the workflow. This changes npm package settings; it does not create an npm token or repository secret.
+Use Node.js `24.18.0` so npm is new enough for Trusted Publishing. Authenticate npm interactively as the package owner; `npm whoami` must print `ryonakae`. The npm CLI token and browser session are independent. If web authentication opens another account, copy the displayed authentication URL into a private browser window already signed in as `ryonakae`. Never put that URL in release notes or chat.
+
+Bind both packages to the workflow without `--yes` so npm can pause for confirmation and browser 2FA. This changes npm package settings; it does not create an npm token or repository secret.
 
 ```bash
 mise exec node@24.18.0 -- npm whoami
@@ -33,22 +35,20 @@ mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd \
   --file release.yml \
   --repo ryonakae/shepherd \
   --env npm \
-  --allow-publish \
-  --yes
+  --allow-publish
 
 mise exec node@24.18.0 -- npm trust github @ryonakae/shepherd-pi \
   --file release.yml \
   --repo ryonakae/shepherd \
   --env npm \
-  --allow-publish \
-  --yes
+  --allow-publish
 
 mise exec node@24.18.0 -- npm trust list @ryonakae/shepherd --json
 mise exec node@24.18.0 -- npm trust list @ryonakae/shepherd-pi --json
 gh api repos/ryonakae/shepherd/actions/secrets --jq '.secrets[].name'
 ```
 
-Both trust listings must name repository `ryonakae/shepherd`, workflow `release.yml`, Environment `npm`, and publish permission. No npm credential should be added to the Actions secret list.
+The successful creation output and both trust listings must name repository `ryonakae/shepherd`, workflow `release.yml`, Environment `npm`, and publish permission. `npm trust list` may require a fresh browser 2FA flow. No npm credential should be added to the Actions secret list.
 
 ## Prepare a stable release
 
