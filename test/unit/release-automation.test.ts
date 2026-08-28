@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const prepareReleaseScript = new URL("../../scripts/prepare-release.mjs", import.meta.url);
 const verifyReleaseScript = new URL("../../scripts/verify-release-packages.mjs", import.meta.url);
 const releaseRegistryScript = new URL("../../scripts/release-registry.mjs", import.meta.url);
+const validateReleaseTagScript = new URL("../../scripts/validate-release-tag.mjs", import.meta.url);
 const fixtureRoots: string[] = [];
 const releasePaths = [
   "package.json",
@@ -81,6 +82,94 @@ async function createArtifactFixture(version = "0.6.0"): Promise<string> {
   return root;
 }
 
+type RegistryState = "absent" | "conflict" | "expected";
+type PublishMode = "ambiguous" | "conflict" | "delayed" | "success";
+
+async function createFakeRegistryHarness(
+  artifactRoot: string,
+  states: [RegistryState, RegistryState],
+  modes: Partial<Record<string, PublishMode>> = {},
+) {
+  const harness = await mkdtemp(join(tmpdir(), "shepherd-registry-"));
+  fixtureRoots.push(harness);
+  const manifest = JSON.parse(
+    await readFile(join(artifactRoot, "release-packages.json"), "utf8"),
+  ) as { packages: Array<{ integrity: string; name: string }> };
+  const integrities = Object.fromEntries(
+    manifest.packages.map((entry, index) => [
+      entry.name,
+      states[index] === "expected"
+        ? entry.integrity
+        : states[index] === "conflict"
+          ? "sha512-conflict"
+          : null,
+    ]),
+  );
+  const statePath = join(harness, "registry-state.json");
+  const logPath = join(harness, "npm-log.jsonl");
+  const npmPath = join(harness, "fake-npm.mjs");
+  await writeFile(statePath, JSON.stringify({ delays: {}, integrities, modes }));
+  await writeFile(logPath, "");
+  await writeFile(
+    npmPath,
+    `#!/usr/bin/env node
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_NPM_LOG_FILE, JSON.stringify(args) + "\\n");
+const state = JSON.parse(readFileSync(process.env.FAKE_NPM_STATE_FILE, "utf8"));
+if (args[0] === "view") {
+  const name = args[1].replace(/@0\\.6\\.0$/, "");
+  if ((state.delays[name] ?? 0) > 0) {
+    state.delays[name] -= 1;
+    writeFileSync(process.env.FAKE_NPM_STATE_FILE, JSON.stringify(state));
+    process.stderr.write("npm error code E404\\n");
+    process.exit(1);
+  }
+  const integrity = state.integrities[name];
+  if (!integrity) {
+    process.stderr.write("npm error code E404\\n");
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify(integrity));
+} else if (args[0] === "publish") {
+  const artifacts = dirname(args[1]);
+  const manifest = JSON.parse(readFileSync(join(artifacts, "release-packages.json"), "utf8"));
+  const entry = manifest.packages.find((candidate) => candidate.filename === basename(args[1]));
+  const mode = state.modes[entry.name] ?? "success";
+  state.integrities[entry.name] = mode === "conflict" ? "sha512-conflict" : entry.integrity;
+  if (mode === "delayed") state.delays[entry.name] = 1;
+  writeFileSync(process.env.FAKE_NPM_STATE_FILE, JSON.stringify(state));
+  if (mode === "ambiguous") process.exit(1);
+} else {
+  process.exit(2);
+}
+`,
+  );
+  await chmod(npmPath, 0o755);
+  return {
+    env: {
+      ...process.env,
+      FAKE_NPM_LOG_FILE: logPath,
+      FAKE_NPM_STATE_FILE: statePath,
+      SHEPHERD_NPM_COMMAND: npmPath,
+      SHEPHERD_REGISTRY_RETRY_ATTEMPTS: "3",
+      SHEPHERD_REGISTRY_RETRY_DELAY_MS: "1",
+    },
+    logPath,
+  };
+}
+
+async function readNpmCalls(logPath: string): Promise<string[][]> {
+  const log = await readFile(logPath, "utf8");
+  return log.trim()
+    ? log
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as string[])
+    : [];
+}
+
 async function readReleaseFiles(root: string): Promise<Map<string, string>> {
   return new Map(
     await Promise.all(
@@ -146,62 +235,187 @@ describe("release registry state", () => {
     expect(() => assertReleaseState(["expected", "conflict"])).toThrow();
   });
 
-  test("publishes absent packages in root-before-Pi order", async () => {
+  test.each([
+    ["publishes both absent packages", ["absent", "absent"], ["shepherd", "shepherd-pi"]],
+    ["resumes with an absent Pi package", ["expected", "absent"], ["shepherd-pi"]],
+    ["skips two matching packages", ["expected", "expected"], []],
+  ] as const)("%s", async (_label, states, expectedPublished) => {
     const root = await createArtifactFixture();
-    const harness = await mkdtemp(join(tmpdir(), "shepherd-registry-"));
-    fixtureRoots.push(harness);
-    const statePath = join(harness, "registry-state.json");
-    const logPath = join(harness, "publish-log.jsonl");
-    const npmPath = join(harness, "fake-npm.mjs");
-    await writeFile(statePath, JSON.stringify({}));
-    await writeFile(
-      npmPath,
-      `#!/usr/bin/env node
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-const args = process.argv.slice(2);
-const state = JSON.parse(readFileSync(process.env.FAKE_NPM_STATE_FILE, "utf8"));
-if (args[0] === "view") {
-  const name = args[1].replace(/@0\\.6\\.0$/, "");
-  if (!state[name]) {
-    process.stderr.write("npm error code E404\\n");
-    process.exit(1);
-  }
-  process.stdout.write(JSON.stringify(state[name]));
-} else if (args[0] === "publish") {
-  const artifacts = dirname(args[1]);
-  const manifest = JSON.parse(readFileSync(join(artifacts, "release-packages.json"), "utf8"));
-  const entry = manifest.packages.find((candidate) => candidate.filename === basename(args[1]));
-  state[entry.name] = entry.integrity;
-  writeFileSync(process.env.FAKE_NPM_STATE_FILE, JSON.stringify(state));
-  appendFileSync(process.env.FAKE_NPM_LOG_FILE, JSON.stringify(args) + "\\n");
-} else {
-  process.exit(2);
-}
-`,
-    );
-    await chmod(npmPath, 0o755);
+    const harness = await createFakeRegistryHarness(root, [...states]);
 
     await execFileAsync(process.execPath, [releaseRegistryScript.pathname, "publish", root], {
-      env: {
-        ...process.env,
-        FAKE_NPM_LOG_FILE: logPath,
-        FAKE_NPM_STATE_FILE: statePath,
-        SHEPHERD_NPM_COMMAND: npmPath,
-      },
+      env: harness.env,
     });
 
-    const published = (await readFile(logPath, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as string[]);
-    expect(published.map(([command, path]) => [command, path?.split("/").at(-1)])).toEqual([
-      ["publish", "ryonakae-shepherd-0.6.0.tgz"],
-      ["publish", "ryonakae-shepherd-pi-0.6.0.tgz"],
-    ]);
+    const published = (await readNpmCalls(harness.logPath)).filter(
+      ([command]) => command === "publish",
+    );
+    expect(
+      published.map(([, path]) =>
+        path
+          ?.split("/")
+          .at(-1)
+          ?.replace(/^ryonakae-/, "")
+          .replace(/-0\.6\.0\.tgz$/, ""),
+      ),
+    ).toEqual(expectedPublished);
     for (const args of published) {
       expect(args.slice(2)).toEqual(["--access", "public", "--provenance"]);
     }
+  });
+
+  test.each([
+    ["Pi exists before root", ["absent", "expected"]],
+    ["root conflicts", ["conflict", "absent"]],
+    ["Pi conflicts", ["expected", "conflict"]],
+  ] as const)("rejects %s before publishing", async (_label, states) => {
+    const root = await createArtifactFixture();
+    const harness = await createFakeRegistryHarness(root, [...states]);
+
+    await expect(
+      execFileAsync(process.execPath, [releaseRegistryScript.pathname, "publish", root], {
+        env: harness.env,
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      (await readNpmCalls(harness.logPath)).filter(([command]) => command === "publish"),
+    ).toEqual([]);
+  });
+
+  test.each([
+    "ambiguous",
+    "delayed",
+  ] as const)("verifies %s publication results before continuing", async (mode) => {
+    const root = await createArtifactFixture();
+    const harness = await createFakeRegistryHarness(root, ["absent", "absent"], {
+      "@ryonakae/shepherd": mode,
+    });
+
+    await execFileAsync(process.execPath, [releaseRegistryScript.pathname, "publish", root], {
+      env: harness.env,
+    });
+
+    const published = (await readNpmCalls(harness.logPath)).filter(
+      ([command]) => command === "publish",
+    );
+    expect(published).toHaveLength(2);
+  });
+
+  test("stops before Pi when published root integrity conflicts", async () => {
+    const root = await createArtifactFixture();
+    const harness = await createFakeRegistryHarness(root, ["absent", "absent"], {
+      "@ryonakae/shepherd": "conflict",
+    });
+
+    await expect(
+      execFileAsync(process.execPath, [releaseRegistryScript.pathname, "publish", root], {
+        env: harness.env,
+      }),
+    ).rejects.toThrow(/integrity conflicts/i);
+
+    const published = (await readNpmCalls(harness.logPath)).filter(
+      ([command]) => command === "publish",
+    );
+    expect(published.map(([, path]) => path?.split("/").at(-1))).toEqual([
+      "ryonakae-shepherd-0.6.0.tgz",
+    ]);
+  });
+
+  test("verifies artifact bytes before reading registry state", async () => {
+    const root = await createArtifactFixture();
+    const harness = await createFakeRegistryHarness(root, ["absent", "absent"]);
+    await writeFile(join(root, "ryonakae-shepherd-0.6.0.tgz"), "modified");
+
+    await expect(
+      execFileAsync(process.execPath, [releaseRegistryScript.pathname, "check", root], {
+        env: harness.env,
+      }),
+    ).rejects.toThrow(/Integrity mismatch/);
+
+    expect(await readNpmCalls(harness.logPath)).toEqual([]);
+  });
+});
+
+describe("release tag validation", () => {
+  test.each([
+    "v0.5",
+    "v0.5.0-beta.1",
+    "v01.5.0",
+    "0.5.0",
+  ])("rejects unsupported tag %s before invoking git", async (tag) => {
+    const root = await mkdtemp(join(tmpdir(), "shepherd-tag-"));
+    fixtureRoots.push(root);
+    await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
+    const gitLog = join(root, "git.log");
+
+    await expect(
+      execFileAsync(process.execPath, [validateReleaseTagScript.pathname, tag, "commit"], {
+        cwd: root,
+        env: { ...process.env, SHEPHERD_GIT_COMMAND: join(root, "missing-git") },
+      }),
+    ).rejects.toThrow();
+    await expect(readFile(gitLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("rejects a stable tag whose version differs from package.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "shepherd-tag-"));
+    fixtureRoots.push(root);
+    await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
+
+    await expect(
+      execFileAsync(process.execPath, [validateReleaseTagScript.pathname, "v0.6.0", "commit"], {
+        cwd: root,
+        env: { ...process.env, SHEPHERD_GIT_COMMAND: join(root, "missing-git") },
+      }),
+    ).rejects.toThrow(/does not match package version/);
+  });
+
+  test.each([
+    ["1", true],
+    ["0", false],
+  ])("checks that the tagged commit belongs to origin/main", async (ancestor, succeeds) => {
+    const root = await mkdtemp(join(tmpdir(), "shepherd-tag-"));
+    fixtureRoots.push(root);
+    await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
+    const gitPath = join(root, "fake-git.mjs");
+    await writeFile(
+      gitPath,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_GIT_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+if (process.argv[2] === "merge-base" && process.env.FAKE_GIT_ANCESTOR !== "1") process.exit(1);
+`,
+    );
+    await chmod(gitPath, 0o755);
+    const gitLog = join(root, "git.log");
+    const invocation = execFileAsync(
+      process.execPath,
+      [validateReleaseTagScript.pathname, "v0.5.0", "commit"],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          FAKE_GIT_ANCESTOR: ancestor,
+          FAKE_GIT_LOG: gitLog,
+          SHEPHERD_GIT_COMMAND: gitPath,
+        },
+      },
+    );
+
+    if (succeeds) {
+      await expect(invocation).resolves.toMatchObject({ stdout: "0.5.0\n" });
+    } else {
+      await expect(invocation).rejects.toThrow();
+    }
+    const calls = (await readFile(gitLog, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(calls).toEqual([
+      ["fetch", "origin", "main:refs/remotes/origin/main", "--no-tags"],
+      ["merge-base", "--is-ancestor", "commit", "origin/main"],
+    ]);
   });
 });
 
@@ -239,16 +453,39 @@ describe("release workflow", () => {
     const commands = (job: Job | undefined) =>
       job?.steps.flatMap((step) => step.run ?? []).join("\n") ?? "";
 
-    expect(commands(validate)).toContain("git merge-base --is-ancestor");
+    expect(commands(validate)).toContain("validate-release-tag.mjs");
     expect(commands(validate)).toContain("pnpm check");
     expect(commands(validate)).toContain("pnpm build");
     expect(commands(validate)).toContain("pnpm package:smoke");
     expect(commands(validate)).toContain("release-registry.mjs check");
+    expect(commands(validate)).not.toContain("|| true");
+    const validateSmoke = validate?.steps.findIndex((step) => step.run?.includes("package:smoke"));
+    const validateRegistry = validate?.steps.findIndex((step) =>
+      step.run?.includes("release-registry.mjs check"),
+    );
+    const validateUpload = validate?.steps.findIndex((step) =>
+      step.uses?.startsWith("actions/upload-artifact@"),
+    );
+    expect(validateSmoke).toBeGreaterThan(-1);
+    expect(validateRegistry).toBeGreaterThan(validateSmoke ?? -1);
+    expect(validateUpload).toBeGreaterThan(validateRegistry ?? -1);
 
     expect(publish?.needs).toBe("validate");
     expect(publish?.environment).toBe("npm");
     expect(publish?.permissions).toEqual({ contents: "read", "id-token": "write" });
     expect(commands(publish)).toContain("release-registry.mjs publish");
+    const publishDownload = publish?.steps.findIndex((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
+    );
+    const publishVerify = publish?.steps.findIndex((step) =>
+      step.run?.includes("verify-release-packages.mjs"),
+    );
+    const publishRegistry = publish?.steps.findIndex((step) =>
+      step.run?.includes("release-registry.mjs publish"),
+    );
+    expect(publishDownload).toBeGreaterThan(-1);
+    expect(publishVerify).toBeGreaterThan(publishDownload ?? -1);
+    expect(publishRegistry).toBeGreaterThan(publishVerify ?? -1);
 
     expect(smoke?.needs).toBe("publish");
     expect(smoke?.environment).toBeUndefined();

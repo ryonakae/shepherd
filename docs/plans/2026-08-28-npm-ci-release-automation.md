@@ -92,6 +92,7 @@ Provide a small, auditable GitHub Actions flow that validates every pull request
 - Create: `scripts/check-release-packages.mjs` — tarball creation and isolated package smoke checks, with an output mode usable by the release workflow.
 - Create: `scripts/verify-release-packages.mjs` — bounded artifact-set and post-download integrity verification shared by package smoke and release publication.
 - Create: `scripts/release-registry.mjs` — resumable registry-state classification and root-before-Pi publication of verified tarball paths.
+- Create: `scripts/validate-release-tag.mjs` — stable tag/package version validation and `origin/main` ancestry enforcement.
 - Create: `test/unit/release-automation.test.ts` — release preparation, version-reference, workflow trigger, permission, and publication-order contracts.
 - Modify: `package.json` — expose release preparation and package smoke scripts without changing published files.
 - Modify: `test/unit/package-publication.test.ts` — retain publication metadata invariants and add any closely related manifest assertions not owned by the new test.
@@ -216,6 +217,7 @@ Implementers must reflect minor file or implementation differences in the releva
 - Create: `.github/workflows/release.yml`
 - Create: `scripts/verify-release-packages.mjs`
 - Create: `scripts/release-registry.mjs`
+- Create: `scripts/validate-release-tag.mjs`
 - Modify: `scripts/check-release-packages.mjs`
 - Modify: `test/unit/release-automation.test.ts`
 - Modify: `docs/releasing.md`
@@ -260,7 +262,8 @@ Implementers must reflect minor file or implementation differences in the releva
 - Added the stable-tag release workflow with strict tag/main validation, verified artifact upload/download, `npm` Environment approval, OIDC publication, unprivileged registry smoke, and generated GitHub Release notes.
 - Added bounded artifact integrity verification and resumable registry-state publication helpers; fake-registry tests verify root-before-Pi tarball publication with public provenance flags.
 - Replaced manual publication documentation with Trusted Publishing setup, approval, immutable-tag, idempotent rerun, and conflict recovery procedures; updated AGENTS workflow ownership.
-- Validation passed: actionlint for both workflows, typecheck, 2 focused files / 20 tests, credential-reference check, and the Task 2 package smoke rerun after integrating artifact verification.
+- Initial validation passed: actionlint for both workflows, typecheck, 2 focused files / 20 tests, credential-reference check, and the Task 2 package smoke rerun after integrating artifact verification.
+- Independent review correction cycle 1 added executable stable tag/version/main ancestry tests, every allowed and rejected registry-state combination, ambiguous publication, delayed visibility retry, post-publish integrity conflict, and artifact-before-registry ordering. Corrected validation passed: actionlint, typecheck, and 2 focused files / 36 tests.
 
 ### Task 4: External GitHub/npm Trust Configuration and Non-Publishing Verification
 

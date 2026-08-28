@@ -6,8 +6,18 @@ import { verifyReleasePackages } from "./verify-release-packages.mjs";
 
 const npm =
   process.env.SHEPHERD_NPM_COMMAND ?? (process.platform === "win32" ? "npm.cmd" : "npm");
-const retryAttempts = 12;
-const retryDelayMs = 5_000;
+const retryAttempts = readPositiveInteger("SHEPHERD_REGISTRY_RETRY_ATTEMPTS", 12);
+const retryDelayMs = readPositiveInteger("SHEPHERD_REGISTRY_RETRY_DELAY_MS", 5_000);
+
+function readPositiveInteger(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
 
 export function classifyRegistryState(actualIntegrity, expectedIntegrity) {
   if (actualIntegrity === undefined) return "absent";

@@ -28,14 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Unsupported release tag: $GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-          version="${GITHUB_REF_NAME#v}"
-          test "$(node --print 'require("./package.json").version')" = "$version"
-          git fetch origin main:refs/remotes/origin/main --no-tags
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          version="$(node scripts/validate-release-tag.mjs "$GITHUB_REF_NAME" "$GITHUB_SHA")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: pnpm check
       - run: pnpm build
