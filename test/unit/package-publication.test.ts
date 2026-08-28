@@ -34,16 +34,19 @@ describe("npm publication metadata", () => {
     expect(root.files).toEqual(["dist", "drizzle"]);
     expect(root.publishConfig?.access).toBe("public");
     expect(root.scripts).toMatchObject({
+      "changelog:check": "node scripts/release-notes.mjs check",
       "clean:dist": "node scripts/clean-dist.mjs",
       "package:check": "node scripts/check-root-package.mjs",
       "package:smoke": "node scripts/check-release-packages.mjs",
       "pnpm:devPreinstall": "husky",
+      "release:notes": "node scripts/release-notes.mjs render",
       "release:prepare": "node scripts/prepare-release.mjs",
       prepack: "pnpm build",
     });
     expect(root.scripts).not.toHaveProperty("prepare");
     expect(root.scripts?.build).toContain("pnpm clean:dist");
     expect(root.scripts?.check).toContain("pnpm package:check");
+    expect(root.scripts?.check).toContain("pnpm changelog:check");
 
     expect(pi.name).toBe("@ryonakae/shepherd-pi");
     expect(pi.files).toEqual(["src"]);

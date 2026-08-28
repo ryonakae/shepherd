@@ -35,7 +35,8 @@
   },
   "scripts": {
     "build": "pnpm clean:dist && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
-    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm package:check && pnpm pi-package:check && pnpm herdr-plugin:check",
+    "changelog:check": "node scripts/release-notes.mjs check",
+    "check": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm db:check && pnpm package:check && pnpm pi-package:check && pnpm herdr-plugin:check && pnpm changelog:check",
     "clean:dist": "node scripts/clean-dist.mjs",
     "db:check": "drizzle-kit check --config drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
@@ -50,6 +51,7 @@
     "pi-package:check": "pnpm --dir packages/shepherd-pi typecheck && (cd packages/shepherd-pi && npm pack --dry-run --json > /dev/null)",
     "pnpm:devPreinstall": "husky",
     "prepack": "pnpm build",
+    "release:notes": "node scripts/release-notes.mjs render",
     "release:prepare": "node scripts/prepare-release.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -12,6 +12,7 @@ const prepareReleaseScript = new URL("../../scripts/prepare-release.mjs", import
 const verifyReleaseScript = new URL("../../scripts/verify-release-packages.mjs", import.meta.url);
 const releaseRegistryScript = new URL("../../scripts/release-registry.mjs", import.meta.url);
 const validateReleaseTagScript = new URL("../../scripts/validate-release-tag.mjs", import.meta.url);
+const releaseNotesScript = new URL("../../scripts/release-notes.mjs", import.meta.url);
 const fixtureRoots: string[] = [];
 const releasePaths = [
   "package.json",
@@ -56,6 +57,21 @@ async function runPrepare(root: string, ...args: string[]) {
   return execFileAsync(process.execPath, [prepareReleaseScript.pathname, ...args], {
     cwd: root,
   });
+}
+
+async function createChangelogFixture(
+  changelog: string,
+  packageVersion = "0.6.0",
+): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "shepherd-changelog-"));
+  fixtureRoots.push(root);
+  await writeFile(join(root, "package.json"), `${JSON.stringify({ version: packageVersion })}\n`);
+  await writeFile(join(root, "CHANGELOG.md"), changelog);
+  return root;
+}
+
+async function runReleaseNotes(root: string, ...args: string[]) {
+  return execFileAsync(process.execPath, [releaseNotesScript.pathname, ...args], { cwd: root });
 }
 
 async function createArtifactFixture(version = "0.6.0"): Promise<string> {
@@ -353,6 +369,106 @@ describe("release registry state", () => {
     ).rejects.toThrow(/Integrity mismatch/);
 
     expect(await readNpmCalls(harness.logPath)).toEqual([]);
+  });
+});
+
+describe("release changelog", () => {
+  const validChangelog = `# Changelog
+
+## v0.6.0
+
+_2026-08-28_
+
+### Added
+
+- Adds contextual CLI help.
+
+### Removed
+
+- **Breaking:** Removes \`shepherd help\`.
+
+## v0.5.0
+
+### Changed
+
+- Keeps agent identity across renames.
+`;
+
+  test("accepts an ordered changelog matching the package version", async () => {
+    const root = await createChangelogFixture(validChangelog);
+
+    await expect(runReleaseNotes(root, "check")).resolves.toMatchObject({ stdout: "0.6.0\n" });
+    await expect(runReleaseNotes(root, "check", "0.6.0")).resolves.toMatchObject({
+      stdout: "0.6.0\n",
+    });
+  });
+
+  test("requires the package version and latest changelog version to match", async () => {
+    const root = await createChangelogFixture(validChangelog, "0.7.0");
+
+    const error = await runReleaseNotes(root, "check").catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      stderr: expect.stringMatching(/latest changelog version 0\.6\.0.*package version 0\.7\.0/i),
+    });
+  });
+
+  test("requires an explicit release target to be the latest entry", async () => {
+    const root = await createChangelogFixture(validChangelog);
+
+    const error = await runReleaseNotes(root, "check", "0.5.0").catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      stderr: expect.stringMatching(/target version 0\.5\.0.*latest changelog version 0\.6\.0/i),
+    });
+  });
+
+  test.each([
+    ["missing target", validChangelog, "0.7.0", /target version 0\.7\.0.*not found/i],
+    [
+      "duplicate version",
+      `${validChangelog}\n## v0.6.0\n\n### Fixed\n\n- Duplicate.\n`,
+      "0.6.0",
+      /duplicate changelog version 0\.6\.0/i,
+    ],
+    [
+      "out-of-order version",
+      validChangelog.replace("## v0.5.0", "## v0.7.0"),
+      "0.6.0",
+      /strictly descending/i,
+    ],
+    [
+      "unknown category",
+      validChangelog.replace("### Added", "### Highlights"),
+      "0.6.0",
+      /unknown category Highlights/i,
+    ],
+    [
+      "empty category",
+      validChangelog.replace("### Added\n\n- Adds contextual CLI help.\n", "### Added\n"),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "section without a bullet",
+      validChangelog.replaceAll(/^- .*$/gm, "Description without a bullet."),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+  ])("rejects %s", async (_label, changelog, target, message) => {
+    const root = await createChangelogFixture(changelog);
+
+    const error = await runReleaseNotes(root, "check", target).catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ stderr: expect.stringMatching(message) });
+  });
+
+  test("preserves the breaking marker in extracted release notes", async () => {
+    const root = await createChangelogFixture(validChangelog);
+
+    const { stdout } = await runReleaseNotes(root, "render", "0.6.0");
+
+    expect(stdout).toContain("- **Breaking:** Removes `shepherd help`.");
   });
 });
 
