@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** Continuation correction cycle 2 validation
+**Status:** Complete
 
-**Next steps:** Commit the ordinary-tag-only attribute scanner and special raw terminator fix, then request a scoped re-review of the CDATA/processing-instruction regression.
+**Next steps:** Archive this plan in the required docs-only commit, then push the complete commit series to `origin/main` once.
 
 ## Problem Statement
 
@@ -120,7 +120,7 @@ _2026-09-01_
 - [x] Task 1: Versioned changelog contract and historical source
 - [x] Task 2: Atomic preparation and tag gates
 - [x] Task 3: Deterministic GitHub Release composition
-- [ ] Task 4: Maintainer workflow documentation and final validation
+- [x] Task 4: Maintainer workflow documentation and final validation
 
 Implementers must reflect minor file changes or implementation differences in the relevant task. They must ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -302,11 +302,11 @@ Implementers must reflect minor file changes or implementation differences in th
 - Run: `rg -n "CHANGELOG|release:notes|release:prepare|generate-notes" docs/releasing.md AGENTS.md .github/workflows/release.yml package.json`
 - Expected: required changelog/preview flow is documented and no workflow dependency on GitHub-generated notes remains.
 
-**Implementation result so far:**
+**Implementation result:**
 - `docs/releasing.md` now requires changelog authoring, explicit target validation and preview before version updates, review of `CHANGELOG.md` in the release commit, and required-block recovery checks.
 - `AGENTS.md` identifies `CHANGELOG.md` as the release-note source and documents the changelog check, preview, and guarded preparation commands.
 - Focused documentation validation found no stale `generate-notes` instruction. Explicit `0.6.0` target check and preview commands succeeded.
-- Task completion remains pending full validation, independent review, gate summary, and plan archive.
+- Full validation and independent review passed on final HEAD `7bd5229`; the plan records the correction history and remaining non-blocking findings before archive.
 
 ## Requirement Coverage
 
@@ -331,27 +331,27 @@ Implementers must reflect minor file changes or implementation differences in th
 
 ## Final Validation
 
-- [ ] `pnpm exec vitest run test/unit/release-automation.test.ts test/unit/package-publication.test.ts` — Expected: all focused changelog, preparation, tag, renderer, workflow, and publication contract tests pass.
-- [ ] `pnpm changelog:check` — Expected: latest valid changelog version equals the root package version.
-- [ ] `pnpm release:notes 0.6.0` — Expected: complete deterministic notes contain authored changes, exact install commands, validation text, and the `v0.5.0...v0.6.0` link.
-- [ ] `env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID pnpm check` — Expected: typecheck, 285-or-more tests, Biome, Drizzle, and all package checks pass.
-- [ ] `pnpm build` — Expected: clean TypeScript build succeeds and import aliases resolve.
-- [ ] `pnpm package:smoke` — Expected: both `0.6.0` tarballs pass integrity checks and isolated installation; installed CLI reports `0.6.0`.
-- [ ] `git diff --check` — Expected: no whitespace errors.
-- [ ] `git show v0.1.0:README.md`, the commit history ending at `v0.1.0`, and `gh release view` for `v0.2.0`–`v0.6.0` (including `v0.3.1`) plus manual comparison — Expected: approved sources for all seven versions; no unsupported historical claims and no omitted published user-facing change categories.
-- [ ] Requirement Coverage has no unsupported or unverified row.
-- [ ] Plan and implementation diff agree; Progress reflects completed validations.
-- [ ] After every item above succeeds and the implementation commit is complete, move this file unchanged in name to `docs/plans/archived/2026-08-28-changelog-release-notes.md` and commit that move separately as docs-only.
+- [x] `pnpm exec vitest run test/unit/release-automation.test.ts test/unit/package-publication.test.ts` — 78 focused tests passed on final HEAD.
+- [x] `pnpm changelog:check` — latest changelog and root package version both resolved to `0.6.0`.
+- [x] `pnpm release:notes 0.6.0` — output contained authored changes, exact install commands, Validation, and `v0.5.0...v0.6.0`.
+- [x] `env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID pnpm check` — 31 files and 326 tests passed with TypeScript, Biome, Drizzle, and package gates.
+- [x] `pnpm build` — clean TypeScript build and alias resolution passed.
+- [x] `pnpm package:smoke` — both `0.6.0` tarballs passed integrity checks and isolated installation; installed CLI reported `0.6.0`.
+- [x] `git diff --check` — no whitespace errors.
+- [x] `git show v0.1.0:README.md`, the `v0.1.0` history, and six later `gh release view` records were checked; `CHANGELOG.md` did not change after that source comparison.
+- [x] Requirement Coverage has no unsupported or unverified row.
+- [x] Plan and implementation diff agree; Progress reflects completed validations.
+- [x] All implementation commits are complete; archive this file unchanged in name as the final docs-only commit.
 
 ## Independent Review Gate
 
-- Review range: `947f77bc1765b1d4a58003f137d623bafad76409..6f87e5844f9a0b04332ef3162b23d569f8619640`.
+- Final review range: `947f77bc1765b1d4a58003f137d623bafad76409..7bd5229dfe9642e79b944240ee35e76789e209fb`.
 - Validation supplied to reviewer: focused tests 55 passed; full suite 303 passed; `pnpm check`, build, package smoke, render/verify, history-source checks, and `git diff --check` passed on the reviewed HEAD.
 - Adopted high finding: top-level bullet validation currently counts `- ` lines hidden inside fenced code or HTML comments; R2/R3 require visible top-level bullets.
 - Adopted high finding: existing-release verification currently accepts all required blocks hidden inside an HTML comment; R9 requires visible top-level authored/generated sections.
 - Adopted high finding: workflow executes `pnpm rebuild` before tag/package/changelog/main-ancestry validation; R7 requires the gate before package build or lifecycle execution.
 - Resolved decision: the user confirmed that only the optional italic ISO date may appear before the first category; other prose remains invalid.
-- Medium/low left for completion report: renderer metadata is hard-coded rather than derived from package metadata; documentation overstates all-I/O-failure atomicity instead of limiting the guarantee to validation failures.
+- Medium/low left for completion report: renderer metadata is hard-coded rather than derived from package metadata; ISO date shape is checked without calendar validation; documentation overstates all-I/O-failure atomicity instead of limiting the guarantee to validation failures.
 - Correction cycle 1 implementation: added comment/fence-aware top-level Markdown scanning, visible ordered required-section verification, and pre-install tag validation; documented the date-only preamble contract.
 - Correction cycle 1 affected validation: release automation passed all 58 tests, including the four reviewer reproductions.
 - Correction cycle 1 completed with commit `547b09c`; full re-review confirmed the original fence/comment and workflow-order reproductions were fixed.
@@ -362,9 +362,7 @@ Implementers must reflect minor file changes or implementation differences in th
 - Correction cycle 2 affected validation: release/publication tests passed all 68 cases, including raw HTML, nested HTML, and same-line suffix reproductions; changelog check passed.
 - Correction cycle 2 completed with commit `3156048`; focused tests passed 68 cases and the commit hook passed all 316 tests.
 - Scoped re-review confirmed same-line authored, Validation, and comparison-link suffixes are rejected.
-- Unresolved high finding: inside an active raw HTML block, a comment such as `<!-- </details> -->` is counted by HTML tag depth before comment masking, so a following hidden bullet can pass R2/R3 validation.
-- Unresolved high finding: the same premature raw-HTML mask termination lets required Release blocks remain inside `<details>` while passing R9 recovery verification.
-- Required next correction: ignore closing-tag text inside comments and quoted attributes during raw-HTML depth updates, with parser and verifier regressions for both interactions.
+- Continuation correction `ce30907` resolved the active raw-HTML comment and quoted-attribute depth findings for both changelog validation and Release recovery.
 - Correction cycles completed in the first implementation invocation: 2 of 2. No third automatic correction was attempted.
 - The user authorized a new implementation invocation to resolve the two remaining findings.
 - Continuation correction: raw HTML depth now consumes a lexical view that masks comments and quoted attributes before counting tags; parser and recovery regression tests cover both compositions.
@@ -373,7 +371,10 @@ Implementers must reflect minor file changes or implementation differences in th
 - Continuation scoped re-review adopted high regression: generalized quote state treats quotes inside CDATA/processing instructions as attribute quotes, preventing a closed raw construct from terminating and hiding later visible Markdown.
 - Continuation correction cycle 2 implementation: enter attribute quote state only for ordinary HTML tags and let active CDATA, processing instructions, and declarations close only through their dedicated terminators.
 - Continuation correction cycle 2 affected validation: release/publication tests passed all 78 cases, including closed raw constructs containing quote characters; changelog check passed.
-- Continuation correction cycle 2 is awaiting commit and scoped re-review; 1 of 2 cycles completed.
+- Continuation correction cycle 2 completed with commit `7bd5229`; scoped re-review reported no blocking/high, decision required, or correction-caused medium/low findings.
+- Final independent-review verdict: PASS and mergeable. All adopted high findings are resolved; no unresolved blocking or decision-required finding remains.
+- Final validation on reviewed HEAD: focused 78, full 326, changelog check, render/verify, build, package smoke, and diff checks passed.
+- Correction cycles used in the continuation invocation: 2 of 2.
 
 ## Risks and Open Questions
 
