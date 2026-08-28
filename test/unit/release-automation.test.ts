@@ -15,6 +15,7 @@ const validateReleaseTagScript = new URL("../../scripts/validate-release-tag.mjs
 const releaseNotesScript = new URL("../../scripts/release-notes.mjs", import.meta.url);
 const fixtureRoots: string[] = [];
 const releasePaths = [
+  "CHANGELOG.md",
   "package.json",
   "packages/shepherd-pi/package.json",
   "packages/shepherd-herdr-plugin/package.json",
@@ -49,6 +50,24 @@ async function createReleaseFixture(version = "0.5.0"): Promise<string> {
       `herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v${version} --yes\n`,
     );
   }
+
+  await writeFile(
+    join(root, "CHANGELOG.md"),
+    `# Changelog
+
+## v0.6.0
+
+### Added
+
+- Prepared the next release.
+
+## v${version}
+
+### Changed
+
+- Previous release.
+`,
+  );
 
   return root;
 }
@@ -520,6 +539,45 @@ appendFileSync(process.env.FAKE_GIT_LOG, JSON.stringify(process.argv.slice(2)) +
     ).rejects.toThrow(/does not match package version/);
   });
 
+  test("rejects a changelog mismatch before invoking git", async () => {
+    const root = await mkdtemp(join(tmpdir(), "shepherd-tag-"));
+    fixtureRoots.push(root);
+    await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
+    await writeFile(
+      join(root, "CHANGELOG.md"),
+      "# Changelog\n\n## v0.4.0\n\n### Fixed\n\n- Previous release.\n",
+    );
+    const gitLog = join(root, "git.log");
+    await writeFile(gitLog, "");
+    const gitPath = join(root, "fake-git.mjs");
+    await writeFile(
+      gitPath,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_GIT_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
+`,
+    );
+    await chmod(gitPath, 0o755);
+
+    const error = await execFileAsync(
+      process.execPath,
+      [validateReleaseTagScript.pathname, "v0.5.0", "commit"],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          FAKE_GIT_LOG: gitLog,
+          SHEPHERD_GIT_COMMAND: gitPath,
+        },
+      },
+    ).catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      stderr: expect.stringMatching(/target version 0\.5\.0.*not found/i),
+    });
+    expect(await readFile(gitLog, "utf8")).toBe("");
+  });
+
   test.each([
     ["1", true],
     ["0", false],
@@ -527,6 +585,10 @@ appendFileSync(process.env.FAKE_GIT_LOG, JSON.stringify(process.argv.slice(2)) +
     const root = await mkdtemp(join(tmpdir(), "shepherd-tag-"));
     fixtureRoots.push(root);
     await writeFile(join(root, "package.json"), '{"version":"0.5.0"}\n');
+    await writeFile(
+      join(root, "CHANGELOG.md"),
+      "# Changelog\n\n## v0.5.0\n\n### Changed\n\n- Current release.\n",
+    );
     const gitPath = join(root, "fake-git.mjs");
     await writeFile(
       gitPath,
@@ -763,6 +825,22 @@ describe("release preparation", () => {
     for (const path of ["README.md", "README.ja.md", "packages/shepherd-herdr-plugin/README.md"]) {
       await expect(readFile(join(root, path), "utf8")).resolves.toContain("--ref v0.6.0 --yes");
     }
+  });
+
+  test("rejects a missing target changelog before writing any file", async () => {
+    const root = await createReleaseFixture();
+    await writeFile(
+      join(root, "CHANGELOG.md"),
+      "# Changelog\n\n## v0.5.0\n\n### Changed\n\n- Previous release.\n",
+    );
+    const before = await readReleaseFiles(root);
+
+    const error = await runPrepare(root, "0.6.0").catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({
+      stderr: expect.stringMatching(/target version 0\.6\.0.*not found/i),
+    });
+    expect(await readReleaseFiles(root)).toEqual(before);
   });
 
   test("rejects a divergent manifest before writing any file", async () => {

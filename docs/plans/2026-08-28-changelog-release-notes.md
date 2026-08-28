@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** In progress — Task 2
+**Status:** In progress — Task 3
 
-**Next steps:** Connect the shared changelog validator to `release:prepare` and stable tag validation before any writes or git operations.
+**Next steps:** Wire deterministic rendering and required-block recovery validation into the release workflow before publication and GitHub Release completion.
 
 ## Problem Statement
 
@@ -118,7 +118,7 @@ _2026-09-01_
 ## Progress
 
 - [x] Task 1: Versioned changelog contract and historical source
-- [ ] Task 2: Atomic preparation and tag gates
+- [x] Task 2: Atomic preparation and tag gates
 - [ ] Task 3: Deterministic GitHub Release composition
 - [ ] Task 4: Maintainer workflow documentation and final validation
 
@@ -214,6 +214,12 @@ Implementers must reflect minor file changes or implementation differences in th
 **Validation:**
 - Run: `pnpm exec vitest run test/unit/release-automation.test.ts`
 - Expected: atomic preparation and pre-git tag rejection cases pass together with all existing publication safety tests.
+
+**Implementation result:**
+- `release:prepare` now validates the proposed latest changelog section before reading or writing release-owned version files.
+- Stable tag validation now checks package/tag/changelog agreement before invoking git fetch or ancestry checks.
+- Release fixtures include `CHANGELOG.md`; atomic failure snapshots prove missing target notes leave all release inputs unchanged.
+- Validation: `test/unit/release-automation.test.ts` passed all 48 tests, including pre-write and pre-git failure cases.
 
 ### Task 3: Deterministic GitHub Release composition
 

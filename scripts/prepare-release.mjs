@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { validateLatestChangelogVersion } from "./release-notes.mjs";
 
 const manifestPaths = [
   "package.json",
@@ -22,6 +23,7 @@ if (args.length !== 1 || !version || !stableVersion.test(version)) {
 }
 
 const root = process.cwd();
+await validateLatestChangelogVersion(version, root);
 const sourceEntries = await Promise.all(
   [...manifestPaths, pluginManifestPath, ...pluginReadmePaths].map(async (path) => [
     path,
