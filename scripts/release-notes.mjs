@@ -128,7 +128,7 @@ function maskNonStructuralHtml(line, state) {
       state.quote = character;
     } else if (state.inTag && character === ">") {
       state.inTag = false;
-    } else if (!state.inTag && character === "<") {
+    } else if (!state.inTag && /^<\/?[A-Za-z]/.test(line.slice(cursor))) {
       state.inTag = true;
     }
     cursor += 1;
@@ -147,6 +147,10 @@ function maskHiddenMarkdown(source) {
       if (fence) {
         if (closesFence(line, fence)) fence = undefined;
         return line;
+      }
+      if (htmlBlock && !htmlBlock.tag) {
+        if (advancesPastRawHtml(line, htmlBlock)) htmlBlock = undefined;
+        return " ".repeat(line.length);
       }
 
       const result = maskNonStructuralHtml(line, htmlState);

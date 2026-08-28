@@ -542,6 +542,22 @@ _2026-08-28_
     expect(error).toMatchObject({ stderr: expect.stringMatching(message) });
   });
 
+  test.each([
+    ["CDATA", '<![CDATA["]]>'],
+    ["a processing instruction", '<?value "?>'],
+    ["a declaration", '<!DOCTYPE "release">'],
+  ])("accepts a visible bullet after closed %s raw content", async (_label, rawContent) => {
+    const changelog = validChangelog.replace(
+      "- Adds contextual CLI help.",
+      `${rawContent}\n- Adds contextual CLI help.`,
+    );
+    const root = await createChangelogFixture(changelog);
+
+    await expect(runReleaseNotes(root, "check", "0.6.0")).resolves.toMatchObject({
+      stdout: "0.6.0\n",
+    });
+  });
+
   test("renders authored changes with exact install, validation, and comparison sections", async () => {
     const root = await createChangelogFixture(validChangelog);
 
@@ -575,6 +591,21 @@ _2026-08-28_
     const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
     const bodyPath = join(root, "release-body.md");
     await writeFile(bodyPath, `${rendered.replaceAll("\n", "\r\n")}\r\nOperator note.\r\n`);
+
+    await expect(runReleaseNotes(root, "verify", "0.6.0", bodyPath)).resolves.toMatchObject({
+      stdout: "0.6.0\n",
+    });
+  });
+
+  test.each([
+    ["CDATA", '<![CDATA["]]>'],
+    ["a processing instruction", '<?value "?>'],
+    ["a declaration", '<!DOCTYPE "release">'],
+  ])("accepts required blocks after closed %s operator content", async (_label, rawContent) => {
+    const root = await createChangelogFixture(validChangelog);
+    const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
+    const bodyPath = join(root, "release-body.md");
+    await writeFile(bodyPath, `${rawContent}\n${rendered}`);
 
     await expect(runReleaseNotes(root, "verify", "0.6.0", bodyPath)).resolves.toMatchObject({
       stdout: "0.6.0\n",

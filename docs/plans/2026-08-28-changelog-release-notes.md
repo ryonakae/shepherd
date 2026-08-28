@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** Continuation correction validation
+**Status:** Continuation correction cycle 2 validation
 
-**Next steps:** Commit the comment- and attribute-aware raw HTML depth fix, request scoped re-review of the two remaining findings, then run final validation and archive the plan if no blocking finding remains.
+**Next steps:** Commit the ordinary-tag-only attribute scanner and special raw terminator fix, then request a scoped re-review of the CDATA/processing-instruction regression.
 
 ## Problem Statement
 
@@ -369,7 +369,11 @@ Implementers must reflect minor file changes or implementation differences in th
 - The user authorized a new implementation invocation to resolve the two remaining findings.
 - Continuation correction: raw HTML depth now consumes a lexical view that masks comments and quoted attributes before counting tags; parser and recovery regression tests cover both compositions.
 - Continuation affected validation: release/publication tests passed all 72 cases and changelog check passed.
-- Correction cycles used in the continuation invocation: 0 of 2; the first cycle completes after commit and scoped re-review.
+- Continuation correction cycle 1 completed with commit `ce30907`; scoped re-review confirmed the original comment and quoted-attribute depth findings are resolved.
+- Continuation scoped re-review adopted high regression: generalized quote state treats quotes inside CDATA/processing instructions as attribute quotes, preventing a closed raw construct from terminating and hiding later visible Markdown.
+- Continuation correction cycle 2 implementation: enter attribute quote state only for ordinary HTML tags and let active CDATA, processing instructions, and declarations close only through their dedicated terminators.
+- Continuation correction cycle 2 affected validation: release/publication tests passed all 78 cases, including closed raw constructs containing quote characters; changelog check passed.
+- Continuation correction cycle 2 is awaiting commit and scoped re-review; 1 of 2 cycles completed.
 
 ## Risks and Open Questions
 
