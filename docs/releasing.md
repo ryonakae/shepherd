@@ -55,7 +55,7 @@ The successful creation output and both trust listings must name repository `ryo
 Releases use stable `X.Y.Z` versions only. Run from the repository root on `main` with a clean tree synchronized to `origin/main`.
 
 ```bash
-export VERSION=0.6.0
+export VERSION=0.7.0
 export TAG="v$VERSION"
 export PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/installs/pnpm/11.9.0/bin:$PATH"
 
@@ -72,11 +72,37 @@ npm view "@ryonakae/shepherd@$VERSION" version
 npm view "@ryonakae/shepherd-pi@$VERSION" version
 ```
 
+Add the target section to the top of `CHANGELOG.md` before changing package versions. Use a `## vX.Y.Z` heading and at least one bullet under an allowed category: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`. Start an incompatible-change bullet with `**Breaking:**`.
+
+```markdown
+## v0.7.0
+
+_2026-09-01_
+
+### Added
+
+- Describe a user-visible change.
+
+### Changed
+
+- **Breaking:** Describe an incompatible change.
+```
+
+Validate and preview the authored section while package manifests still contain the previous version.
+
+```bash
+pnpm changelog:check "$VERSION"
+pnpm release:notes "$VERSION"
+```
+
+Both commands fail for a missing or non-latest version, an unknown or empty category, a duplicate or out-of-order version, or a category without a bullet. Review the complete preview, including exact Install commands, Validation claims, and the Full changelog comparison link.
+
 Update every release-owned version reference and review the result.
 
 ```bash
 pnpm release:prepare "$VERSION"
 git diff -- \
+  CHANGELOG.md \
   package.json \
   packages/shepherd-pi/package.json \
   packages/shepherd-herdr-plugin/package.json \
@@ -86,7 +112,7 @@ git diff -- \
   packages/shepherd-herdr-plugin/README.md
 ```
 
-The command accepts no `v` prefix, prerelease suffix, or build metadata. It refuses to update an already-divergent manifest or install example.
+The command accepts no `v` prefix, prerelease suffix, or build metadata. It validates `CHANGELOG.md` before writing any file and refuses to update a missing or invalid section, an already-divergent manifest, or an install example. A failed preparation leaves every release-owned file unchanged.
 
 Validate the exact package boundary locally.
 
@@ -103,6 +129,7 @@ Commit and push the reviewed version change. Wait for the `CI` workflow on `main
 
 ```bash
 git add \
+  CHANGELOG.md \
   package.json \
   packages/shepherd-pi/package.json \
   packages/shepherd-herdr-plugin/package.json \
@@ -127,15 +154,15 @@ git push origin "$TAG"
 
 The `Release` workflow then performs these stages:
 
-1. Validates stable tag syntax, synchronized versions, and that the tagged commit belongs to `origin/main`.
+1. Validates stable tag syntax, synchronized package and changelog versions, and that the tagged commit belongs to `origin/main`; it also renders the complete Release body before publication.
 2. Runs `pnpm check`, builds, packs, and smoke-tests both tarballs.
 3. Recomputes tarball integrity, checks existing registry state, and uploads only the two tarballs plus `release-packages.json`.
 4. Waits at the protected `npm` Environment. Review the run and approve this deployment in GitHub Actions.
 5. Downloads and re-verifies the same tarballs, then publishes the root package followed by the Pi package through npm Trusted Publishing with provenance.
 6. Installs both exact versions from npm in an unprivileged job.
-7. Creates the GitHub Release from generated changes plus install and Herdr plugin instructions.
+7. Creates the GitHub Release from the target `CHANGELOG.md` section plus exact Install commands, workflow-backed Validation claims, and a Full changelog comparison link.
 
-Do not approve publication if validation reports a tag/version mismatch, a commit outside `main`, an unexpected artifact, or conflicting registry integrity.
+Do not approve publication if validation reports a tag/package/changelog mismatch, a missing release-note bullet, a commit outside `main`, an unexpected artifact, or conflicting registry integrity.
 
 ## Verify the completed release
 
@@ -146,7 +173,7 @@ npm view "@ryonakae/shepherd@$VERSION" \
   name version dist-tags.latest dist.integrity repository bin --json
 npm view "@ryonakae/shepherd-pi@$VERSION" \
   name version dist-tags.latest dist.integrity repository peerDependencies --json
-gh release view "$TAG" --json tagName,name,isDraft,isPrerelease,url,publishedAt
+gh release view "$TAG" --json tagName,name,isDraft,isPrerelease,url,publishedAt,body
 gh api repos/ryonakae/shepherd/releases/latest --jq .tag_name
 git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
 test -z "$(git status --porcelain)"
@@ -175,6 +202,8 @@ Rerun the workflow. It verifies and skips the matching root version, then publis
 ### Both packages match
 
 If registry smoke or GitHub Release creation failed, rerun the failed workflow jobs. Publication verifies and skips both matching versions before continuing downstream.
+
+If a GitHub Release already exists, recovery accepts only a non-draft, non-prerelease release for the same tag whose body contains every authored and generated block. Extra operator notes are allowed. A missing or altered Release Notes, Install, Validation, or Full changelog block stops recovery; the workflow does not overwrite the body. Compare it with `pnpm release:notes "$VERSION"`, restore the required blocks, and then rerun the job.
 
 ### Registry content conflicts
 

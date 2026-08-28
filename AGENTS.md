@@ -6,13 +6,15 @@ Shepherd は Herdr 管理の coding agent から agent snapshot、`agent.*` even
 
 - `mise install`: `mise.toml` の Node.js / pnpm を入れる。
 - `pnpm install`: 依存関係を入れる。
-- `pnpm check`: typecheck、test、Biome、Drizzle、Pi package、Herdr plugin の検証をまとめて実行する。
+- `pnpm check`: typecheck、test、Biome、Drizzle、package、changelog の検証をまとめて実行する。
+- `pnpm changelog:check`: 最新の `CHANGELOG.md` section と root package version の一致を検証する。
 - `pnpm test`: Vitest を一回実行する。
 - `pnpm test:watch`: Vitest の watch。
 - `pnpm build`: 古い`dist`を削除してTypeScriptを出力し、`tsc-alias`でimport aliasを解決する。
 - `pnpm package:check`: root npm packageをbuildし、tarballのfile allowlistを検証する。
 - `pnpm package:smoke`: build済みのroot/Pi packageをtarball化し、隔離prefixへinstallして公開内容を検証する。
-- `pnpm release:prepare <X.Y.Z>`: 3 package manifest、Herdr plugin manifest、install例のstable versionを同期する。
+- `pnpm release:notes <X.Y.Z>`: 対象の changelog section から GitHub Release 本文をpreviewする。
+- `pnpm release:prepare <X.Y.Z>`: 有効な最新 changelog section を確認してから、3 package manifest、Herdr plugin manifest、install例のstable versionを同期する。
 - `pnpm lint:fix`: Biome の lint/import/format fix を適用する。
 - `pnpm db:generate`: `src/db/schema.ts` から SQL migration を生成する。
 - `SHEPHERD_HOME=/tmp/shepherd pnpm db:migrate`: 指定した Shepherd home の SQLite DB に migration を適用する。
@@ -41,6 +43,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 - `packages/shepherd-herdr-plugin/`: GitHub経由で配布するprivate Herdr integration。npmには公開しない。
 - `test/unit/`: pure logic / contract tests。
 - `test/integration/`: SQLite / JSON Lines RPC など実体を使う tests。
+- `CHANGELOG.md`: GitHub Release の変更点の正本。version section は release 準備時に追加する。
 - `docs/plans/`: active plan。完了済み plan は `docs/plans/archived/` に置く。
 
 ## コーディング方針
@@ -55,6 +58,7 @@ PATH="$HOME/.local/share/mise/installs/node/24.18.0/bin:$HOME/.local/share/mise/
 ## Plan / docs 運用
 
 - npmとGitHubのrelease手順は`docs/releasing.md`を正とする。公開するnpm packageはrootと`packages/shepherd-pi`の2つだけ。
+- Release の変更点は `CHANGELOG.md` の対象version sectionから生成する。許可categoryや `**Breaking:**` の規約は `docs/releasing.md` に従う。
 - `.github/workflows/ci.yml`はPR/`main`の検証、`.github/workflows/release.yml`はstable tagのTrusted PublishingとGitHub Releaseを担う。npmを手動publishしない。
 - Active plan は `docs/plans/` 配下に置く。完了済み plan は `docs/plans/archived/` 配下に移す。
 - 大きな plan は親 plan と子 plan に分ける。親は目的、方針、進捗、子 plan link に絞る。

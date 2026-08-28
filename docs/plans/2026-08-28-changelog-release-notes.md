@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** In progress — Task 4
+**Status:** Validation and independent review
 
-**Next steps:** Update maintainer documentation, run repository/package validation, obtain independent review, resolve any blocking findings, and archive the plan.
+**Next steps:** Commit the completed maintainer documentation, run every Final Validation command, obtain independent review of `947f77b..HEAD`, resolve any blocking findings, and archive the plan.
 
 ## Problem Statement
 
@@ -301,6 +301,12 @@ Implementers must reflect minor file changes or implementation differences in th
 **Validation:**
 - Run: `rg -n "CHANGELOG|release:notes|release:prepare|generate-notes" docs/releasing.md AGENTS.md .github/workflows/release.yml package.json`
 - Expected: required changelog/preview flow is documented and no workflow dependency on GitHub-generated notes remains.
+
+**Implementation result so far:**
+- `docs/releasing.md` now requires changelog authoring, explicit target validation and preview before version updates, review of `CHANGELOG.md` in the release commit, and required-block recovery checks.
+- `AGENTS.md` identifies `CHANGELOG.md` as the release-note source and documents the changelog check, preview, and guarded preparation commands.
+- Focused documentation validation found no stale `generate-notes` instruction. Explicit `0.6.0` target check and preview commands succeeded.
+- Task completion remains pending full validation, independent review, gate summary, and plan archive.
 
 ## Requirement Coverage
 
