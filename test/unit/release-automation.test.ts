@@ -527,7 +527,8 @@ describe("release workflow", () => {
     expect(smoke?.permissions).toEqual({ contents: "read" });
     expect(commands(smoke)).toContain("@ryonakae/shepherd@$VERSION");
     expect(commands(smoke)).toContain("@ryonakae/shepherd-pi@$VERSION");
-    expect(commands(smoke)).toContain('bin/shepherd" help');
+    expect(commands(smoke)).toContain('bin/shepherd" --help');
+    expect(commands(smoke)).toContain('bin/shepherd" --version');
     expect(commands(smoke)).toContain("src/index.ts");
     expect(commands(smoke)).toContain("tsconfig.json");
 

@@ -22,7 +22,7 @@ Herdr の `herdr agent read` は terminal stream や scrollback を読みます�
 
 ```bash
 npm install --global @ryonakae/shepherd
-shepherd help
+shepherd --help
 ```
 
 ### ソースからインストールする
@@ -35,7 +35,7 @@ cd shepherd
 pnpm install
 pnpm build
 npm install --global . --ignore-scripts
-shepherd help
+shepherd --help
 ```
 
 ## daemon を起動する

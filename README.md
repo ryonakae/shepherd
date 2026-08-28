@@ -22,7 +22,7 @@ Shepherd currently supports session history from Claude Code, Codex, Gemini CLI,
 
 ```bash
 npm install --global @ryonakae/shepherd
-shepherd help
+shepherd --help
 ```
 
 ### Install from source
@@ -35,7 +35,7 @@ cd shepherd
 pnpm install
 pnpm build
 npm install --global . --ignore-scripts
-shepherd help
+shepherd --help
 ```
 
 ## Start the daemon

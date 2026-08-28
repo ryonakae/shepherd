@@ -92,7 +92,8 @@ try {
     ],
     { cwd: workRoot, stdio: "inherit" },
   );
-  run(join(rootPrefix, "bin/shepherd"), ["help"], { cwd: workRoot, stdio: "inherit" });
+  run(join(rootPrefix, "bin/shepherd"), ["--help"], { cwd: workRoot, stdio: "inherit" });
+  run(join(rootPrefix, "bin/shepherd"), ["--version"], { cwd: workRoot, stdio: "inherit" });
 
   const piPrefix = join(installRoot, "pi-prefix");
   run(

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { argv, exit } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolveRuntime, runtimePathsFromRecordOrDefault } from "@/config/runtime.js";
@@ -16,6 +16,14 @@ const CURRENT_HERDR_WORKSPACE_ERROR =
   "agent command requires HERDR_ENV=1 with HERDR_WORKSPACE_ID, --workspace <id>, --session <name>, or --all.";
 
 type DaemonAction = "restart" | "start" | "status" | "stop";
+type HelpTopic =
+  | "agent"
+  | "agent-get"
+  | "agent-list"
+  | "agent-read"
+  | "daemon"
+  | `daemon-${DaemonAction}`
+  | "root";
 
 type AgentScope = {
   all?: boolean;
@@ -28,7 +36,18 @@ export type CliCommand =
   | ({ command: "agent-list"; json: boolean } & AgentScope)
   | ({ command: "agent-get"; json: boolean; target: string } & AgentScope)
   | ({ command: "agent-read"; json: boolean; limit?: number; target: string } & AgentScope)
-  | { command: "help" };
+  | { command: "help"; topic: HelpTopic }
+  | { command: "version" };
+
+class CliUsageError extends Error {
+  constructor(
+    message: string,
+    readonly helpTopic: HelpTopic,
+  ) {
+    super(message);
+    this.name = "CliUsageError";
+  }
+}
 
 type RpcClientLike = Pick<ObservabilityRpcClient, "close" | "request">;
 
@@ -43,32 +62,42 @@ export function parseCliArgs(
   environment: NodeJS.ProcessEnv = process.env,
 ): CliCommand {
   const [command, ...rest] = args;
-  if (!command || command === "--help" || command === "-h" || command === "help") {
-    return { command: "help" };
+  if (!command) return { command: "help", topic: "root" };
+  if (isHelpFlag(command)) return { command: "help", topic: "root" };
+  if (command === "--version" || command === "-v") {
+    rejectExtra(rest, "root");
+    return { command: "version" };
   }
 
-  if (command === "daemon") {
-    const [action = "status", ...extra] = rest;
-    if (!isDaemonAction(action)) throw new Error(`Unknown daemon action: ${action}`);
-    rejectExtra(extra);
-    return { action, command: "daemon" };
-  }
+  if (command === "daemon") return parseDaemonCommand(rest);
+  if (command === "agent") return parseAgentCommand(rest, environment);
 
-  if (command === "agent") {
-    return parseAgentCommand(rest, environment);
-  }
+  throw new CliUsageError(`Unknown command: ${command}`, "root");
+}
 
-  throw new Error(`Unknown command: ${command}`);
+function parseDaemonCommand(args: string[]): CliCommand {
+  const [action = "status", ...extra] = args;
+  if (isHelpFlag(action)) return { command: "help", topic: "daemon" };
+  if (!isDaemonAction(action)) {
+    throw new CliUsageError(`Unknown daemon action: ${action}`, "daemon");
+  }
+  if (extra.some(isHelpFlag)) return { command: "help", topic: `daemon-${action}` };
+  rejectExtra(extra, `daemon-${action}`);
+  return { action, command: "daemon" };
 }
 
 function parseAgentCommand(args: string[], environment: NodeJS.ProcessEnv): CliCommand {
   const [subcommand, ...rest] = args;
-  if (!subcommand || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
-    return { command: "help" };
+  if (!subcommand || isHelpFlag(subcommand)) return { command: "help", topic: "agent" };
+  const helpTopic = agentHelpTopic(subcommand);
+  if (!helpTopic) {
+    throw new CliUsageError(`Unknown agent command: ${subcommand}`, "agent");
   }
+  if (rest.some(isHelpFlag)) return { command: "help", topic: helpTopic };
+
   const json = takeFlag(rest, "--json");
-  const herdrSessionName = takeOption(rest, "--session");
-  const workspaceId = takeOption(rest, "--workspace");
+  const herdrSessionName = takeOption(rest, "--session", helpTopic);
+  const workspaceId = takeOption(rest, "--workspace", helpTopic);
   const explicitScope: AgentScope = {
     ...(herdrSessionName ? { herdrSessionName } : {}),
     ...(workspaceId ? { workspaceId } : {}),
@@ -76,68 +105,170 @@ function parseAgentCommand(args: string[], environment: NodeJS.ProcessEnv): CliC
 
   if (subcommand === "list") {
     const all = takeFlag(rest, "--all");
-    rejectExtra(rest);
+    rejectExtra(rest, helpTopic);
     return {
       command: "agent-list",
-      ...(all ? { all: true } : scopedOrCurrent(explicitScope, environment)),
+      ...(all ? { all: true } : scopedOrCurrent(explicitScope, environment, helpTopic)),
       json,
     };
   }
 
   if (subcommand === "get") {
     const [target, ...extra] = rest;
-    if (!target) throw new Error("agent get requires <target>");
-    rejectExtra(extra);
+    if (!target) throw new CliUsageError("agent get requires <target>", helpTopic);
+    rejectExtra(extra, helpTopic);
     return {
       command: "agent-get",
-      ...scopedOrCurrent(explicitScope, environment),
+      ...scopedOrCurrent(explicitScope, environment, helpTopic),
       json,
       target,
     };
   }
 
   if (subcommand === "read") {
-    const limitValue = takeOption(rest, "--limit");
+    const limitValue = takeOption(rest, "--limit", helpTopic);
     const [target, ...extra] = rest;
-    if (!target) throw new Error("agent read requires <target>");
-    rejectExtra(extra);
+    if (!target) throw new CliUsageError("agent read requires <target>", helpTopic);
+    rejectExtra(extra, helpTopic);
     const limit = limitValue ? Number(limitValue) : undefined;
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 500)) {
-      throw new Error("--limit must be between 1 and 500");
+      throw new CliUsageError("--limit must be between 1 and 500", helpTopic);
     }
     return {
       command: "agent-read",
-      ...scopedOrCurrent(explicitScope, environment),
+      ...scopedOrCurrent(explicitScope, environment, helpTopic),
       json,
       ...(limit !== undefined ? { limit } : {}),
       target,
     };
   }
 
-  throw new Error(`Unknown agent command: ${subcommand}`);
+  throw new CliUsageError(`Unknown agent command: ${subcommand}`, "agent");
 }
 
-function scopedOrCurrent(scope: AgentScope, environment: NodeJS.ProcessEnv): AgentScope {
+function scopedOrCurrent(
+  scope: AgentScope,
+  environment: NodeJS.ProcessEnv,
+  helpTopic: HelpTopic,
+): AgentScope {
   if (scope.herdrSessionName || scope.workspaceId || scope.all) return scope;
   if (environment.HERDR_ENV === "1" && environment.HERDR_WORKSPACE_ID) {
     return { workspaceId: environment.HERDR_WORKSPACE_ID };
   }
-  throw new Error(CURRENT_HERDR_WORKSPACE_ERROR);
+  throw new CliUsageError(CURRENT_HERDR_WORKSPACE_ERROR, helpTopic);
 }
 
-export function helpText(): string {
-  return `Usage:
-  shepherd daemon [start|stop|restart|status]
-  shepherd agent list [--all] [--workspace <id>] [--session <name>] [--json]
-  shepherd agent get <target> [--workspace <id>] [--session <name>] [--json]
-  shepherd agent read <target> [--limit N] [--workspace <id>] [--session <name>] [--json]
-  shepherd help
+export function helpText(topic: HelpTopic = "root"): string {
+  switch (topic) {
+    case "root":
+      return `Shepherd observes coding agents managed by Herdr.
+
+Usage:
+  shepherd [options] <command>
+
+Commands:
+  agent     Inspect indexed coding agents
+  daemon    Manage the Shepherd daemon
+
+Options:
+  -h, --help       Show help
+  -v, --version    Show version
+
+Run \`shepherd agent --help\` or \`shepherd daemon --help\` for command-specific help.
 `;
+    case "agent":
+      return `Inspect indexed coding agents.
+
+Usage:
+  shepherd agent <command>
+
+Commands:
+  list            List indexed agents
+  get <target>    Show one agent
+  read <target>   Read one agent's recent messages
+
+Options:
+  -h, --help      Show help
+
+Run \`shepherd agent <command> --help\` for command-specific help.
+`;
+    case "agent-list":
+      return `List indexed agents.
+
+Usage:
+  shepherd agent list [options]
+
+Options:
+  --all                 Select all running Herdr workspaces
+  --workspace <id>      Select a Herdr workspace
+  --session <name>      Select a Herdr session
+  --json                Print JSON
+  -h, --help            Show help
+`;
+    case "agent-get":
+      return `Show one indexed agent.
+
+Usage:
+  shepherd agent get <target> [options]
+
+Options:
+  --workspace <id>      Select a Herdr workspace
+  --session <name>      Select a Herdr session
+  --json                Print JSON
+  -h, --help            Show help
+`;
+    case "agent-read":
+      return `Read one agent's recent messages.
+
+Usage:
+  shepherd agent read <target> [options]
+
+Options:
+  --limit <number>      Return 1 to 500 messages
+  --workspace <id>      Select a Herdr workspace
+  --session <name>      Select a Herdr session
+  --json                Print JSON
+  -h, --help            Show help
+`;
+    case "daemon":
+      return `Manage the Shepherd daemon.
+
+Usage:
+  shepherd daemon [command]
+
+Commands:
+  start       Start the daemon
+  stop        Stop the daemon
+  restart     Restart the daemon
+  status      Show daemon status (default)
+
+Options:
+  -h, --help  Show help
+
+Run \`shepherd daemon <command> --help\` for command-specific help.
+`;
+    case "daemon-start":
+      return daemonActionHelp("start", "Start the Shepherd daemon.");
+    case "daemon-stop":
+      return daemonActionHelp("stop", "Stop the Shepherd daemon.");
+    case "daemon-restart":
+      return daemonActionHelp("restart", "Restart the Shepherd daemon.");
+    case "daemon-status":
+      return daemonActionHelp("status", "Show Shepherd daemon status.");
+  }
+}
+
+export function versionText(): string {
+  return `shepherd ${readPackageVersion()}`;
 }
 
 export async function runCliCommand(command: CliCommand, deps: RunCliDeps): Promise<void> {
   if (command.command === "help") {
-    deps.output(helpText());
+    deps.output(helpText(command.topic));
+    return;
+  }
+  if (command.command === "version") {
+    deps.output(versionText());
     return;
   }
   if (command.command === "daemon") throw new Error("daemon command is handled by main");
@@ -151,7 +282,7 @@ export async function runCliCommand(command: CliCommand, deps: RunCliDeps): Prom
 }
 
 async function dispatchRpcCommand(
-  command: Exclude<CliCommand, { command: "daemon" | "help" }>,
+  command: Exclude<CliCommand, { command: "daemon" | "help" | "version" }>,
   client: RpcClientLike,
 ) {
   if (command.command === "agent-list") {
@@ -263,6 +394,14 @@ function oneLine(value: string): string {
 
 async function main(): Promise<void> {
   const command = parseCliArgs(argv.slice(2));
+  if (command.command === "help") {
+    console.log(helpText(command.topic));
+    return;
+  }
+  if (command.command === "version") {
+    console.log(versionText());
+    return;
+  }
   const runtime = resolveRuntimeForCommand();
   if (command.command === "daemon") {
     await runDaemonCommand(command, runtime);
@@ -345,24 +484,24 @@ function takeFlag(args: string[], name: string): boolean {
   return true;
 }
 
-function takeOption(args: string[], name: string): string | undefined {
+function takeOption(args: string[], name: string, helpTopic: HelpTopic): string | undefined {
   const index = args.indexOf(name);
   if (index < 0) return undefined;
   const value = args[index + 1];
-  if (!value) throw new Error(`${name} requires a value`);
+  if (!value) throw new CliUsageError(`${name} requires a value`, helpTopic);
   args.splice(index, 2);
   return value;
 }
 
-function rejectExtra(args: string[]): void {
-  if (args.length > 0) throw new Error(`Invalid argument: ${args[0]}`);
+function rejectExtra(args: string[], helpTopic: HelpTopic): void {
+  if (args.length > 0) throw new CliUsageError(`Invalid argument: ${args[0]}`, helpTopic);
 }
 
 function isDaemonAction(value: string): value is DaemonAction {
   return value === "restart" || value === "start" || value === "status" || value === "stop";
 }
 
-function formatCliError(error: unknown): string {
+export function formatCliError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (
     message.includes("ENOENT") ||
@@ -372,7 +511,65 @@ function formatCliError(error: unknown): string {
   ) {
     return `${message}\nRun \`shepherd daemon start\` before using Shepherd commands.`;
   }
+  if (error instanceof CliUsageError) {
+    return `${message}\nRun \`${helpInvocation(error.helpTopic)}\` for usage.`;
+  }
   return message;
+}
+
+function agentHelpTopic(subcommand: string): HelpTopic | undefined {
+  if (subcommand === "get" || subcommand === "list" || subcommand === "read") {
+    return `agent-${subcommand}`;
+  }
+  return undefined;
+}
+
+function daemonActionHelp(action: DaemonAction, description: string): string {
+  return `${description}
+
+Usage:
+  shepherd daemon ${action}
+
+Options:
+  -h, --help  Show help
+`;
+}
+
+function helpInvocation(topic: HelpTopic): string {
+  if (topic === "root") return "shepherd --help";
+  return `shepherd ${topic.replaceAll("-", " ")} --help`;
+}
+
+function isHelpFlag(value: string): boolean {
+  return value === "--help" || value === "-h";
+}
+
+function readPackageVersion(): string {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const manifestPath = join(directory, "package.json");
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+        name?: unknown;
+        version?: unknown;
+      };
+      if (manifest.name === "@ryonakae/shepherd" && typeof manifest.version === "string") {
+        return manifest.version;
+      }
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error("Unable to locate @ryonakae/shepherd package.json");
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 export function shouldRunCliMain(input: {

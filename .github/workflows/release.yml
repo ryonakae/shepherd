@@ -89,7 +89,8 @@ jobs:
           npm install --global --prefix "$install_root/root-prefix" \
             --ignore-scripts --no-audit --no-fund \
             "@ryonakae/shepherd@$VERSION"
-          "$install_root/root-prefix/bin/shepherd" help
+          "$install_root/root-prefix/bin/shepherd" --help
+          "$install_root/root-prefix/bin/shepherd" --version
 
           npm install --prefix "$install_root/pi-prefix" \
             --ignore-scripts --no-audit --no-fund \
