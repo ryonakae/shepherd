@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** Correction cycle 1 validation
+**Status:** Correction cycle 2 validation
 
-**Next steps:** Self-review and validate the scanner, recovery verifier, workflow order, and clarified documentation; commit the correction and request a full re-review because the Contract changed.
+**Next steps:** Commit the raw HTML depth scanner and newline-boundary verification fix, then request a scoped re-review of the three cycle 2 findings and directly affected paths.
 
 ## Problem Statement
 
@@ -354,7 +354,13 @@ Implementers must reflect minor file changes or implementation differences in th
 - Medium/low left for completion report: renderer metadata is hard-coded rather than derived from package metadata; documentation overstates all-I/O-failure atomicity instead of limiting the guarantee to validation failures.
 - Correction cycle 1 implementation: added comment/fence-aware top-level Markdown scanning, visible ordered required-section verification, and pre-install tag validation; documented the date-only preamble contract.
 - Correction cycle 1 affected validation: release automation passed all 58 tests, including the four reviewer reproductions.
-- Correction cycles completed: 0 of 2; the cycle completes after correction commit and re-review.
+- Correction cycle 1 completed with commit `547b09c`; full re-review confirmed the original fence/comment and workflow-order reproductions were fixed.
+- Re-review adopted high finding: raw HTML blocks such as `<pre>` and `<details>` can still hide pseudo bullets from Markdown rendering while passing changelog validation.
+- Re-review adopted high finding: complete required blocks inside raw or collapsible HTML can still pass recovery verification.
+- Re-review adopted high finding: a same-line suffix on the final authored, Validation, or comparison-link line passes the prefix-based required-block check.
+- Correction cycle 2 implementation: mask raw and collapsible HTML blocks with same-tag nesting depth, and require exact block content or a newline before operator-authored additions.
+- Correction cycle 2 affected validation: release/publication tests passed all 68 cases, including raw HTML, nested HTML, and same-line suffix reproductions; changelog check passed.
+- Correction cycle 2 is awaiting commit and scoped re-review; 1 of 2 cycles completed.
 
 ## Risks and Open Questions
 

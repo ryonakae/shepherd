@@ -36,8 +36,64 @@ function closesFence(line, fence) {
   );
 }
 
-function maskHtmlComments(source) {
+const voidHtmlTags = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function htmlTagDepth(line, tag) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const openings = [...line.matchAll(new RegExp(`<${escaped}(?=[\\s/>])`, "gi"))].length;
+  const closings = [...line.matchAll(new RegExp(`</${escaped}(?=[\\s>])`, "gi"))].length;
+  const selfClosing = [
+    ...line.matchAll(new RegExp(`<${escaped}(?=[\\s/>])[^>]*?/\\s*>`, "gi")),
+  ].length;
+  return openings - closings - selfClosing;
+}
+
+function rawHtmlOpening(line) {
+  const content = /^ {0,3}(\S.*)$/.exec(line)?.[1];
+  if (!content) return undefined;
+  if (content.startsWith("<![CDATA[")) {
+    return { closed: content.slice(9).includes("]]>"), terminator: "]]>" };
+  }
+  if (content.startsWith("<?")) {
+    return { closed: content.slice(2).includes("?>"), terminator: "?>" };
+  }
+  if (/^<![A-Z]/.test(content)) {
+    return { closed: content.includes(">"), terminator: ">" };
+  }
+
+  const match = /^<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>]|$)/.exec(content);
+  if (!match) return undefined;
+  const tag = match[1].toLowerCase();
+  const depth = voidHtmlTags.has(tag) ? 0 : htmlTagDepth(content, tag);
+  return { closed: depth <= 0, depth, tag };
+}
+
+function advancesPastRawHtml(line, block) {
+  if (block.tag) {
+    block.depth += htmlTagDepth(line, block.tag);
+    return block.depth <= 0;
+  }
+  return line.toLowerCase().includes(block.terminator.toLowerCase());
+}
+
+function maskHiddenMarkdown(source) {
   let fence;
+  let htmlBlock;
   let inComment = false;
   return source
     .replace(/\r\n?/g, "\n")
@@ -46,6 +102,10 @@ function maskHtmlComments(source) {
       if (fence) {
         if (closesFence(line, fence)) fence = undefined;
         return line;
+      }
+      if (htmlBlock) {
+        if (advancesPastRawHtml(line, htmlBlock)) htmlBlock = undefined;
+        return " ".repeat(line.length);
       }
 
       const masked = [...line];
@@ -71,6 +131,11 @@ function maskHtmlComments(source) {
       }
 
       const result = masked.join("");
+      htmlBlock = rawHtmlOpening(result);
+      if (htmlBlock) {
+        if (htmlBlock.closed) htmlBlock = undefined;
+        return " ".repeat(line.length);
+      }
       fence = fenceMarker(result);
       return result;
     })
@@ -78,7 +143,7 @@ function maskHtmlComments(source) {
 }
 
 function visibleTopLevelLines(source) {
-  const masked = maskHtmlComments(source);
+  const masked = maskHiddenMarkdown(source);
   const lines = [];
   let fence;
   let offset = 0;
@@ -265,7 +330,7 @@ https://github.com/ryonakae/shepherd/compare/v${previous.version}...v${version}
 
 export async function verifyReleaseNotesBody(version, body, root = process.cwd()) {
   const expected = requiredReleaseBlocks(await renderReleaseNotes(version, root));
-  const actual = releaseStructure(maskHtmlComments(body));
+  const actual = releaseStructure(maskHiddenMarkdown(body));
   if (!expected.title || !actual.visibleLines?.some((line) => line.text === expected.title)) {
     throw new Error(`GitHub Release v${version}: missing or altered required release block ${expected.title}`);
   }
@@ -282,7 +347,7 @@ export async function verifyReleaseNotesBody(version, body, root = process.cwd()
     const content = normalizeMarkdown(
       actual.normalized.slice(heading.start, actual.headings[matchIndex + 1]?.start ?? actual.normalized.length),
     );
-    if (!content.startsWith(block.content)) {
+    if (content !== block.content && !content.startsWith(`${block.content}\n`)) {
       throw new Error(`GitHub Release v${version}: missing or altered required release block ${block.heading}`);
     }
     headingIndex = matchIndex + 1;

@@ -492,6 +492,30 @@ _2026-08-28_
       "0.6.0",
       /category Added.*at least one bullet/i,
     ],
+    [
+      "bullet hidden in a raw HTML block",
+      validChangelog.replace("- Adds contextual CLI help.", "<pre>\n- Hidden list marker.\n</pre>"),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "bullet hidden in a collapsible HTML block",
+      validChangelog.replace(
+        "- Adds contextual CLI help.",
+        "<details>\n<summary>Changes</summary>\n- Hidden list marker.\n</details>",
+      ),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "bullet hidden after a nested raw HTML tag",
+      validChangelog.replace(
+        "- Adds contextual CLI help.",
+        "<div>\n<div></div>\n- Hidden list marker.\n</div>",
+      ),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
   ])("rejects %s", async (_label, changelog, target, message) => {
     const root = await createChangelogFixture(changelog);
 
@@ -539,11 +563,16 @@ _2026-08-28_
     });
   });
 
-  test("rejects required blocks hidden in an HTML comment", async () => {
+  test.each([
+    ["an HTML comment", "<!--", "-->"],
+    ["a raw HTML block", "<pre>", "</pre>"],
+    ["a collapsible HTML block", "<details>", "</details>"],
+    ["nested raw HTML", "<details>\n<details>", "</details>\n</details>"],
+  ])("rejects required blocks hidden in %s", async (_label, opening, closing) => {
     const root = await createChangelogFixture(validChangelog);
     const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
     const bodyPath = join(root, "release-body.md");
-    await writeFile(bodyPath, `<!--\n${rendered}\n-->\n\nVisible replacement text.\n`);
+    await writeFile(bodyPath, `${opening}\n${rendered}\n${closing}\n\nVisible replacement text.\n`);
 
     const error = await runReleaseNotes(root, "verify", "0.6.0", bodyPath).catch(
       (reason: unknown) => reason,
@@ -561,7 +590,30 @@ _2026-08-28_
       "missing generated",
       (body: string) => body.replace(/## Validation[\s\S]*?(?=\n## Full changelog)/, ""),
     ],
-    ["altered", (body: string) => body.replace("@ryonakae/shepherd@0.6.0", "@ryonakae/shepherd")],
+    [
+      "altered install",
+      (body: string) => body.replace("@ryonakae/shepherd@0.6.0", "@ryonakae/shepherd"),
+    ],
+    [
+      "authored-line suffix",
+      (body: string) =>
+        body.replace(
+          "- **Breaking:** Removes `shepherd help`.",
+          "- **Breaking:** Removes `shepherd help`. ALTERED",
+        ),
+    ],
+    [
+      "validation-line suffix",
+      (body: string) =>
+        body.replace(
+          "- Both exact npm package versions passed fresh registry installation.",
+          "- Both exact npm package versions passed fresh registry installation. ALTERED",
+        ),
+    ],
+    [
+      "comparison-link suffix",
+      (body: string) => body.replace("v0.5.0...v0.6.0", "v0.5.0...v0.6.0-ALTERED"),
+    ],
   ])("rejects an existing release with a %s required block", async (_label, mutate) => {
     const root = await createChangelogFixture(validChangelog);
     const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
