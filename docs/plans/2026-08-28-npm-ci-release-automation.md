@@ -1,10 +1,10 @@
 # npm CI and Release Automation Implementation Plan
 
-**Status:** Active — authorized CI bootstrap fix validated locally; awaiting follow-up review and hosted rerun
+**Status:** Active — CI bootstrap fix approved; awaiting hosted rerun and external activation
 
 **Progress:** 3 of 4 tasks complete
 
-**Next steps:** Commit and review the clean-install bootstrap fix, push it, verify hosted `CI`, then continue Task 4. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** Push the approved clean-install bootstrap fix, verify hosted `CI`, then continue Task 4. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -349,6 +349,7 @@ Implementers must reflect minor file or implementation differences in the releva
 - Because both prior reviewer contexts were cleaned by the harness, the user explicitly authorized one fresh final scoped reviewer. That review approved `f932e824455419d338212879050d91730097ec6a` with no blocking/high or decision-required findings.
 - Automatic review correction cycles used: 2 of 2. Unresolved blocking/high or decision-required findings: none.
 - After the approved review was pushed, hosted CI exposed a pre-validation Husky bootstrap failure. The user explicitly authorized one post-review CI fix; its scope is limited to `--ignore-scripts` installation followed by allowed dependency rebuild in CI and release validation.
+- Focused review approved follow-up commit `3a605b06a5dfc184a46fd629e680cb3f38c0cb88` with no blocking/high, decision-required, or medium/low findings.
 - Original medium/low findings were intentionally not changed under the implementation review policy: existing GitHub Release notes are not revalidated on idempotent rerun, and deterministic pre-publication tag errors could be documented more explicitly in a future docs-only improvement.
 
 ## Risks and Open Questions
