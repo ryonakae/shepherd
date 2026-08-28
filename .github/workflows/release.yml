@@ -31,6 +31,12 @@ jobs:
           set -euo pipefail
           version="$(node scripts/validate-release-tag.mjs "$GITHUB_REF_NAME" "$GITHUB_SHA")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Render release notes before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-notes.mjs render "${{ steps.version.outputs.version }}" \
+            > "$RUNNER_TEMP/release-notes.md"
       - run: pnpm check
       - run: pnpm build
       - name: Build and smoke-test release tarballs
@@ -107,44 +113,36 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Create GitHub Release
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+      - name: Create or verify GitHub Release
         shell: bash
         run: |
           set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          node scripts/release-notes.mjs render "$version" > "$notes"
+
           if existing="$(gh release view "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --json tagName,isDraft,isPrerelease 2>/dev/null)"; then
+            --json tagName,isDraft,isPrerelease,body 2>/dev/null)"; then
             jq -e \
               --arg tag "$GITHUB_REF_NAME" \
               '.tagName == $tag and .isDraft == false and .isPrerelease == false' \
               <<<"$existing" >/dev/null
-            echo "GitHub Release $GITHUB_REF_NAME already exists and is complete"
+            existing_notes="$RUNNER_TEMP/existing-release-notes.md"
+            jq --raw-output .body <<<"$existing" > "$existing_notes"
+            node scripts/release-notes.mjs verify "$version" "$existing_notes"
+            echo "GitHub Release $GITHUB_REF_NAME already exists and contains every required block"
             exit 0
           fi
 
-          generated="$(gh api --method POST \
-            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$GITHUB_REF_NAME" \
-            -f target_commitish="$GITHUB_SHA")"
-          generated_body="$(jq --raw-output .body <<<"$generated")"
-          notes="$RUNNER_TEMP/release-notes.md"
-          cat >"$notes" <<EOF
-          ## Install
-
-          \`npm install --global @ryonakae/shepherd\`
-
-          \`pi install npm:@ryonakae/shepherd-pi\`
-
-          The optional Herdr plugin remains distributed from this GitHub tag:
-          \`herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref $GITHUB_REF_NAME --yes\`
-
-          ## Changes
-
-          $generated_body
-          EOF
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --target "$GITHUB_SHA" \
             --title "$GITHUB_REF_NAME" \
             --notes-file "$notes" \
             --latest

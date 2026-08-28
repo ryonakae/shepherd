@@ -482,12 +482,66 @@ _2026-08-28_
     expect(error).toMatchObject({ stderr: expect.stringMatching(message) });
   });
 
-  test("preserves the breaking marker in extracted release notes", async () => {
+  test("renders authored changes with exact install, validation, and comparison sections", async () => {
     const root = await createChangelogFixture(validChangelog);
 
     const { stdout } = await runReleaseNotes(root, "render", "0.6.0");
 
+    expect(stdout).toContain("# Shepherd v0.6.0");
+    expect(stdout).toContain("## Release Notes");
     expect(stdout).toContain("- **Breaking:** Removes `shepherd help`.");
+    expect(stdout).toContain("npm install --global @ryonakae/shepherd@0.6.0");
+    expect(stdout).toContain("pi install npm:@ryonakae/shepherd-pi@0.6.0");
+    expect(stdout).toContain("--ref v0.6.0 --yes");
+    expect(stdout).toContain(
+      "Release tarball integrity was verified before and after npm publication.",
+    );
+    expect(stdout).toContain("https://github.com/ryonakae/shepherd/compare/v0.5.0...v0.6.0");
+  });
+
+  test.each([
+    ["an unknown version", "0.7.0", /target version 0\.7\.0.*not found/i],
+    ["the oldest version", "0.5.0", /without a next-older changelog entry/i],
+  ])("rejects rendering %s", async (_label, version, message) => {
+    const root = await createChangelogFixture(validChangelog);
+
+    const error = await runReleaseNotes(root, "render", version).catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ stderr: expect.stringMatching(message) });
+  });
+
+  test("accepts an existing release with every required block and extra operator text", async () => {
+    const root = await createChangelogFixture(validChangelog);
+    const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
+    const bodyPath = join(root, "release-body.md");
+    await writeFile(bodyPath, `${rendered.replaceAll("\n", "\r\n")}\r\nOperator note.\r\n`);
+
+    await expect(runReleaseNotes(root, "verify", "0.6.0", bodyPath)).resolves.toMatchObject({
+      stdout: "0.6.0\n",
+    });
+  });
+
+  test.each([
+    [
+      "missing authored",
+      (body: string) => body.replace(/## Release Notes[\s\S]*?(?=\n## Install)/, ""),
+    ],
+    [
+      "missing generated",
+      (body: string) => body.replace(/## Validation[\s\S]*?(?=\n## Full changelog)/, ""),
+    ],
+    ["altered", (body: string) => body.replace("@ryonakae/shepherd@0.6.0", "@ryonakae/shepherd")],
+  ])("rejects an existing release with a %s required block", async (_label, mutate) => {
+    const root = await createChangelogFixture(validChangelog);
+    const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");
+    const bodyPath = join(root, "release-body.md");
+    await writeFile(bodyPath, mutate(rendered));
+
+    const error = await runReleaseNotes(root, "verify", "0.6.0", bodyPath).catch(
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toMatchObject({ stderr: expect.stringMatching(/required release block/i) });
   });
 });
 
@@ -665,6 +719,7 @@ describe("release workflow", () => {
       job?.steps.flatMap((step) => step.run ?? []).join("\n") ?? "";
 
     expect(commands(validate)).toContain("validate-release-tag.mjs");
+    expect(commands(validate)).toContain("release-notes.mjs render");
     expect(commands(validate)).toContain("pnpm install --frozen-lockfile --ignore-scripts");
     expect(commands(validate)).toContain("pnpm rebuild");
     expect(commands(validate)).toContain("pnpm check");
@@ -672,6 +727,10 @@ describe("release workflow", () => {
     expect(commands(validate)).toContain("pnpm package:smoke");
     expect(commands(validate)).toContain("release-registry.mjs check");
     expect(commands(validate)).not.toContain("|| true");
+    const validateRender = validate?.steps.findIndex((step) =>
+      step.run?.includes("release-notes.mjs render"),
+    );
+    const validateBuild = validate?.steps.findIndex((step) => step.run?.includes("pnpm build"));
     const validateSmoke = validate?.steps.findIndex((step) => step.run?.includes("package:smoke"));
     const validateRegistry = validate?.steps.findIndex((step) =>
       step.run?.includes("release-registry.mjs check"),
@@ -679,7 +738,9 @@ describe("release workflow", () => {
     const validateUpload = validate?.steps.findIndex((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
-    expect(validateSmoke).toBeGreaterThan(-1);
+    expect(validateRender).toBeGreaterThan(-1);
+    expect(validateBuild).toBeGreaterThan(validateRender ?? -1);
+    expect(validateSmoke).toBeGreaterThan(validateBuild ?? -1);
     expect(validateRegistry).toBeGreaterThan(validateSmoke ?? -1);
     expect(validateUpload).toBeGreaterThan(validateRegistry ?? -1);
 
@@ -712,8 +773,16 @@ describe("release workflow", () => {
 
     expect(release?.needs).toBe("registry-smoke");
     expect(release?.permissions).toEqual({ contents: "write" });
-    expect(commands(release)).toContain("releases/generate-notes");
+    expect(release?.steps.some((step) => step.uses?.startsWith("actions/checkout@"))).toBe(true);
+    expect(commands(release)).toContain("release-notes.mjs render");
+    expect(commands(release)).toContain("release-notes.mjs verify");
     expect(commands(release)).toContain("gh release create");
+    expect(commands(release)).toContain('--target "$GITHUB_SHA"');
+    expect(commands(release)).not.toContain("releases/generate-notes");
+    expect(commands(release)).toContain("tagName,isDraft,isPrerelease,body");
+    expect(commands(release)).toContain(".tagName == $tag");
+    expect(commands(release)).toContain(".isDraft == false");
+    expect(commands(release)).toContain(".isPrerelease == false");
 
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps.filter((candidate) => candidate.uses)) {

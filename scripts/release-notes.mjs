@@ -111,6 +111,26 @@ export async function validateLatestChangelogVersion(version, root = process.cwd
   return releases;
 }
 
+function normalizeMarkdown(source) {
+  return source
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+}
+
+function requiredReleaseBlocks(rendered) {
+  const normalized = normalizeMarkdown(rendered);
+  const headings = [...normalized.matchAll(/^## (Release Notes|Install|Validation|Full changelog)$/gm)];
+  const blocks = [`# Shepherd ${/^# Shepherd (v\S+)$/m.exec(normalized)?.[1]}`];
+  for (const [index, heading] of headings.entries()) {
+    const end = headings[index + 1]?.index ?? normalized.length;
+    blocks.push(normalized.slice(heading.index, end).trim());
+  }
+  return blocks;
+}
+
 export async function renderReleaseNotes(version, root = process.cwd()) {
   const releases = await readChangelog(root);
   const index = releases.findIndex((release) => release.version === version);
@@ -155,6 +175,16 @@ https://github.com/ryonakae/shepherd/compare/v${previous.version}...v${version}
 `;
 }
 
+export async function verifyReleaseNotesBody(version, body, root = process.cwd()) {
+  const expected = await renderReleaseNotes(version, root);
+  const normalizedBody = normalizeMarkdown(body);
+  for (const block of requiredReleaseBlocks(expected)) {
+    if (!normalizedBody.includes(block)) {
+      throw new Error(`GitHub Release v${version}: missing or altered required release block ${block.split("\n")[0]}`);
+    }
+  }
+}
+
 async function main(args) {
   const [command, version, ...extra] = args;
   if (command === "check" && extra.length === 0) {
@@ -187,8 +217,15 @@ async function main(args) {
     return;
   }
 
+  if (command === "verify" && version && stableVersion.test(version) && extra.length === 1) {
+    const body = await readFile(resolve(process.cwd(), extra[0]), "utf8");
+    await verifyReleaseNotesBody(version, body);
+    process.stdout.write(`${version}\n`);
+    return;
+  }
+
   throw new Error(
-    "Usage: node scripts/release-notes.mjs <check [X.Y.Z] | render X.Y.Z>",
+    "Usage: node scripts/release-notes.mjs <check [X.Y.Z] | render X.Y.Z | verify X.Y.Z BODY_FILE>",
   );
 }
 

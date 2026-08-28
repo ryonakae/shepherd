@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** In progress — Task 3
+**Status:** In progress — Task 4
 
-**Next steps:** Wire deterministic rendering and required-block recovery validation into the release workflow before publication and GitHub Release completion.
+**Next steps:** Update maintainer documentation, run repository/package validation, obtain independent review, resolve any blocking findings, and archive the plan.
 
 ## Problem Statement
 
@@ -119,7 +119,7 @@ _2026-09-01_
 
 - [x] Task 1: Versioned changelog contract and historical source
 - [x] Task 2: Atomic preparation and tag gates
-- [ ] Task 3: Deterministic GitHub Release composition
+- [x] Task 3: Deterministic GitHub Release composition
 - [ ] Task 4: Maintainer workflow documentation and final validation
 
 Implementers must reflect minor file changes or implementation differences in the relevant task. They must ask the user before changing requirements, Out of Scope, or public contracts.
@@ -260,6 +260,12 @@ Implementers must reflect minor file changes or implementation differences in th
 - Expected: output contains the `v0.6.0` authored changes, exact install commands, workflow-backed validation text, and the `v0.5.0...v0.6.0` comparison URL.
 - Run: `pnpm exec vitest run test/unit/release-automation.test.ts`
 - Expected: renderer, workflow ordering, recovery, and all existing release safety tests pass.
+
+**Implementation result:**
+- The renderer emits authored changes plus exact-version npm/plugin installs, workflow-backed Validation claims, and a comparison URL derived from the next older entry.
+- Added `verify X.Y.Z BODY_FILE` for newline-normalized required-block recovery checks; it accepts unrelated operator text and rejects missing or altered authored/generated blocks.
+- The validation job renders notes before build and publication. The final job checks out the tagged source, renders notes without GitHub `generate-notes`, verifies existing releases, and creates new releases against `GITHUB_SHA`.
+- Validation: release automation passed all 54 tests; direct render/verify preview for `0.6.0` succeeded with an appended operator note.
 
 ### Task 4: Maintainer workflow documentation and final validation
 
