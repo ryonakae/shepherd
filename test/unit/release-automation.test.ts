@@ -516,6 +516,24 @@ _2026-08-28_
       "0.6.0",
       /category Added.*at least one bullet/i,
     ],
+    [
+      "bullet hidden after a commented closing tag",
+      validChangelog.replace(
+        "- Adds contextual CLI help.",
+        "<details>\n<!-- </details> -->\n- Hidden list marker.\n</details>",
+      ),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
+    [
+      "bullet hidden after a closing tag in a quoted attribute",
+      validChangelog.replace(
+        "- Adds contextual CLI help.",
+        '<details data-close="</details>">\n- Hidden list marker.\n</details>',
+      ),
+      "0.6.0",
+      /category Added.*at least one bullet/i,
+    ],
   ])("rejects %s", async (_label, changelog, target, message) => {
     const root = await createChangelogFixture(changelog);
 
@@ -568,6 +586,8 @@ _2026-08-28_
     ["a raw HTML block", "<pre>", "</pre>"],
     ["a collapsible HTML block", "<details>", "</details>"],
     ["nested raw HTML", "<details>\n<details>", "</details>\n</details>"],
+    ["raw HTML with a commented close", "<details>\n<!-- </details> -->", "</details>"],
+    ["raw HTML with a quoted closing tag", '<details data-close="</details>">', "</details>"],
   ])("rejects required blocks hidden in %s", async (_label, opening, closing) => {
     const root = await createChangelogFixture(validChangelog);
     const { stdout: rendered } = await runReleaseNotes(root, "render", "0.6.0");

@@ -91,10 +91,55 @@ function advancesPastRawHtml(line, block) {
   return line.toLowerCase().includes(block.terminator.toLowerCase());
 }
 
+function maskNonStructuralHtml(line, state) {
+  const masked = [...line];
+  let cursor = 0;
+  while (cursor < line.length) {
+    if (state.inComment) {
+      if (line.startsWith("-->", cursor)) {
+        masked.fill(" ", cursor, cursor + 3);
+        state.inComment = false;
+        cursor += 3;
+      } else {
+        masked[cursor] = " ";
+        cursor += 1;
+      }
+      continue;
+    }
+
+    if (state.quote) {
+      const character = line[cursor];
+      masked[cursor] = " ";
+      if (character === state.quote) state.quote = undefined;
+      cursor += 1;
+      continue;
+    }
+
+    if (line.startsWith("<!--", cursor)) {
+      masked.fill(" ", cursor, cursor + 4);
+      state.inComment = true;
+      cursor += 4;
+      continue;
+    }
+
+    const character = line[cursor];
+    if (state.inTag && (character === '"' || character === "'")) {
+      masked[cursor] = " ";
+      state.quote = character;
+    } else if (state.inTag && character === ">") {
+      state.inTag = false;
+    } else if (!state.inTag && character === "<") {
+      state.inTag = true;
+    }
+    cursor += 1;
+  }
+  return masked.join("");
+}
+
 function maskHiddenMarkdown(source) {
   let fence;
   let htmlBlock;
-  let inComment = false;
+  const htmlState = { inComment: false, inTag: false, quote: undefined };
   return source
     .replace(/\r\n?/g, "\n")
     .split("\n")
@@ -103,34 +148,13 @@ function maskHiddenMarkdown(source) {
         if (closesFence(line, fence)) fence = undefined;
         return line;
       }
+
+      const result = maskNonStructuralHtml(line, htmlState);
       if (htmlBlock) {
-        if (advancesPastRawHtml(line, htmlBlock)) htmlBlock = undefined;
+        if (advancesPastRawHtml(result, htmlBlock)) htmlBlock = undefined;
         return " ".repeat(line.length);
       }
 
-      const masked = [...line];
-      let cursor = 0;
-      while (cursor < line.length) {
-        if (inComment) {
-          const end = line.indexOf("-->", cursor);
-          const limit = end === -1 ? line.length : end + 3;
-          masked.fill(" ", cursor, limit);
-          cursor = limit;
-          if (end === -1) break;
-          inComment = false;
-          continue;
-        }
-
-        const start = line.indexOf("<!--", cursor);
-        if (start === -1) break;
-        const end = line.indexOf("-->", start + 4);
-        const limit = end === -1 ? line.length : end + 3;
-        masked.fill(" ", start, limit);
-        cursor = limit;
-        inComment = end === -1;
-      }
-
-      const result = masked.join("");
       htmlBlock = rawHtmlOpening(result);
       if (htmlBlock) {
         if (htmlBlock.closed) htmlBlock = undefined;

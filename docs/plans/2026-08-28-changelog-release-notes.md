@@ -2,9 +2,9 @@
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
-**Status:** Correction cycle 2 validation
+**Status:** Continuation correction validation
 
-**Next steps:** Commit the raw HTML depth scanner and newline-boundary verification fix, then request a scoped re-review of the three cycle 2 findings and directly affected paths.
+**Next steps:** Commit the comment- and attribute-aware raw HTML depth fix, request scoped re-review of the two remaining findings, then run final validation and archive the plan if no blocking finding remains.
 
 ## Problem Statement
 
@@ -360,7 +360,16 @@ Implementers must reflect minor file changes or implementation differences in th
 - Re-review adopted high finding: a same-line suffix on the final authored, Validation, or comparison-link line passes the prefix-based required-block check.
 - Correction cycle 2 implementation: mask raw and collapsible HTML blocks with same-tag nesting depth, and require exact block content or a newline before operator-authored additions.
 - Correction cycle 2 affected validation: release/publication tests passed all 68 cases, including raw HTML, nested HTML, and same-line suffix reproductions; changelog check passed.
-- Correction cycle 2 is awaiting commit and scoped re-review; 1 of 2 cycles completed.
+- Correction cycle 2 completed with commit `3156048`; focused tests passed 68 cases and the commit hook passed all 316 tests.
+- Scoped re-review confirmed same-line authored, Validation, and comparison-link suffixes are rejected.
+- Unresolved high finding: inside an active raw HTML block, a comment such as `<!-- </details> -->` is counted by HTML tag depth before comment masking, so a following hidden bullet can pass R2/R3 validation.
+- Unresolved high finding: the same premature raw-HTML mask termination lets required Release blocks remain inside `<details>` while passing R9 recovery verification.
+- Required next correction: ignore closing-tag text inside comments and quoted attributes during raw-HTML depth updates, with parser and verifier regressions for both interactions.
+- Correction cycles completed in the first implementation invocation: 2 of 2. No third automatic correction was attempted.
+- The user authorized a new implementation invocation to resolve the two remaining findings.
+- Continuation correction: raw HTML depth now consumes a lexical view that masks comments and quoted attributes before counting tags; parser and recovery regression tests cover both compositions.
+- Continuation affected validation: release/publication tests passed all 72 cases and changelog check passed.
+- Correction cycles used in the continuation invocation: 0 of 2; the first cycle completes after commit and scoped re-review.
 
 ## Risks and Open Questions
 
