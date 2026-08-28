@@ -1,10 +1,10 @@
 # npm CI and Release Automation Implementation Plan
 
-**Status:** Active — repository implementation complete; awaiting independent review and external activation
+**Status:** Active — independent review approved; awaiting hosted CI and external activation
 
 **Progress:** 3 of 4 tasks complete
 
-**Next steps:** Run full local validation and independent review, then push the implementation once before Task 4 external activation. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** Push the reviewed implementation commits, wait for hosted `CI`, then complete Task 4 Environment/npm trust setup and readback before archiving this plan. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -340,6 +340,15 @@ Implementers must reflect minor file or implementation differences in the releva
 - [ ] Plan and actual changes agree, including any minor implementation differences recorded in the relevant task.
 - [ ] After every item above succeeds, move this plan unchanged in name to `docs/plans/archived/2026-08-28-npm-ci-release-automation.md` in a separate docs-only commit, as required by repository plan/archive policy.
 
+## Review Gate Summary
+
+- Review range: `e70961a1d821b92e5afc500ecb60a23f6b9c1b3d..f932e824455419d338212879050d91730097ec6a`.
+- Initial independent review found one blocking/high test-coverage gap. Correction commit `57850ad847435c685e099c86e6d83539e8e3cc48` added executable release safety paths.
+- Scoped re-review found three remaining false-positive test paths. Correction commit `f932e824455419d338212879050d91730097ec6a` closed all three.
+- Because both prior reviewer contexts were cleaned by the harness, the user explicitly authorized one fresh final scoped reviewer. That review approved `f932e824455419d338212879050d91730097ec6a` with no blocking/high or decision-required findings.
+- Automatic correction cycles used: 2 of 2. Unresolved blocking/high or decision-required findings: none.
+- Original medium/low findings were intentionally not changed under the implementation review policy: existing GitHub Release notes are not revalidated on idempotent rerun, and deterministic pre-publication tag errors could be documented more explicitly in a future docs-only improvement.
+
 ## Risks and Open Questions
 
 - A tag exists remotely before validation and publication complete. Recovery must use the next unused patch version rather than mutate that tag.
@@ -347,4 +356,5 @@ Implementers must reflect minor file or implementation differences in the releva
 - GitHub-generated release notes depend on repository history and previous releases; fixed installation and Herdr distribution text must not depend on generated content.
 - External Environment and npm trust setup cannot be completed safely until `release.yml` is present on the default branch. The plan therefore remains active if code validation passes but hosted/external activation is still pending.
 - The npm CLI is not currently authenticated for trust readback (`E401`). Task 4 requires an interactive maintainer login after the workflow reaches the default branch; this is an operational prerequisite, not a repository credential.
+- Both prior reviewer contexts were cleaned by the harness; the explicitly authorized fresh final scoped review approved the completed corrections.
 - No unresolved product or publication behavior remains.
