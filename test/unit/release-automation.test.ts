@@ -487,6 +487,8 @@ describe("release workflow", () => {
       job?.steps.flatMap((step) => step.run ?? []).join("\n") ?? "";
 
     expect(commands(validate)).toContain("validate-release-tag.mjs");
+    expect(commands(validate)).toContain("pnpm install --frozen-lockfile --ignore-scripts");
+    expect(commands(validate)).toContain("pnpm rebuild");
     expect(commands(validate)).toContain("pnpm check");
     expect(commands(validate)).toContain("pnpm build");
     expect(commands(validate)).toContain("pnpm package:smoke");
@@ -580,8 +582,10 @@ describe("hosted CI", () => {
     expect(setupNode?.with?.["node-version"]).toBe("24.18.0");
     expect(setupPnpm).toBeDefined();
     const commands = job?.steps.flatMap((step) => step.run ?? []).join("\n") ?? "";
-    expect(commands).toContain("pnpm install --frozen-lockfile");
-    expect(commands).toContain("pnpm check");
+    expect(commands).toContain("pnpm install --frozen-lockfile --ignore-scripts");
+    expect(commands).toContain("pnpm rebuild");
+    expect(commands.indexOf("pnpm rebuild")).toBeGreaterThan(commands.indexOf("pnpm install"));
+    expect(commands.indexOf("pnpm check")).toBeGreaterThan(commands.indexOf("pnpm rebuild"));
     expect(commands).toContain("pnpm build");
     expect(commands).toContain("pnpm package:smoke");
     expect(commands).not.toContain("npm publish");

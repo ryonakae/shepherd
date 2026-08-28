@@ -22,7 +22,8 @@ jobs:
         with:
           node-version: 24.18.0
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm rebuild
       - id: version
         name: Validate stable tag and main ancestry
         shell: bash

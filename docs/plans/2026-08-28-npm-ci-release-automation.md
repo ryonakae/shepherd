@@ -1,10 +1,10 @@
 # npm CI and Release Automation Implementation Plan
 
-**Status:** Active — independent review approved; awaiting hosted CI and external activation
+**Status:** Active — authorized CI bootstrap fix validated locally; awaiting follow-up review and hosted rerun
 
 **Progress:** 3 of 4 tasks complete
 
-**Next steps:** Push the reviewed implementation commits, wait for hosted `CI`, then complete Task 4 Environment/npm trust setup and readback before archiving this plan. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
+**Next steps:** Commit and review the clean-install bootstrap fix, push it, verify hosted `CI`, then continue Task 4. Keep the plan active through the first hosted CI run and external trust readback; archive it later in a separate docs-only commit.
 
 > **For implementers:** Execute tasks in order unless dependencies allow otherwise. Mark a task complete only after its validation succeeds. Reflect minor implementation differences in the relevant task. Ask the user before changing requirements, Out of Scope, or public contracts.
 
@@ -206,6 +206,7 @@ Implementers must reflect minor file or implementation differences in the releva
 - Added SHA-pinned Ubuntu CI for pull requests and `main`, using Node.js `24.18.0`, package-manager-pinned pnpm, frozen install, full checks, build, and package smoke.
 - Added `scripts/check-release-packages.mjs` and `pnpm package:smoke`; it packs build output without rerunning lifecycle scripts, writes two tarballs plus `release-packages.json`, and verifies isolated root/Pi installations.
 - Validation passed: 3 focused files / 18 tests, clean build, and real smoke installation for both `0.5.0` tarballs.
+- Hosted run `33137281469` exposed that `pnpm:devPreinstall` invokes Husky before dependencies exist in a clean checkout. With explicit user authorization after the correction budget, CI and release validation now install with `--ignore-scripts` and run `pnpm rebuild`; a clean archive then passed install, allowed dependency builds, and the complete `pnpm check`.
 
 ### Task 3: Approval-Gated Trusted Publishing and Release Documentation
 
@@ -329,11 +330,11 @@ Implementers must reflect minor file or implementation differences in the releva
 ## Final Validation
 
 - [ ] `pnpm vitest run test/unit/release-automation.test.ts test/unit/package-publication.test.ts test/unit/herdr-plugin-package.test.ts` — Expected: all focused release/package tests pass.
-- [ ] `pnpm check` — Expected: typecheck, all tests, Biome, Drizzle, root package, Pi package, and Herdr plugin checks pass.
+- [x] `pnpm check` — Passed locally: typecheck, 31 test files / 262 tests, Biome, Drizzle, root package, Pi package, and Herdr plugin checks.
 - [ ] `pnpm build && pnpm package:smoke` — Expected: clean build plus isolated installation of both generated public tarballs succeeds.
 - [ ] `git diff --check` — Expected: no whitespace errors.
 - [ ] Manual workflow review — Expected: only the publication job has `id-token: write` and `environment: npm`; only the GitHub Release job has `contents: write`; no npm token is referenced.
-- [ ] Hosted CI after push — Expected: `CI` completes successfully on Ubuntu. This remains pending until the changes are pushed.
+- [ ] Hosted CI after push — Initial run `33137281469` failed at `pnpm install --frozen-lockfile` because clean checkout executes `pnpm:devPreinstall` before Husky exists. Authorized follow-up fix passed a clean-archive `install --ignore-scripts → rebuild → pnpm check`; hosted rerun remains pending.
 - [ ] GitHub Environment and npm trust readbacks from Task 4 — Expected: required reviewer and both exact trusted publisher bindings are active. This remains pending until the workflow exists on the default branch.
 - [ ] N/A: no live release workflow is triggered during implementation because publishing a new version/tag is explicitly out of scope.
 - [ ] Requirement Coverage has no unassigned requirement or decision.
@@ -346,7 +347,8 @@ Implementers must reflect minor file or implementation differences in the releva
 - Initial independent review found one blocking/high test-coverage gap. Correction commit `57850ad847435c685e099c86e6d83539e8e3cc48` added executable release safety paths.
 - Scoped re-review found three remaining false-positive test paths. Correction commit `f932e824455419d338212879050d91730097ec6a` closed all three.
 - Because both prior reviewer contexts were cleaned by the harness, the user explicitly authorized one fresh final scoped reviewer. That review approved `f932e824455419d338212879050d91730097ec6a` with no blocking/high or decision-required findings.
-- Automatic correction cycles used: 2 of 2. Unresolved blocking/high or decision-required findings: none.
+- Automatic review correction cycles used: 2 of 2. Unresolved blocking/high or decision-required findings: none.
+- After the approved review was pushed, hosted CI exposed a pre-validation Husky bootstrap failure. The user explicitly authorized one post-review CI fix; its scope is limited to `--ignore-scripts` installation followed by allowed dependency rebuild in CI and release validation.
 - Original medium/low findings were intentionally not changed under the implementation review policy: existing GitHub Release notes are not revalidated on idempotent rerun, and deterministic pre-publication tag errors could be documented more explicitly in a future docs-only improvement.
 
 ## Risks and Open Questions
@@ -357,4 +359,5 @@ Implementers must reflect minor file or implementation differences in the releva
 - External Environment and npm trust setup cannot be completed safely until `release.yml` is present on the default branch. The plan therefore remains active if code validation passes but hosted/external activation is still pending.
 - The npm CLI is not currently authenticated for trust readback (`E401`). Task 4 requires an interactive maintainer login after the workflow reaches the default branch; this is an operational prerequisite, not a repository credential.
 - Both prior reviewer contexts were cleaned by the harness; the explicitly authorized fresh final scoped review approved the completed corrections.
+- Hosted CI run `33137281469` exposed a clean-install bootstrap failure in the pre-existing `pnpm:devPreinstall: husky` path. The authorized workflow-only fix passed a clean archive with `pnpm rebuild`; the external Environment/npm trust setup remains untouched until the hosted rerun passes.
 - No unresolved product or publication behavior remains.

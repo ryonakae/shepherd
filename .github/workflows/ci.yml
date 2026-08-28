@@ -18,7 +18,8 @@ jobs:
         with:
           node-version: 24.18.0
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm rebuild
       - run: pnpm check
       - run: pnpm build
       - run: pnpm package:smoke
