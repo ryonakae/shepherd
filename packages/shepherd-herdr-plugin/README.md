@@ -5,7 +5,7 @@ Herdr companion plugin for Shepherd agent history. Herdr installs this integrati
 Install the plugin from a release tag:
 
 ```bash
-herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.5.0 --yes
+herdr plugin install ryonakae/shepherd/packages/shepherd-herdr-plugin --ref v0.6.0 --yes
 ```
 
 The plugin requires the Shepherd CLI and daemon:
