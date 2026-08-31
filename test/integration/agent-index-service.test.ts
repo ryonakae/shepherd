@@ -319,6 +319,134 @@ describe("AgentIndexService", () => {
     ).toEqual(sessionRef);
     harness.sqlite.close();
   });
+
+  test("production wiring: covers isAdoption across initial adoption, live continuation, and subsequent new run", async () => {
+    const harness = openObservabilityDbHarness();
+    const lookups: Array<{ agent: string | null; isAdoption?: boolean; firstSeenAtMs?: number }> =
+      [];
+    let current = oneAgent("working", 10, "claude");
+    const index = new AgentIndexService({
+      clientFactory: () => ({
+        close() {},
+        async sessionSnapshot() {
+          return current;
+        },
+      }),
+      history: {
+        async resolveCompactHistory(input: any) {
+          lookups.push(input);
+          return {
+            compactHistory: {
+              ...emptyCompactHistory("claude-jsonl"),
+              lastAssistantMessage: { ref: "history", text: "done", timestamp: null },
+            },
+            historyRef: null,
+            sourceFingerprint: null,
+          };
+        },
+      } as unknown as AgentHistoryService,
+      stores: harness,
+    });
+
+    // 1. Initial take-over of already-running agent -> isAdoption: true
+    await index.refreshHerdrSession(sessionInput());
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]?.isAdoption).toBe(true);
+
+    // 2. Agent finishes -> done
+    await index.handleHerdrEvent({
+      event: { agent_status: "done", pane_id: "wJ:p2", type: "pane.agent_status_changed" },
+      ...sessionInput(),
+    });
+
+    // 3. Subsequent new run on the same terminal -> isAdoption: false
+    lookups.length = 0;
+    await index.handleHerdrEvent({
+      event: { agent_status: "working", pane_id: "wJ:p2", type: "pane.agent_status_changed" },
+      ...sessionInput(),
+    });
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]?.isAdoption).toBe(false);
+
+    harness.sqlite.close();
+  });
+
+  test("production wiring: status event new run does not reuse old hint ref and forces discovery", async () => {
+    const harness = openObservabilityDbHarness();
+    const forceDiscoveries: boolean[] = [];
+    const resolvedSessionRefs: Array<unknown> = [];
+    let current = oneAgent("working", 10, "pi");
+    const index = new AgentIndexService({
+      clientFactory: () => ({
+        close() {},
+        async sessionSnapshot() {
+          return current;
+        },
+      }),
+      history: {
+        async resolveCompactHistory(input: any, options?: any) {
+          forceDiscoveries.push(options?.forceDiscovery ?? false);
+          resolvedSessionRefs.push(input.agentSession);
+          return {
+            compactHistory: {
+              ...emptyCompactHistory("pi-jsonl"),
+              lastAssistantMessage: { ref: "history", text: "done", timestamp: null },
+            },
+            historyRef: null,
+            sourceFingerprint: null,
+          };
+        },
+      } as unknown as AgentHistoryService,
+      stores: harness,
+    });
+
+    await index.refreshHerdrSession(sessionInput());
+
+    const hintRef = {
+      agent: "pi",
+      kind: "path" as const,
+      source: "herdr:pi",
+      value: "/tmp/old-pi-session.jsonl",
+    };
+    await index.registerPiSessionRef({
+      herdrSessionName: "default",
+      sessionRef: hintRef,
+      terminalId: "term_claude",
+    });
+
+    expect(
+      harness.agents.findByTerminal({ herdrSessionName: "default", terminalId: "term_claude" })
+        ?.agentSession,
+    ).toEqual(hintRef);
+
+    // Agent finishes
+    await index.handleHerdrEvent({
+      event: { agent_status: "done", pane_id: "wJ:p2", type: "pane.agent_status_changed" },
+      ...sessionInput(),
+    });
+
+    // New run starts via status event
+    forceDiscoveries.length = 0;
+    resolvedSessionRefs.length = 0;
+    await index.handleHerdrEvent({
+      event: { agent_status: "working", pane_id: "wJ:p2", type: "pane.agent_status_changed" },
+      ...sessionInput(),
+    });
+
+    // In DB, hint is cleared
+    const agentAfterNewRun = harness.agents.findByTerminal({
+      herdrSessionName: "default",
+      terminalId: "term_claude",
+    });
+    expect(agentAfterNewRun?.agentSession).toBeNull();
+    expect(agentAfterNewRun?.isAdoption).toBe(false);
+
+    // History resolution was called with fresh input (no old hint) and forceDiscovery
+    expect(resolvedSessionRefs[0]).toBeNull();
+    expect(forceDiscoveries[0]).toBe(true);
+
+    harness.sqlite.close();
+  });
 });
 
 function history(onResolve: (agent: { agent: string | null }) => void, assistantText = "result") {

@@ -35,6 +35,7 @@ export type AgentIndexRecord = {
   foregroundCwd: string | null;
   herdrSessionName: string;
   id: string;
+  isAdoption: boolean;
   lastSeenAt: Date;
   name: string | null;
   paneId: string;

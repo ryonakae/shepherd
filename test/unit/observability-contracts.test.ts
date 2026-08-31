@@ -131,6 +131,7 @@ describe("agent observability contracts", () => {
       foregroundCwd: "/workspace",
       herdrSessionName: "default",
       id: "ag_1",
+      isAdoption: false,
       lastSeenAt: new Date(),
       name: null,
       paneId: "wB:p1",

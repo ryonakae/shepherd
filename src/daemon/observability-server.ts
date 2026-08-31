@@ -577,7 +577,7 @@ function historyInput(agent: AgentIndexRecord) {
     cwd: agent.cwd,
     firstSeenAtMs: agent.firstSeenAt.getTime(),
     foregroundCwd: agent.foregroundCwd,
-    isAdoption: agent.agentStatus !== "unknown",
+    isAdoption: agent.isAdoption,
   };
 }
 

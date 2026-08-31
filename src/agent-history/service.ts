@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import type {
@@ -10,7 +11,12 @@ import type {
 } from "@/observability/contracts.js";
 import { ClaudeHistoryReader } from "./claude-reader.js";
 import { CodexHistoryReader } from "./codex-reader.js";
-import { type AgentHistoryLookupInput, discoverAgentHistory } from "./discovery.js";
+import {
+  type AgentHistoryLookupInput,
+  discoverAgentHistory,
+  readCandidateCwd,
+  resolveOpenCodeDbPath,
+} from "./discovery.js";
 import { GeminiHistoryReader } from "./gemini-reader.js";
 import { OpenCodeHistoryReader } from "./opencode-reader.js";
 import { PiHistoryReader } from "./pi-reader.js";
@@ -54,7 +60,38 @@ export function createAgentHistoryService(
     preferredRef: AgentHistoryRef,
     input: AgentHistoryLookupInput,
   ): Promise<boolean> {
-    if (preferredRef.kind === "agent_session") return true;
+    const isAuthoritativeAgentSession =
+      preferredRef.kind === "agent_session" &&
+      input.agentSession !== null &&
+      input.agentSession !== undefined &&
+      input.agentSession.value === preferredRef.value;
+
+    if (isAuthoritativeAgentSession) {
+      if (preferredRef.source === "opencode-sqlite") {
+        const path =
+          preferredRef.path ?? resolveOpenCodeDbPath(input.homeDir ?? process.env.HOME ?? "");
+        if (!existsSync(path)) return false;
+        let sqlite: DatabaseSync | null = null;
+        try {
+          sqlite = new DatabaseSync(path, { readOnly: true });
+          const row = sqlite
+            .prepare("select id from session where id = ?")
+            .get(preferredRef.value) as { id: string } | undefined;
+          return Boolean(row);
+        } catch {
+          return false;
+        } finally {
+          sqlite?.close();
+        }
+      }
+      const path = preferredRef.path ?? preferredRef.value;
+      if (!path) return false;
+      const stats = await stat(path).catch(() => null);
+      return Boolean(stats?.isFile());
+    }
+
+    const targetCwd = input.cwd ?? input.foregroundCwd;
+    if (!targetCwd) return false;
 
     const path = preferredRef.path ?? preferredRef.value;
     if (!path) return false;
@@ -70,8 +107,7 @@ export function createAgentHistoryService(
           | { directory: string; id: string; time_updated: number }
           | undefined;
         if (!row) return false;
-        const targetCwd = input.cwd ?? input.foregroundCwd;
-        if (targetCwd && row.directory !== targetCwd) return false;
+        if (row.directory !== targetCwd) return false;
         if (input.firstSeenAtMs !== undefined && !input.isAdoption) {
           if (row.time_updated < input.firstSeenAtMs) return false;
         }
@@ -90,7 +126,19 @@ export function createAgentHistoryService(
       if (stats.mtimeMs < input.firstSeenAtMs) return false;
     }
 
+    const fileCwd = await resolveFileRefCwd(preferredRef, path);
+    if (!fileCwd || fileCwd !== targetCwd) return false;
+
     return true;
+  }
+
+  async function resolveFileRefCwd(ref: AgentHistoryRef, path: string): Promise<string | null> {
+    if (ref.source === "gemini-json") {
+      const projectRootFile = join(dirname(dirname(path)), ".project_root");
+      const content = await readFile(projectRootFile, "utf8").catch(() => "");
+      if (content.trim().length > 0) return content.trim();
+    }
+    return readCandidateCwd(path);
   }
 
   async function readCompactRef(historyRef: AgentHistoryRef): Promise<ResolvedCompactAgentHistory> {

@@ -126,7 +126,7 @@ async function listJsonlFiles(root: string): Promise<string[]> {
   return files;
 }
 
-async function readCandidateCwd(path: string): Promise<string | null> {
+export async function readCandidateCwd(path: string): Promise<string | null> {
   const content = await readFile(path, "utf8").catch(() => "");
   let inspected = 0;
   for (const line of content.split(/\r?\n/)) {

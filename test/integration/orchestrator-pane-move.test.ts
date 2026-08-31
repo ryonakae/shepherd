@@ -257,6 +257,7 @@ function otherSessionAgent(
     foregroundCwd: null,
     herdrSessionName: "other",
     id: "ag_other",
+    isAdoption: false,
     lastSeenAt: new Date(),
     name: null,
     paneId,

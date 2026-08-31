@@ -413,6 +413,7 @@ function agentRecord(
     foregroundCwd: null,
     herdrSessionName: "default",
     id: "ag_1",
+    isAdoption: false,
     lastSeenAt: new Date(0),
     name: null,
     paneId,

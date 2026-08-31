@@ -21,6 +21,7 @@ type AgentRow = {
   foreground_cwd: string | null;
   herdr_session_name: string;
   id: string;
+  is_adoption: 0 | 1;
   last_seen_at: number;
   name: string | null;
   pane_id: string;
@@ -105,6 +106,11 @@ export class AgentStore {
             current.pane_revision !== null &&
             nextRevision < current.pane_revision) ||
           (nextCwd !== null && current.cwd !== null && current.cwd !== nextCwd);
+        const isAdoption = !current
+          ? nextStatus !== "unknown"
+          : isNewRun
+            ? false
+            : current.is_adoption === 1;
         const sessionHint = isNewRun
           ? null
           : current.agent === agent
@@ -125,6 +131,7 @@ export class AgentStore {
           stringValue(snapshot.agent.cwd),
           stringValue(snapshot.agent.foreground_cwd) ?? stringValue(snapshot.agent.foregroundCwd),
           snapshot.agent.focused === true ? 1 : 0,
+          isAdoption ? 1 : 0,
           firstSeenAt,
           now,
         ];
@@ -134,7 +141,7 @@ export class AgentStore {
               `update agents
                set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?, name = ?,
                    agent_status = ?, agent_session_json = ?, agent_session_hint_json = ?, pane_revision = ?,
-                   cwd = ?, foreground_cwd = ?, focused = ?, first_seen_at = ?, last_seen_at = ?
+                   cwd = ?, foreground_cwd = ?, focused = ?, is_adoption = ?, first_seen_at = ?, last_seen_at = ?
                where id = ?`,
             )
             .run(...values, id);
@@ -142,8 +149,8 @@ export class AgentStore {
           this.#sqlite
             .prepare(
               `insert into agents
-               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, name, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, name, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, is_adoption, first_seen_at, last_seen_at)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(id, input.herdrSessionName, ...values);
         }
@@ -198,7 +205,7 @@ export class AgentStore {
     if (isNewRun) {
       this.#sqlite
         .prepare(
-          "update agents set agent_status = ?, first_seen_at = ?, last_seen_at = ? where herdr_session_name = ? and pane_id = ?",
+          "update agents set agent_status = ?, agent_session_hint_json = null, is_adoption = 0, first_seen_at = ?, last_seen_at = ? where herdr_session_name = ? and pane_id = ?",
         )
         .run(input.agentStatus, now, now, input.herdrSessionName, input.paneId);
     } else {
@@ -313,6 +320,7 @@ function mapAgent(row: AgentRow): AgentIndexRecord {
     foregroundCwd: row.foreground_cwd,
     herdrSessionName: row.herdr_session_name,
     id: row.id,
+    isAdoption: row.is_adoption === 1,
     lastSeenAt: new Date(row.last_seen_at),
     name: row.name,
     paneId: row.pane_id,
