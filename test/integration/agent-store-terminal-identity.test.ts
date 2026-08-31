@@ -298,9 +298,9 @@ describe("AgentStore terminal identity", () => {
       herdrSessionName: "default",
       terminalId: "term_1",
     });
-    expect(agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession).toEqual(
-      piSessionRef,
-    );
+    expect(
+      agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession,
+    ).toEqual(piSessionRef);
 
     // After agent completes (status: done), starting a new run resets first_seen_at, clears hint, and sets isAdoption: false
     agents.updateStatus({ agentStatus: "done", herdrSessionName: "default", paneId: "wA:p1" });
@@ -324,9 +324,9 @@ describe("AgentStore terminal identity", () => {
       herdrSessionName: "default",
       terminalId: "term_1",
     });
-    expect(agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession).toEqual(
-      piSessionRef,
-    );
+    expect(
+      agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession,
+    ).toEqual(piSessionRef);
 
     agents.updateStatus({ agentStatus: "done", herdrSessionName: "default", paneId: "wA:p1" });
 

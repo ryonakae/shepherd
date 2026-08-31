@@ -324,7 +324,7 @@ describe("AgentIndexService", () => {
     const harness = openObservabilityDbHarness();
     const lookups: Array<{ agent: string | null; isAdoption?: boolean; firstSeenAtMs?: number }> =
       [];
-    let current = oneAgent("working", 10, "claude");
+    const current = oneAgent("working", 10, "claude");
     const index = new AgentIndexService({
       clientFactory: () => ({
         close() {},
@@ -333,7 +333,11 @@ describe("AgentIndexService", () => {
         },
       }),
       history: {
-        async resolveCompactHistory(input: any) {
+        async resolveCompactHistory(input: {
+          agent: string | null;
+          isAdoption?: boolean;
+          firstSeenAtMs?: number;
+        }) {
           lookups.push(input);
           return {
             compactHistory: {
@@ -375,7 +379,7 @@ describe("AgentIndexService", () => {
     const harness = openObservabilityDbHarness();
     const forceDiscoveries: boolean[] = [];
     const resolvedSessionRefs: Array<unknown> = [];
-    let current = oneAgent("working", 10, "pi");
+    const current = oneAgent("working", 10, "pi");
     const index = new AgentIndexService({
       clientFactory: () => ({
         close() {},
@@ -384,7 +388,10 @@ describe("AgentIndexService", () => {
         },
       }),
       history: {
-        async resolveCompactHistory(input: any, options?: any) {
+        async resolveCompactHistory(
+          input: { agentSession?: unknown },
+          options?: { forceDiscovery?: boolean },
+        ) {
           forceDiscoveries.push(options?.forceDiscovery ?? false);
           resolvedSessionRefs.push(input.agentSession);
           return {
