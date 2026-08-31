@@ -265,7 +265,7 @@ describe("GeminiHistoryReader", () => {
 });
 
 describe("AgyHistoryReader", () => {
-  test("reads user, assistant, and tool_calls messages in multi-turn conversation", async () => {
+  test("reads user, assistant, and actual tool output messages in multi-turn conversation", async () => {
     const homeDir = await tempHome("shepherd-agy-reader-");
     const transcriptDir = join(
       homeDir,
@@ -293,14 +293,14 @@ describe("AgyHistoryReader", () => {
           source: "MODEL",
           type: "PLANNER_RESPONSE",
           created_at: "2026-08-20T10:00:01.000Z",
-          tool_calls: [{ name: "ctx_fs", args: { action: "ls", path: "/repo" } }],
+          tool_calls: [{ name: "list_dir", args: { path: "/repo" } }],
         },
         {
           step_index: 2,
           source: "MODEL",
-          type: "GENERIC",
+          type: "LIST_DIRECTORY",
           created_at: "2026-08-20T10:00:02.000Z",
-          content: "some output",
+          content: "a.ts\nb.ts",
         },
         {
           step_index: 3,
@@ -328,10 +328,11 @@ describe("AgyHistoryReader", () => {
     });
     expect(messages[1]).toMatchObject({
       role: "tool_result",
-      toolName: "ctx_fs",
-      timestamp: "2026-08-20T10:00:01.000Z",
+      toolName: "list_dir",
+      timestamp: "2026-08-20T10:00:02.000Z",
     });
-    expect(messages[1]?.compact?.text).toContain("ctx_fs");
+    expect(messages[1]?.compact?.text).toBe("a.ts\nb.ts");
+    expect(messages[1]?.compact?.isError).toBe(false);
     expect(messages[2]).toMatchObject({
       role: "assistant",
       text: "Here are the files: a.ts, b.ts",
@@ -347,11 +348,12 @@ describe("AgyHistoryReader", () => {
     expect(compact.messageCount).toBe(3);
     expect(compact.lastUserMessage?.text).toBe("list files");
     expect(compact.lastAssistantMessage?.text).toBe("Here are the files: a.ts, b.ts");
-    expect(compact.lastToolResult?.toolName).toBe("ctx_fs");
+    expect(compact.lastToolResult?.toolName).toBe("list_dir");
+    expect(compact.lastToolResult?.text).toBe("a.ts\nb.ts");
   });
 
-  test("handles compact history when all assistant responses are pure tool_calls", async () => {
-    const homeDir = await tempHome("shepherd-agy-toolonly-");
+  test("reads tool error entries and marks them as isError", async () => {
+    const homeDir = await tempHome("shepherd-agy-errors-");
     const transcriptPath = join(homeDir, "transcript.jsonl");
     await writeFile(
       transcriptPath,
@@ -361,7 +363,159 @@ describe("AgyHistoryReader", () => {
           source: "USER_EXPLICIT",
           type: "USER_INPUT",
           created_at: "2026-08-20T10:00:00.000Z",
-          content: "do work",
+          content: "run failing command",
+        },
+        {
+          step_index: 1,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:01.000Z",
+          tool_calls: [{ name: "run_command", args: { CommandLine: "pnpm test" } }],
+        },
+        {
+          step_index: 2,
+          source: "MODEL",
+          type: "RUN_COMMAND",
+          status: "ERROR",
+          exit_code: 1,
+          created_at: "2026-08-20T10:00:02.000Z",
+          content: "FAIL test/a.test.ts\nAssertionError: expected 1 to be 0",
+        },
+        {
+          step_index: 3,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:03.000Z",
+          tool_calls: [{ name: "bad_tool", args: {} }],
+        },
+        {
+          step_index: 4,
+          source: "SYSTEM",
+          type: "ERROR_MESSAGE",
+          created_at: "2026-08-20T10:00:04.000Z",
+          error: "There was a problem parsing the tool call.",
+          content: "Error invalid tool call",
+        },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n")}\n`,
+    );
+
+    const reader = new AgyHistoryReader();
+    const messages = await reader.read({
+      kind: "discovered_file",
+      path: transcriptPath,
+      source: "agy-jsonl",
+      value: transcriptPath,
+    });
+
+    expect(messages.map((m) => m.role)).toEqual(["user", "tool_result", "tool_result"]);
+    expect(messages[1]).toMatchObject({
+      role: "tool_result",
+      toolName: "run_command",
+    });
+    expect(messages[1]?.compact?.isError).toBe(true);
+    expect(messages[1]?.compact?.text).toContain("AssertionError");
+
+    expect(messages[2]).toMatchObject({
+      role: "tool_result",
+      toolName: "bad_tool",
+    });
+    expect(messages[2]?.compact?.isError).toBe(true);
+    expect(messages[2]?.compact?.text).toContain("Error invalid tool call");
+  });
+
+  test("handles multiple tool calls in a single turn and pairs results sequentially", async () => {
+    const homeDir = await tempHome("shepherd-agy-multicall-");
+    const transcriptPath = join(homeDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${[
+        {
+          step_index: 0,
+          source: "USER_EXPLICIT",
+          type: "USER_INPUT",
+          created_at: "2026-08-20T10:00:00.000Z",
+          content: "read two files",
+        },
+        {
+          step_index: 1,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:01.000Z",
+          tool_calls: [
+            { name: "view_file", args: { AbsolutePath: "/repo/a.ts" } },
+            { name: "view_file", args: { AbsolutePath: "/repo/b.ts" } },
+          ],
+        },
+        {
+          step_index: 2,
+          source: "MODEL",
+          type: "VIEW_FILE",
+          created_at: "2026-08-20T10:00:02.000Z",
+          content: "const a = 1;",
+        },
+        {
+          step_index: 3,
+          source: "MODEL",
+          type: "VIEW_FILE",
+          created_at: "2026-08-20T10:00:03.000Z",
+          content: "const b = 2;",
+        },
+        {
+          step_index: 4,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:04.000Z",
+          content: "read both",
+        },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n")}\n`,
+    );
+
+    const reader = new AgyHistoryReader();
+    const messages = await reader.read({
+      kind: "discovered_file",
+      path: transcriptPath,
+      source: "agy-jsonl",
+      value: transcriptPath,
+    });
+
+    expect(messages.map((m) => m.role)).toEqual([
+      "user",
+      "tool_result",
+      "tool_result",
+      "assistant",
+    ]);
+    expect(messages[1]).toMatchObject({
+      role: "tool_result",
+      toolName: "view_file",
+      text: "const a = 1;",
+    });
+    expect(messages[2]).toMatchObject({
+      role: "tool_result",
+      toolName: "view_file",
+      text: "const b = 2;",
+    });
+    expect(messages[3]).toMatchObject({
+      role: "assistant",
+      text: "read both",
+    });
+  });
+
+  test("omits tool results when tool calls have no following execution results", async () => {
+    const homeDir = await tempHome("shepherd-agy-no-results-");
+    const transcriptPath = join(homeDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${[
+        {
+          step_index: 0,
+          source: "USER_EXPLICIT",
+          type: "USER_INPUT",
+          created_at: "2026-08-20T10:00:00.000Z",
+          content: "interrupted task",
         },
         {
           step_index: 1,
@@ -376,16 +530,25 @@ describe("AgyHistoryReader", () => {
     );
 
     const reader = new AgyHistoryReader();
+    const messages = await reader.read({
+      kind: "discovered_file",
+      path: transcriptPath,
+      source: "agy-jsonl",
+      value: transcriptPath,
+    });
+
+    expect(messages).toEqual([expect.objectContaining({ role: "user", text: "interrupted task" })]);
+
     const compact = await reader.readCompact({
       kind: "discovered_file",
       path: transcriptPath,
       source: "agy-jsonl",
       value: transcriptPath,
     });
-    expect(compact.messageCount).toBe(2);
-    expect(compact.lastUserMessage?.text).toBe("do work");
+    expect(compact.messageCount).toBe(1);
+    expect(compact.lastUserMessage?.text).toBe("interrupted task");
     expect(compact.lastAssistantMessage).toBeNull();
-    expect(compact.lastToolResult?.toolName).toBe("run_cmd");
+    expect(compact.lastToolResult).toBeNull();
   });
 
   test("parses assistant messages with structured array content and ignores empty content on tool_calls", async () => {
@@ -412,8 +575,15 @@ describe("AgyHistoryReader", () => {
         {
           step_index: 2,
           source: "MODEL",
-          type: "PLANNER_RESPONSE",
+          type: "RUN_COMMAND",
           created_at: "2026-08-20T10:00:02.000Z",
+          content: "1",
+        },
+        {
+          step_index: 3,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:03.000Z",
           content: [{ type: "text", text: "hello array assistant" }],
         },
       ]
@@ -429,7 +599,7 @@ describe("AgyHistoryReader", () => {
 
     expect(messages.map((m) => m.role)).toEqual(["user", "tool_result", "assistant"]);
     expect(messages[0]).toMatchObject({ role: "user", text: "hello array user" });
-    expect(messages[1]).toMatchObject({ role: "tool_result", toolName: "run_cmd" });
+    expect(messages[1]).toMatchObject({ role: "tool_result", toolName: "run_cmd", text: "1" });
     expect(messages[2]).toMatchObject({ role: "assistant", text: "hello array assistant" });
   });
 
@@ -519,15 +689,8 @@ describe("AgyHistoryReader", () => {
 
   test("is registered in the default agent history service", async () => {
     const homeDir = await tempHome("shepherd-agy-service-");
-    const transcriptDir = join(
-      homeDir,
-      ".gemini",
-      "antigravity-cli",
-      "brain",
-      "sess_service",
-      ".system_generated",
-      "logs",
-    );
+    const cliDir = join(homeDir, ".gemini", "antigravity-cli");
+    const transcriptDir = join(cliDir, "brain", "sess_service", ".system_generated", "logs");
     await mkdir(transcriptDir, { recursive: true });
     const transcriptPath = join(transcriptDir, "transcript.jsonl");
     await writeFile(
@@ -540,10 +703,20 @@ describe("AgyHistoryReader", () => {
       })}\n`,
     );
 
+    const dbPath = join(cliDir, "conversation_summaries.db");
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(
+      "create table conversation_summaries (conversation_id text primary key, workspace_uris text not null)",
+    );
+    sqlite
+      .prepare("insert into conversation_summaries (conversation_id, workspace_uris) values (?, ?)")
+      .run("sess_service", JSON.stringify(["file:///repo"]));
+    sqlite.close();
+
     const service = createAgentHistoryService({ homeDir });
     await expect(
       service.read(
-        { agent: "agy", agentSession: null, cwd: null, foregroundCwd: null },
+        { agent: "agy", agentSession: null, cwd: "/repo", foregroundCwd: null },
         { limit: 10 },
       ),
     ).resolves.toMatchObject({

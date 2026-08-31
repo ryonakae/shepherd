@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import type { AgentHistoryRef, AgentSessionRef } from "@/observability/contracts.js";
 
 export type AgentHistoryLookupInput = {
@@ -187,22 +188,22 @@ async function scanGeminiRoot(root: string): Promise<Candidate[]> {
   return candidates;
 }
 
-function normalizePath(uriOrPath: string): string {
+function normalizeWorkspacePath(uriOrPath: string): string {
+  try {
+    if (uriOrPath.startsWith("file://")) {
+      return resolve(fileURLToPath(uriOrPath));
+    }
+  } catch {
+    // fallback if fileURLToPath fails
+  }
   const raw = uriOrPath.startsWith("file://") ? uriOrPath.slice(7) : uriOrPath;
-  const trimmed = raw.replace(/\/+$/, "");
-  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return normalized === "" ? "/" : normalized;
+  return resolve(raw);
 }
 
-function matchesWorkspaceUri(workspaceUri: string, cwd: string): boolean {
-  const ws = normalizePath(workspaceUri);
-  const target = normalizePath(cwd);
-  if (ws === target) return true;
-  if (ws === "/") return true;
-  if (target === "/") return true;
-  if (target.startsWith(`${ws}/`)) return true;
-  if (ws.startsWith(`${target}/`)) return true;
-  return false;
+export function matchesWorkspaceUri(workspaceUri: string, cwd: string): boolean {
+  const ws = normalizeWorkspacePath(workspaceUri);
+  const target = normalizeWorkspacePath(cwd);
+  return ws === target;
 }
 
 function readAgyConversationSummaries(homeDir: string): Map<string, string[]> | null {
@@ -243,37 +244,19 @@ async function scanAgyRoot(
   homeDir: string,
   cwd: string | null,
 ): Promise<Candidate[]> {
-  if (!existsSync(root)) return [];
+  if (!existsSync(root) || !cwd) return [];
   const summaries = readAgyConversationSummaries(homeDir);
+  if (summaries === null) return [];
 
-  if (summaries !== null) {
-    if (!cwd) return [];
-    const candidates: Candidate[] = [];
-    for (const [conversationId, workspaceUris] of summaries) {
-      const matches = workspaceUris.some((uri) => matchesWorkspaceUri(uri, cwd));
-      if (!matches) continue;
-      const path = join(root, conversationId, ".system_generated", "logs", "transcript.jsonl");
-      const stats = await stat(path).catch(() => null);
-      if (!stats?.isFile()) continue;
-      candidates.push({
-        cwd,
-        mtimeMs: stats.mtimeMs,
-        path,
-        source: "agy-jsonl",
-      });
-    }
-    return candidates;
-  }
-
-  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const candidates: Candidate[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const path = join(root, entry.name, ".system_generated", "logs", "transcript.jsonl");
+  for (const [conversationId, workspaceUris] of summaries) {
+    const matches = workspaceUris.some((uri) => matchesWorkspaceUri(uri, cwd));
+    if (!matches) continue;
+    const path = join(root, conversationId, ".system_generated", "logs", "transcript.jsonl");
     const stats = await stat(path).catch(() => null);
     if (!stats?.isFile()) continue;
     candidates.push({
-      cwd: await readCandidateCwd(path),
+      cwd,
       mtimeMs: stats.mtimeMs,
       path,
       source: "agy-jsonl",

@@ -13,6 +13,17 @@ import {
 import { messageRef, textFromContent, timestampFrom } from "./text.js";
 import { compactToolResult } from "./tool-compaction.js";
 
+const ignoredEntryTypes = new Set([
+  "attachment",
+  "checkpoint",
+  "conversation_history",
+  "ephemeral_message",
+  "file-history-snapshot",
+  "mode",
+  "permission-mode",
+  "system_message",
+]);
+
 export class AgyHistoryReader implements AgentHistoryReader {
   private readonly homeDir?: string;
 
@@ -42,6 +53,7 @@ export class AgyHistoryReader implements AgentHistoryReader {
     }
 
     const messages: AgentHistoryMessage[] = [];
+    const pendingToolCalls: string[] = [];
 
     for (const entry of entries) {
       const type = stringValue(entry.value.type);
@@ -55,7 +67,12 @@ export class AgyHistoryReader implements AgentHistoryReader {
         timestampFrom(entry.value.created_at) ?? timestampFrom(entry.value.timestamp);
       const refValue = messageRef(path, id, entry.line);
 
+      if (!type || isIgnoredEntry(type, source)) {
+        continue;
+      }
+
       if (type === "USER_INPUT") {
+        pendingToolCalls.length = 0;
         const text = textFromContent(entry.value.content);
         if (text) {
           messages.push({ ref: refValue, role: "user", text, timestamp });
@@ -65,27 +82,32 @@ export class AgyHistoryReader implements AgentHistoryReader {
 
       if (type === "PLANNER_RESPONSE") {
         const text = textFromContent(entry.value.content);
-        if (source === "MODEL" && text) {
+        if (text) {
           messages.push({ ref: refValue, role: "assistant", text, timestamp });
-          continue;
         }
 
         const toolCalls = Array.isArray(entry.value.tool_calls) ? entry.value.tool_calls : [];
-        if (toolCalls.length > 0) {
-          const firstCall = record(toolCalls[0]);
-          const toolName = stringValue(firstCall.name) ?? "unknown";
-          const args = firstCall.args;
-          const text = formatToolCallText(toolName, args);
-          const compact = compactToolResult({ isError: false, ref: refValue, text, toolName });
-          messages.push({
-            compact,
-            ref: refValue,
-            role: "tool_result",
-            text: compact.text,
-            timestamp,
-            toolName,
-          });
+        for (const call of toolCalls) {
+          const callRecord = record(call);
+          const name = stringValue(callRecord.name) ?? "unknown";
+          pendingToolCalls.push(name);
         }
+        continue;
+      }
+
+      const toolName = pendingToolCalls.shift() ?? inferToolName(type, entry.value);
+      const text = textFromToolResult(entry.value);
+      if (text !== null) {
+        const isError = isToolResultError(entry.value);
+        const compact = compactToolResult({ isError, ref: refValue, text, toolName });
+        messages.push({
+          compact,
+          ref: refValue,
+          role: "tool_result",
+          text: compact.text,
+          timestamp,
+          toolName,
+        });
       }
     }
 
@@ -122,16 +144,34 @@ export function resolveAgyTranscriptPath(
   );
 }
 
-function formatToolCallText(toolName: string, args: unknown): string {
-  if (typeof args === "string") {
-    const trimmed = args.trim();
-    return trimmed.length > 0 ? `${toolName}: ${trimmed}` : toolName;
-  }
-  if (typeof args === "object" && args !== null) {
-    const serialized = JSON.stringify(args);
-    return serialized && serialized !== "{}" ? `${toolName}: ${serialized}` : toolName;
-  }
-  return toolName;
+function isIgnoredEntry(type: string, source: string | null): boolean {
+  if (source === "SYSTEM" && type !== "ERROR_MESSAGE") return true;
+  return ignoredEntryTypes.has(type.toLowerCase());
+}
+
+function inferToolName(type: string, entry: Record<string, unknown>): string {
+  const explicit =
+    stringValue(entry.tool_name) ?? stringValue(entry.name) ?? stringValue(entry.tool);
+  if (explicit) return explicit;
+  if (type === "ERROR_MESSAGE" || type === "GENERIC") return "unknown";
+  return type.toLowerCase();
+}
+
+function textFromToolResult(value: Record<string, unknown>): string | null {
+  const text = textFromContent(value.content);
+  if (text) return text;
+  if (typeof value.error === "string" && value.error.length > 0) return value.error;
+  if (value.error !== undefined && value.error !== null) return JSON.stringify(value.error);
+  if (typeof value.exit_code === "number") return `exit code ${value.exit_code}`;
+  return null;
+}
+
+function isToolResultError(value: Record<string, unknown>): boolean {
+  if (value.type === "ERROR_MESSAGE") return true;
+  if (stringValue(value.status) === "ERROR") return true;
+  if (typeof value.exit_code === "number" && value.exit_code !== 0) return true;
+  if (value.error !== undefined && value.error !== null) return true;
+  return false;
 }
 
 function record(value: unknown): Record<string, unknown> {
