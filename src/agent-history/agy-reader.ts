@@ -124,15 +124,11 @@ export class AgyHistoryReader implements AgentHistoryReader {
         continue;
       }
 
-      let toolName: string;
-      if (pendingToolCalls.length > 0) {
-        toolName = pendingToolCalls.shift()!;
-      } else {
-        if (!isKnownToolExecutionType(type)) {
-          continue;
-        }
-        toolName = inferToolName(type, entry.value);
+      if (!isKnownToolExecutionType(type)) {
+        continue;
       }
+
+      const toolName = pendingToolCalls.shift() ?? inferToolName(type, entry.value);
 
       const text = textFromToolResult(entry.value);
       if (text !== null) {

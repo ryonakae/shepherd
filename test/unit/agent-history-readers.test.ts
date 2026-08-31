@@ -813,5 +813,93 @@ describe("AgyHistoryReader", () => {
     expect(messages[3]?.compact?.isError).toBe(true);
     expect(messages[4]).toMatchObject({ role: "assistant", text: "all done" });
   });
-});
 
+  test("does not misalign pending tool call queue when generic/unknown entries are interleaved before results", async () => {
+    const homeDir = await tempHome("shepherd-agy-interleaved-generic-");
+    const transcriptPath = join(homeDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${[
+        {
+          step_index: 0,
+          source: "USER_EXPLICIT",
+          type: "USER_INPUT",
+          created_at: "2026-08-20T10:00:00.000Z",
+          content: "read and run",
+        },
+        {
+          step_index: 1,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:01.000Z",
+          tool_calls: [
+            { name: "view_file", args: { AbsolutePath: "/repo/a.ts" } },
+            { name: "run_command", args: { CommandLine: "echo ok" } },
+          ],
+        },
+        {
+          step_index: 2,
+          source: "MODEL",
+          type: "GENERIC",
+          created_at: "2026-08-20T10:00:02.000Z",
+          content: "interleaved internal non-tool entry",
+        },
+        {
+          step_index: 3,
+          source: "MODEL",
+          type: "VIEW_FILE",
+          created_at: "2026-08-20T10:00:03.000Z",
+          content: "const a = 1;",
+        },
+        {
+          step_index: 4,
+          source: "MODEL",
+          type: "GENERIC",
+          created_at: "2026-08-20T10:00:04.000Z",
+          content: "another non-tool event",
+        },
+        {
+          step_index: 5,
+          source: "MODEL",
+          type: "RUN_COMMAND",
+          created_at: "2026-08-20T10:00:05.000Z",
+          content: "ok",
+        },
+        {
+          step_index: 6,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:06.000Z",
+          content: "all complete",
+        },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n")}\n`,
+    );
+
+    const reader = new AgyHistoryReader({ homeDir });
+    const messages = await reader.read(
+      { kind: "discovered_file", path: transcriptPath, source: "agy-jsonl", value: transcriptPath },
+      { limit: 20 },
+    );
+
+    expect(messages.map((m) => m.role)).toEqual([
+      "user",
+      "tool_result",
+      "tool_result",
+      "assistant",
+    ]);
+    expect(messages[0]).toMatchObject({ role: "user", text: "read and run" });
+    expect(messages[1]).toMatchObject({
+      role: "tool_result",
+      toolName: "view_file",
+      text: "const a = 1;",
+    });
+    expect(messages[2]).toMatchObject({
+      role: "tool_result",
+      toolName: "run_command",
+      text: "ok",
+    });
+    expect(messages[3]).toMatchObject({ role: "assistant", text: "all complete" });
+  });
+});
