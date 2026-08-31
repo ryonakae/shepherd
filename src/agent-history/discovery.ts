@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import type { AgentHistoryRef, AgentSessionRef } from "@/observability/contracts.js";
 
 export type AgentHistoryLookupInput = {
@@ -41,6 +42,26 @@ export async function discoverAgentHistory(
       const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: input.agentSession.value });
       if (ref) return { ...ref, kind: "agent_session" };
     }
+    if (source === "agy-jsonl") {
+      const path = join(
+        homeDir,
+        ".gemini",
+        "antigravity-cli",
+        "brain",
+        input.agentSession.value,
+        ".system_generated",
+        "logs",
+        "transcript.jsonl",
+      );
+      if (existsSync(path)) {
+        return {
+          kind: "agent_session",
+          path,
+          source: "agy-jsonl",
+          value: input.agentSession.value,
+        };
+      }
+    }
   }
 
   const agent = input.agent?.toLowerCase() ?? input.agentSession?.agent.toLowerCase() ?? "";
@@ -56,6 +77,16 @@ export async function discoverAgentHistory(
   }
   if (agent === "gemini") {
     candidates.push(...(await scanGeminiRoot(join(homeDir, ".gemini", "tmp"))));
+  }
+  if (
+    agent === "agy" ||
+    agent === "antigravity" ||
+    agent.includes("antigravity") ||
+    agent.includes("agy")
+  ) {
+    candidates.push(
+      ...(await scanAgyRoot(join(homeDir, ".gemini", "antigravity-cli", "brain"), homeDir, cwd)),
+    );
   }
   if (agent === "opencode") {
     const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: null });
@@ -82,6 +113,13 @@ export function historySourceFromSessionRef(ref: AgentSessionRef): AgentHistoryR
   if (agent === "codex" || source.includes("codex")) return "codex-jsonl";
   if (agent === "opencode" || source.includes("opencode")) return "opencode-sqlite";
   if (agent === "gemini" || source.includes("gemini")) return "gemini-json";
+  if (
+    agent === "agy" ||
+    agent === "antigravity" ||
+    source.includes("antigravity") ||
+    source.includes("agy")
+  )
+    return "agy-jsonl";
   return "unknown";
 }
 
@@ -146,6 +184,83 @@ async function scanGeminiRoot(root: string): Promise<Candidate[]> {
       if (!stats?.isFile()) continue;
       candidates.push({ cwd, mtimeMs: stats.mtimeMs, path, source: "gemini-json" });
     }
+  }
+  return candidates;
+}
+
+function normalizeWorkspacePath(uriOrPath: string): string {
+  try {
+    if (uriOrPath.startsWith("file://")) {
+      return resolve(fileURLToPath(uriOrPath));
+    }
+  } catch {
+    // fallback if fileURLToPath fails
+  }
+  const raw = uriOrPath.startsWith("file://") ? uriOrPath.slice(7) : uriOrPath;
+  return resolve(raw);
+}
+
+export function matchesWorkspaceUri(workspaceUri: string, cwd: string): boolean {
+  const ws = normalizeWorkspacePath(workspaceUri);
+  const target = normalizeWorkspacePath(cwd);
+  return ws === target;
+}
+
+function readAgyConversationSummaries(homeDir: string): Map<string, string[]> | null {
+  const dbPath = join(homeDir, ".gemini", "antigravity-cli", "conversation_summaries.db");
+  if (!existsSync(dbPath)) return null;
+  let sqlite: DatabaseSync | null = null;
+  try {
+    sqlite = new DatabaseSync(dbPath, { readOnly: true });
+    const rows = sqlite
+      .prepare("select conversation_id, workspace_uris from conversation_summaries")
+      .all() as Array<{ conversation_id: unknown; workspace_uris: unknown }>;
+    const summaries = new Map<string, string[]>();
+    for (const row of rows) {
+      if (typeof row.conversation_id === "string" && typeof row.workspace_uris === "string") {
+        try {
+          const parsed = JSON.parse(row.workspace_uris);
+          if (Array.isArray(parsed)) {
+            summaries.set(
+              row.conversation_id,
+              parsed.filter((u): u is string => typeof u === "string"),
+            );
+          }
+        } catch {
+          // ignore malformed JSON in individual row
+        }
+      }
+    }
+    return summaries;
+  } catch {
+    return null;
+  } finally {
+    sqlite?.close();
+  }
+}
+
+async function scanAgyRoot(
+  root: string,
+  homeDir: string,
+  cwd: string | null,
+): Promise<Candidate[]> {
+  if (!existsSync(root) || !cwd) return [];
+  const summaries = readAgyConversationSummaries(homeDir);
+  if (summaries === null) return [];
+
+  const candidates: Candidate[] = [];
+  for (const [conversationId, workspaceUris] of summaries) {
+    const matches = workspaceUris.some((uri) => matchesWorkspaceUri(uri, cwd));
+    if (!matches) continue;
+    const path = join(root, conversationId, ".system_generated", "logs", "transcript.jsonl");
+    const stats = await stat(path).catch(() => null);
+    if (!stats?.isFile()) continue;
+    candidates.push({
+      cwd,
+      mtimeMs: stats.mtimeMs,
+      path,
+      source: "agy-jsonl",
+    });
   }
   return candidates;
 }

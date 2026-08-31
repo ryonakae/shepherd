@@ -10,7 +10,7 @@ Shepherd is a daemon-backed observability layer for coding agents running in Her
 
 Herdr's `herdr agent read` reads terminal streams or scrollback. Shepherd instead reads agent session data so callers can retrieve work status, structured message excerpts, compact tool results, and unread outcomes without parsing terminal output. Shepherd is read-only; use the official Herdr CLI or skill for agent start, prompts, waits, pane operations, and terminal control.
 
-Shepherd currently supports session history from Claude Code, Codex, Gemini CLI, OpenCode, and Pi.
+Shepherd currently supports session history from Antigravity, Claude Code, Codex, Gemini CLI, OpenCode, and Pi.
 
 ## Requirements
 

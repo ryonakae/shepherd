@@ -10,7 +10,7 @@ Shepherd は、Herdr で動く coding agent の状態を記録する daemon ベ�
 
 Herdr の `herdr agent read` は terminal stream や scrollback を読みます。Shepherd は agent の session data から作業状況、message の抜粋、compact tool result、未読の outcome を取得します。Shepherd は agent を操作しません。agent の start、prompt、wait、pane 操作、terminal control には公式 Herdr CLI または skill を使います。
 
-現在は Claude Code、Codex、Gemini CLI、OpenCode、Pi のセッション履歴の取得に対応しています。
+現在は Antigravity、Claude Code、Codex、Gemini CLI、OpenCode、Pi のセッション履歴の取得に対応しています。
 
 ## 要件
 
