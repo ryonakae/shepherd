@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
-import {
-  DISCOVERY_RECENCY_GRACE_MS,
-  discoverAgentHistory,
-  historySourceFromSessionRef,
-} from "@/agent-history/discovery.js";
+import { discoverAgentHistory, historySourceFromSessionRef } from "@/agent-history/discovery.js";
 
 const tempDirs: string[] = [];
 
@@ -146,7 +142,7 @@ describe("agent history discovery", () => {
     });
   });
 
-  test("drops stale candidates whose mtime predates firstSeenAtMs by more than the grace window", async () => {
+  test("drops recently completed same-cwd sessions that predate firstSeenAtMs", async () => {
     const homeDir = await tempHome("shepherd-codex-stale-home-");
     const dir = join(homeDir, ".codex", "sessions", "2026", "07", "09");
     await mkdir(dir, { recursive: true });
@@ -158,18 +154,81 @@ describe("agent history discovery", () => {
       path,
       `${JSON.stringify({ type: "session_meta", payload: { cwd: "/repo" } })}\n`,
     );
-    await utimes(path, new Date(1000), new Date(1000));
+    const firstSeenAtMs = Date.UTC(2026, 6, 9, 14, 0, 0);
+    const mtimeMs = firstSeenAtMs - 120_000; // completed 2 minutes ago
+    await utimes(path, new Date(mtimeMs), new Date(mtimeMs));
 
     await expect(
       discoverAgentHistory({
         agent: "codex",
         agentSession: null,
         cwd: "/repo",
-        firstSeenAtMs: Date.UTC(2026, 6, 9, 14, 0, 0),
+        firstSeenAtMs,
         foregroundCwd: null,
         homeDir,
       }),
     ).resolves.toBeNull();
+  });
+
+  test("does not fall back to different-cwd candidates when cwd-matching candidate is missing or stale", async () => {
+    const homeDir = await tempHome("shepherd-codex-diffcwd-home-");
+    const dir = join(homeDir, ".codex", "sessions", "2026", "07", "09");
+    await mkdir(dir, { recursive: true });
+    const otherPath = join(
+      dir,
+      "rollout-2026-07-09T10-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jsonl",
+    );
+    await writeFile(
+      otherPath,
+      `${JSON.stringify({ type: "session_meta", payload: { cwd: "/other-repo" } })}\n`,
+    );
+    const firstSeenAtMs = Date.UTC(2026, 6, 9, 14, 0, 0);
+    await utimes(otherPath, new Date(firstSeenAtMs + 60_000), new Date(firstSeenAtMs + 60_000));
+
+    await expect(
+      discoverAgentHistory({
+        agent: "codex",
+        agentSession: null,
+        cwd: "/repo",
+        firstSeenAtMs,
+        foregroundCwd: null,
+        homeDir,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  test("allows adoption of an already-running agent whose session predates firstSeenAtMs", async () => {
+    const homeDir = await tempHome("shepherd-codex-adopt-home-");
+    const dir = join(homeDir, ".codex", "sessions", "2026", "07", "09");
+    await mkdir(dir, { recursive: true });
+    const path = join(
+      dir,
+      "rollout-2026-07-09T10-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl",
+    );
+    await writeFile(
+      path,
+      `${JSON.stringify({ type: "session_meta", payload: { cwd: "/repo" } })}\n`,
+    );
+    const firstSeenAtMs = Date.UTC(2026, 6, 9, 14, 0, 0);
+    const mtimeMs = firstSeenAtMs - 900_000; // 15 minutes ago
+    await utimes(path, new Date(mtimeMs), new Date(mtimeMs));
+
+    await expect(
+      discoverAgentHistory({
+        agent: "codex",
+        agentSession: null,
+        cwd: "/repo",
+        firstSeenAtMs,
+        foregroundCwd: null,
+        homeDir,
+        isAdoption: true,
+      }),
+    ).resolves.toMatchObject({
+      kind: "discovered_file",
+      path,
+      source: "codex-jsonl",
+      value: path,
+    });
   });
 
   test("keeps a candidate whose mtime is at or after firstSeenAtMs", async () => {
@@ -205,36 +264,51 @@ describe("agent history discovery", () => {
     });
   });
 
-  test("keeps a candidate whose mtime is before firstSeenAtMs but within the grace window", async () => {
-    const homeDir = await tempHome("shepherd-codex-grace-home-");
-    const dir = join(homeDir, ".codex", "sessions", "2026", "07", "09");
-    await mkdir(dir, { recursive: true });
-    const path = join(
-      dir,
-      "rollout-2026-07-09T10-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl",
+  test("enforces recency and supports adoption for OpenCode discovery", async () => {
+    const homeDir = await tempHome("shepherd-opencode-recency-home-");
+    const dbPath = join(homeDir, ".local", "share", "opencode", "opencode.db");
+    await mkdir(join(homeDir, ".local", "share", "opencode"), { recursive: true });
+    const sqlite = new DatabaseSync(dbPath);
+    sqlite.exec(
+      "create table session (id text primary key, directory text not null, time_updated integer not null)",
     );
-    await writeFile(
-      path,
-      `${JSON.stringify({ type: "session_meta", payload: { cwd: "/repo" } })}\n`,
-    );
-    const firstSeenAtMs = Date.UTC(2026, 6, 9, 14, 0, 0);
-    const mtimeMs = firstSeenAtMs - DISCOVERY_RECENCY_GRACE_MS + 1_000; // 1s inside the grace window
-    await utimes(path, new Date(mtimeMs), new Date(mtimeMs));
+    const firstSeenAtMs = 50_000;
+    sqlite
+      .prepare("insert into session (id, directory, time_updated) values (?, ?, ?)")
+      .run("s_stale", "/repo", 40_000);
+    sqlite
+      .prepare("insert into session (id, directory, time_updated) values (?, ?, ?)")
+      .run("s_diff_cwd", "/other-repo", 60_000);
+    sqlite.close();
 
+    // New run drops stale same-cwd session and ignores different-cwd session
     await expect(
       discoverAgentHistory({
-        agent: "codex",
+        agent: "opencode",
         agentSession: null,
         cwd: "/repo",
         firstSeenAtMs,
         foregroundCwd: null,
         homeDir,
       }),
+    ).resolves.toBeNull();
+
+    // Adoption accepts the existing same-cwd session even if time_updated < firstSeenAtMs
+    await expect(
+      discoverAgentHistory({
+        agent: "opencode",
+        agentSession: null,
+        cwd: "/repo",
+        firstSeenAtMs,
+        foregroundCwd: null,
+        homeDir,
+        isAdoption: true,
+      }),
     ).resolves.toMatchObject({
       kind: "discovered_file",
-      path,
-      source: "codex-jsonl",
-      value: path,
+      path: dbPath,
+      source: "opencode-sqlite",
+      value: "s_stale",
     });
   });
 

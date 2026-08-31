@@ -270,4 +270,41 @@ describe("agent history service", () => {
     expect(cacheSourcePathForRef(first)).toBe("/tmp/opencode.db#session=session-a");
     expect(cacheSourcePathForRef(second)).toBe("/tmp/opencode.db#session=session-b");
   });
+
+  test("rejects stale persisted discovered refs and falls back to discovery", async () => {
+    const stalePath = await sourceFile("stale.jsonl");
+    const stalePreferred = ref(stalePath);
+    const freshDiscovered = ref(await sourceFile("fresh.jsonl"));
+    const fixture = service({ discovered: freshDiscovered });
+
+    // When firstSeenAtMs is set and preferred ref predates it, preferred ref is rejected
+    const firstSeenAtMs = Date.now() + 10_000;
+    const result = await fixture.service.resolveCompactHistory(
+      { ...lookup, firstSeenAtMs },
+      { preferredRef: stalePreferred },
+    );
+
+    expect(fixture.discoveries()).toBe(1);
+    expect(result.historyRef).toEqual(freshDiscovered);
+  });
+
+  test("preserves authoritative agent_session refs even if their file timestamp predates firstSeenAtMs", async () => {
+    const path = await sourceFile("authoritative.jsonl");
+    const authoritativeRef: AgentHistoryRef = {
+      kind: "agent_session",
+      path,
+      source: "pi-jsonl",
+      value: path,
+    };
+    const fixture = service({ discovered: null });
+
+    const firstSeenAtMs = Date.now() + 10_000;
+    const result = await fixture.service.resolveCompactHistory(
+      { ...lookup, firstSeenAtMs },
+      { preferredRef: authoritativeRef },
+    );
+
+    expect(fixture.discoveries()).toBe(0);
+    expect(result.historyRef).toEqual(authoritativeRef);
+  });
 });

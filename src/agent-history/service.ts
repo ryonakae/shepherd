@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import type { AgentHistoryCacheStore } from "@/db/agent-history-cache.js";
 import type {
   AgentHistoryMessage,
@@ -48,6 +50,49 @@ export function createAgentHistoryService(
         ...(options.homeDir ? { homeDir: options.homeDir } : {}),
       }));
 
+  async function isValidPreferredRef(
+    preferredRef: AgentHistoryRef,
+    input: AgentHistoryLookupInput,
+  ): Promise<boolean> {
+    if (preferredRef.kind === "agent_session") return true;
+
+    const path = preferredRef.path ?? preferredRef.value;
+    if (!path) return false;
+
+    if (preferredRef.source === "opencode-sqlite") {
+      if (!existsSync(path)) return false;
+      let sqlite: DatabaseSync | null = null;
+      try {
+        sqlite = new DatabaseSync(path, { readOnly: true });
+        const row = sqlite
+          .prepare("select id, directory, time_updated from session where id = ?")
+          .get(preferredRef.value) as
+          | { directory: string; id: string; time_updated: number }
+          | undefined;
+        if (!row) return false;
+        const targetCwd = input.cwd ?? input.foregroundCwd;
+        if (targetCwd && row.directory !== targetCwd) return false;
+        if (input.firstSeenAtMs !== undefined && !input.isAdoption) {
+          if (row.time_updated < input.firstSeenAtMs) return false;
+        }
+        return true;
+      } catch {
+        return false;
+      } finally {
+        sqlite?.close();
+      }
+    }
+
+    const stats = await stat(path).catch(() => null);
+    if (!stats?.isFile()) return false;
+
+    if (input.firstSeenAtMs !== undefined && !input.isAdoption) {
+      if (stats.mtimeMs < input.firstSeenAtMs) return false;
+    }
+
+    return true;
+  }
+
   async function readCompactRef(historyRef: AgentHistoryRef): Promise<ResolvedCompactAgentHistory> {
     const reader = readers.find((candidate) => candidate.canRead(historyRef));
     if (!reader) return unresolvedCompactHistory(historyRef.source);
@@ -93,8 +138,10 @@ export function createAgentHistoryService(
     resolveOptions: { forceDiscovery?: boolean; preferredRef?: AgentHistoryRef | null } = {},
   ): Promise<ResolvedCompactAgentHistory> {
     if (resolveOptions.preferredRef && !resolveOptions.forceDiscovery) {
-      const preferred = await readCompactRef(resolveOptions.preferredRef);
-      if (preferred.historyRef) return preferred;
+      if (await isValidPreferredRef(resolveOptions.preferredRef, input)) {
+        const preferred = await readCompactRef(resolveOptions.preferredRef);
+        if (preferred.historyRef) return preferred;
+      }
     }
     const historyRef = await discover(input);
     if (!historyRef) return unresolvedCompactHistory();
@@ -126,8 +173,10 @@ export function createAgentHistoryService(
       readOptions: { limit: number; preferredRef?: AgentHistoryRef | null },
     ): Promise<{ historyRef: AgentHistoryRef | null; messages: AgentHistoryMessage[] }> {
       if (readOptions.preferredRef) {
-        const preferred = await readRef(readOptions.preferredRef, readOptions);
-        if (preferred.historyRef) return preferred;
+        if (await isValidPreferredRef(readOptions.preferredRef, input)) {
+          const preferred = await readRef(readOptions.preferredRef, readOptions);
+          if (preferred.historyRef) return preferred;
+        }
       }
       const historyRef = await discover(input);
       if (!historyRef) return { historyRef: null, messages: [] };

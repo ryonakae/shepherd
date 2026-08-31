@@ -4,15 +4,6 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentHistoryRef, AgentSessionRef } from "@/observability/contracts.js";
 
-// A pane agent's authoritative session ref (herdr detection or shepherd-pi
-// registration) may not have landed when the agent is first observed, so
-// discovery falls back to cwd-based guessing. A session file untouched since
-// before the agent was first seen cannot be that agent's live session.
-// Herdr observation delay is on the second scale, so a 10-minute grace window
-// is far more generous than needed; it only discards sessions that had already
-// stopped being written well before the agent appeared.
-export const DISCOVERY_RECENCY_GRACE_MS = 10 * 60_000;
-
 export type AgentHistoryLookupInput = {
   agent: string | null;
   agentSession: AgentSessionRef | null;
@@ -20,6 +11,7 @@ export type AgentHistoryLookupInput = {
   foregroundCwd: string | null;
   firstSeenAtMs?: number;
   homeDir?: string;
+  isAdoption?: boolean;
 };
 
 type Candidate = {
@@ -27,6 +19,7 @@ type Candidate = {
   mtimeMs: number;
   path: string;
   source: AgentHistoryRef["source"];
+  value?: string;
 };
 
 export async function discoverAgentHistory(
@@ -48,10 +41,12 @@ export async function discoverAgentHistory(
   if (input.agentSession?.kind === "id") {
     const source = historySourceFromSessionRef(input.agentSession);
     if (source === "opencode-sqlite") {
-      const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: input.agentSession.value });
+      const ref = findOpenCodeSessionById({ homeDir, sessionId: input.agentSession.value });
       if (ref) return { ...ref, kind: "agent_session" };
     }
   }
+
+  if (!cwd) return null;
 
   const agent = input.agent?.toLowerCase() ?? input.agentSession?.agent.toLowerCase() ?? "";
   const candidates: Candidate[] = [];
@@ -68,25 +63,32 @@ export async function discoverAgentHistory(
     candidates.push(...(await scanGeminiRoot(join(homeDir, ".gemini", "tmp"))));
   }
   if (agent === "opencode") {
-    const ref = discoverOpenCodeSession({ cwd, homeDir, sessionId: null });
-    if (ref) return ref;
+    candidates.push(...scanOpenCodeCandidates({ cwd, homeDir }));
   }
-  const ranked = candidates
-    .filter(
-      (candidate) =>
-        input.firstSeenAtMs === undefined ||
-        candidate.mtimeMs >= input.firstSeenAtMs - DISCOVERY_RECENCY_GRACE_MS,
-    )
-    .sort((a, b) => {
-      const aMatch = cwd && a.cwd === cwd ? 1 : 0;
-      const bMatch = cwd && b.cwd === cwd ? 1 : 0;
-      if (aMatch !== bMatch) return bMatch - aMatch;
-      if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs;
-      return a.path.localeCompare(b.path);
-    });
-  const best = ranked[0];
+
+  const validCandidates = candidates.filter((candidate) => {
+    if (!candidate.cwd || candidate.cwd !== cwd) return false;
+    if (input.firstSeenAtMs !== undefined && !input.isAdoption) {
+      if (candidate.mtimeMs < input.firstSeenAtMs) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  validCandidates.sort((a, b) => {
+    if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs;
+    return (a.value ?? a.path).localeCompare(b.value ?? b.path);
+  });
+
+  const best = validCandidates[0];
   return best
-    ? { kind: "discovered_file", path: best.path, source: best.source, value: best.path }
+    ? {
+        kind: "discovered_file",
+        path: best.path,
+        source: best.source,
+        value: best.value ?? best.path,
+      }
     : null;
 }
 
@@ -187,28 +189,41 @@ async function listGeminiSessionFiles(chatsDir: string): Promise<string[]> {
     .map((entry) => join(chatsDir, entry.name));
 }
 
-function discoverOpenCodeSession(input: {
-  cwd: string | null;
+function scanOpenCodeCandidates(input: { cwd: string; homeDir: string }): Candidate[] {
+  const dbPath = resolveOpenCodeDbPath(input.homeDir);
+  if (!existsSync(dbPath)) return [];
+  let sqlite: DatabaseSync | null = null;
+  try {
+    sqlite = new DatabaseSync(dbPath, { readOnly: true });
+    const rows = sqlite
+      .prepare("select id, directory, time_updated from session where directory = ?")
+      .all(input.cwd) as Array<{ directory: string; id: string; time_updated: number }>;
+    return rows.map((row) => ({
+      cwd: row.directory,
+      mtimeMs: row.time_updated,
+      path: dbPath,
+      source: "opencode-sqlite",
+      value: row.id,
+    }));
+  } catch {
+    return [];
+  } finally {
+    sqlite?.close();
+  }
+}
+
+function findOpenCodeSessionById(input: {
   homeDir: string;
-  sessionId: string | null;
+  sessionId: string;
 }): AgentHistoryRef | null {
   const dbPath = resolveOpenCodeDbPath(input.homeDir);
   if (!existsSync(dbPath)) return null;
   let sqlite: DatabaseSync | null = null;
   try {
     sqlite = new DatabaseSync(dbPath, { readOnly: true });
-    if (input.sessionId) {
-      const row = sqlite
-        .prepare("select id from session where id = ? limit 1")
-        .get(input.sessionId) as { id: string } | undefined;
-      return row
-        ? { kind: "discovered_file", path: dbPath, source: "opencode-sqlite", value: row.id }
-        : null;
-    }
-    if (!input.cwd) return null;
     const row = sqlite
-      .prepare("select id from session where directory = ? order by time_updated desc limit 1")
-      .get(input.cwd) as { id: string } | undefined;
+      .prepare("select id from session where id = ? limit 1")
+      .get(input.sessionId) as { id: string } | undefined;
     return row
       ? { kind: "discovered_file", path: dbPath, source: "opencode-sqlite", value: row.id }
       : null;
@@ -219,7 +234,7 @@ function discoverOpenCodeSession(input: {
   }
 }
 
-function resolveOpenCodeDbPath(homeDir: string): string {
+export function resolveOpenCodeDbPath(homeDir: string): string {
   const override = process.env.OPENCODE_DB;
   if (override && override !== ":memory:") {
     return override.startsWith("/")

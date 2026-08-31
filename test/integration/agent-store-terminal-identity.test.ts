@@ -279,4 +279,24 @@ describe("AgentStore terminal identity", () => {
     });
     expect(agentEvents.get(migrated.id).terminalId).toBeNull();
   });
+
+  test("resets first_seen_at when a stable terminal starts a new run and preserves it for the same run", async () => {
+    const { agents } = openHarness();
+    const initial = replacePiAgent(agents, { revision: 1 });
+    if (!initial) throw new Error("Expected initial agent");
+    const initialFirstSeen = initial.firstSeenAt.getTime();
+
+    // Continuation of the same run preserves firstSeenAt
+    const continuation = replacePiAgent(agents, { revision: 2 });
+    expect(continuation?.firstSeenAt.getTime()).toBe(initialFirstSeen);
+
+    // After agent completes (status: done), starting a new run resets first_seen_at
+    agents.updateStatus({ agentStatus: "done", herdrSessionName: "default", paneId: "wA:p1" });
+
+    // Wait 5ms to guarantee timestamp difference
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const newRun = replacePiAgent(agents, { revision: 1 });
+    expect(newRun?.firstSeenAt.getTime()).toBeGreaterThan(initialFirstSeen);
+  });
 });

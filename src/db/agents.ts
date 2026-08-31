@@ -94,7 +94,23 @@ export class AgentStore {
         retainedIds.push(id);
         const agent = stringValue(snapshot.agent.agent);
         const name = stringValue(snapshot.agent.name);
-        const sessionHint = current?.agent === agent ? current.agent_session_hint_json : null;
+        const nextStatus = parseAgentStatus(snapshot.agent.agent_status);
+        const nextRevision = integerValue(snapshot.agent.revision);
+        const nextCwd = stringValue(snapshot.agent.cwd);
+        const isNewRun =
+          !current ||
+          current.agent !== agent ||
+          (current.agent_status === "done" && nextStatus !== "done") ||
+          (nextRevision !== null &&
+            current.pane_revision !== null &&
+            nextRevision < current.pane_revision) ||
+          (nextCwd !== null && current.cwd !== null && current.cwd !== nextCwd);
+        const sessionHint = isNewRun
+          ? null
+          : current.agent === agent
+            ? current.agent_session_hint_json
+            : null;
+        const firstSeenAt = isNewRun ? now : current.first_seen_at;
         const values = [
           snapshot.paneId,
           snapshot.terminalId,
@@ -102,13 +118,14 @@ export class AgentStore {
           snapshot.workspaceId,
           agent,
           name,
-          parseAgentStatus(snapshot.agent.agent_status),
+          nextStatus,
           agentSessionJson(snapshot.agent.agent_session),
           sessionHint,
-          integerValue(snapshot.agent.revision),
+          nextRevision,
           stringValue(snapshot.agent.cwd),
           stringValue(snapshot.agent.foreground_cwd) ?? stringValue(snapshot.agent.foregroundCwd),
           snapshot.agent.focused === true ? 1 : 0,
+          firstSeenAt,
           now,
         ];
         if (current) {
@@ -117,7 +134,7 @@ export class AgentStore {
               `update agents
                set pane_id = ?, terminal_id = ?, tab_id = ?, workspace_id = ?, agent = ?, name = ?,
                    agent_status = ?, agent_session_json = ?, agent_session_hint_json = ?, pane_revision = ?,
-                   cwd = ?, foreground_cwd = ?, focused = ?, last_seen_at = ?
+                   cwd = ?, foreground_cwd = ?, focused = ?, first_seen_at = ?, last_seen_at = ?
                where id = ?`,
             )
             .run(...values, id);
@@ -128,7 +145,7 @@ export class AgentStore {
                (id, herdr_session_name, pane_id, terminal_id, tab_id, workspace_id, agent, name, agent_status, agent_session_json, agent_session_hint_json, pane_revision, cwd, foreground_cwd, focused, first_seen_at, last_seen_at)
                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
-            .run(id, input.herdrSessionName, ...values, now);
+            .run(id, input.herdrSessionName, ...values);
         }
       }
 
@@ -175,12 +192,22 @@ export class AgentStore {
     herdrSessionName: string;
     paneId: string;
   }): AgentIndexRecord | undefined {
+    const current = this.findByPane(input);
     const now = Date.now();
-    this.#sqlite
-      .prepare(
-        "update agents set agent_status = ?, last_seen_at = ? where herdr_session_name = ? and pane_id = ?",
-      )
-      .run(input.agentStatus, now, input.herdrSessionName, input.paneId);
+    const isNewRun = current && current.agentStatus === "done" && input.agentStatus !== "done";
+    if (isNewRun) {
+      this.#sqlite
+        .prepare(
+          "update agents set agent_status = ?, first_seen_at = ?, last_seen_at = ? where herdr_session_name = ? and pane_id = ?",
+        )
+        .run(input.agentStatus, now, now, input.herdrSessionName, input.paneId);
+    } else {
+      this.#sqlite
+        .prepare(
+          "update agents set agent_status = ?, last_seen_at = ? where herdr_session_name = ? and pane_id = ?",
+        )
+        .run(input.agentStatus, now, input.herdrSessionName, input.paneId);
+    }
     return this.findByPane(input);
   }
 
