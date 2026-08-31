@@ -724,4 +724,94 @@ describe("AgyHistoryReader", () => {
       messages: [expect.objectContaining({ role: "user", text: "service integration" })],
     });
   });
+
+  test("omits orphan entries with unknown/generic types when pendingToolCalls is empty but accepts known execution types", async () => {
+    const homeDir = await tempHome("shepherd-agy-orphan-filter-");
+    const transcriptPath = join(homeDir, "transcript.jsonl");
+    await writeFile(
+      transcriptPath,
+      `${[
+        {
+          step_index: 0,
+          source: "USER_EXPLICIT",
+          type: "USER_INPUT",
+          created_at: "2026-08-20T10:00:00.000Z",
+          content: "do work",
+        },
+        {
+          step_index: 1,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:01.000Z",
+          content: "thinking...",
+        },
+        {
+          step_index: 2,
+          source: "MODEL",
+          type: "GENERIC",
+          created_at: "2026-08-20T10:00:02.000Z",
+          content: "internal bookkeeping record",
+        },
+        {
+          step_index: 3,
+          source: "MODEL",
+          type: "CUSTOM_UNKNOWN_METADATA",
+          created_at: "2026-08-20T10:00:03.000Z",
+          content: "some other metadata",
+        },
+        {
+          step_index: 4,
+          source: "MODEL",
+          type: "RUN_COMMAND",
+          created_at: "2026-08-20T10:00:04.000Z",
+          content: "command executed successfully",
+        },
+        {
+          step_index: 5,
+          source: "MODEL",
+          type: "ERROR_MESSAGE",
+          created_at: "2026-08-20T10:00:05.000Z",
+          error: "something failed",
+        },
+        {
+          step_index: 6,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          created_at: "2026-08-20T10:00:06.000Z",
+          content: "all done",
+        },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n")}\n`,
+    );
+
+    const reader = new AgyHistoryReader({ homeDir });
+    const messages = await reader.read(
+      { kind: "discovered_file", path: transcriptPath, source: "agy-jsonl", value: transcriptPath },
+      { limit: 20 },
+    );
+
+    expect(messages.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool_result",
+      "tool_result",
+      "assistant",
+    ]);
+    expect(messages[0]).toMatchObject({ role: "user", text: "do work" });
+    expect(messages[1]).toMatchObject({ role: "assistant", text: "thinking..." });
+    expect(messages[2]).toMatchObject({
+      role: "tool_result",
+      toolName: "run_command",
+      text: "command executed successfully",
+    });
+    expect(messages[3]).toMatchObject({
+      role: "tool_result",
+      toolName: "unknown",
+      text: "something failed",
+    });
+    expect(messages[3]?.compact?.isError).toBe(true);
+    expect(messages[4]).toMatchObject({ role: "assistant", text: "all done" });
+  });
 });
+

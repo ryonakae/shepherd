@@ -24,6 +24,35 @@ const ignoredEntryTypes = new Set([
   "system_message",
 ]);
 
+const knownToolExecutionTypes = new Set([
+  "ask_question",
+  "call_mcp_tool",
+  "command_output",
+  "edit_file",
+  "error_message",
+  "execute_command",
+  "find_by_name",
+  "generate_image",
+  "grep_search",
+  "list_dir",
+  "list_directory",
+  "list_resources",
+  "read_resource",
+  "read_url_content",
+  "replace_file_content",
+  "run_command",
+  "search_web",
+  "tool_call_result",
+  "tool_result",
+  "view_file",
+  "write_file",
+  "write_to_file",
+]);
+
+function isKnownToolExecutionType(type: string): boolean {
+  return knownToolExecutionTypes.has(type.toLowerCase());
+}
+
 export class AgyHistoryReader implements AgentHistoryReader {
   private readonly homeDir?: string;
 
@@ -95,7 +124,16 @@ export class AgyHistoryReader implements AgentHistoryReader {
         continue;
       }
 
-      const toolName = pendingToolCalls.shift() ?? inferToolName(type, entry.value);
+      let toolName: string;
+      if (pendingToolCalls.length > 0) {
+        toolName = pendingToolCalls.shift()!;
+      } else {
+        if (!isKnownToolExecutionType(type)) {
+          continue;
+        }
+        toolName = inferToolName(type, entry.value);
+      }
+
       const text = textFromToolResult(entry.value);
       if (text !== null) {
         const isError = isToolResultError(entry.value);
