@@ -66,6 +66,9 @@ describe("SQLite migrations", () => {
       dflt_value: null,
       notnull: 0,
     });
+    expect(agentColumns.find((column) => column.name === "is_adoption")).toMatchObject({
+      notnull: 1,
+    });
     const contextColumns = sqlite
       .prepare("pragma table_info(agent_context_snapshots)")
       .all()

@@ -265,7 +265,11 @@ export class AgentIndexService {
       paneId,
     });
     const current = updated ?? { ...agent, agentStatus: to };
-    const refreshed = await this.#context.refreshAgent({ agent: current, identityChanged: false });
+    const isNewRun = from === "done" && to !== "done";
+    const refreshed = await this.#context.refreshAgent({
+      agent: current,
+      identityChanged: isNewRun,
+    });
     const scopes = new Map<string, AgentScope>();
     for (const scope of recovered?.contextChangedScopes ?? []) addScope(scopes, scope);
     if (refreshed.changed || from !== to) addScope(scopes, scopeOf(current));
@@ -418,6 +422,8 @@ function sameIdentity(left: AgentIndexRecord, right: AgentIndexRecord): boolean 
     left.terminalId === right.terminalId &&
     left.cwd === right.cwd &&
     left.foregroundCwd === right.foregroundCwd &&
+    left.firstSeenAt.getTime() === right.firstSeenAt.getTime() &&
+    left.isAdoption === right.isAdoption &&
     sameAgentSession(left.agentSession, right.agentSession)
   );
 }

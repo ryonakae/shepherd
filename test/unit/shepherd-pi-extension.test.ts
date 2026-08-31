@@ -80,30 +80,44 @@ describe("shepherd-pi orchestrator bridge", () => {
   });
 
   test("does not connect outside a complete Herdr environment", async () => {
-    const pi = createFakePi();
-    let clients = 0;
-    const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
-    createShepherdPiExtension({
-      clientFactory: () => {
-        clients += 1;
-        return createFakeClient();
-      },
-    })(pi);
-    const ctx = fakeCtx();
-
-    await pi.emit("session_start", {}, ctx);
-    expect(clients).toBe(0);
-    expect(ctx.statuses.get("shepherd")).toBeUndefined();
-    await pi.command("", ctx);
-    expect(ctx.notifications.at(-1)).toEqual(["Shepherd requires a Herdr workspace", "error"]);
-
-    const previous = withHerdrEnv();
+    const saved = {
+      HERDR_ENV: process.env.HERDR_ENV,
+      HERDR_PANE_ID: process.env.HERDR_PANE_ID,
+      HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+      HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
+    };
+    delete process.env.HERDR_ENV;
     delete process.env.HERDR_PANE_ID;
+    delete process.env.HERDR_SOCKET_PATH;
+    delete process.env.HERDR_WORKSPACE_ID;
     try {
+      const pi = createFakePi();
+      let clients = 0;
+      const { createShepherdPiExtension } = (await import(extensionModuleUrl)) as Module;
+      createShepherdPiExtension({
+        clientFactory: () => {
+          clients += 1;
+          return createFakeClient();
+        },
+      })(pi);
+      const ctx = fakeCtx();
+
       await pi.emit("session_start", {}, ctx);
       expect(clients).toBe(0);
+      expect(ctx.statuses.get("shepherd")).toBeUndefined();
+      await pi.command("", ctx);
+      expect(ctx.notifications.at(-1)).toEqual(["Shepherd requires a Herdr workspace", "error"]);
+
+      const previous = withHerdrEnv();
+      delete process.env.HERDR_PANE_ID;
+      try {
+        await pi.emit("session_start", {}, ctx);
+        expect(clients).toBe(0);
+      } finally {
+        restoreEnv(previous);
+      }
     } finally {
-      restoreEnv(previous);
+      restoreEnv(saved);
     }
   });
 

@@ -24,11 +24,12 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
-async function sourceFile(name: string): Promise<string> {
+async function sourceFile(name: string, cwd: string | null = "/repo"): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "shepherd-history-service-"));
   tempDirs.push(dir);
   const path = join(dir, name);
-  await writeFile(path, "history\\n");
+  const content = cwd ? `${JSON.stringify({ cwd })}\n` : "raw text without cwd\n";
+  await writeFile(path, content);
   return path;
 }
 
@@ -241,6 +242,23 @@ describe("agent history service", () => {
     });
   });
 
+  test("forwards firstSeenAtMs through resolveCompactHistory to discovery", async () => {
+    const discovered = ref(await sourceFile("discovered.jsonl"));
+    const fakeReader = reader();
+    let discoveryInput: AgentHistoryLookupInput | undefined;
+    const svc = createAgentHistoryService({
+      discover: async (input) => {
+        discoveryInput = input;
+        return discovered;
+      },
+      readers: [fakeReader.fake],
+    });
+
+    await svc.resolveCompactHistory({ ...lookup, firstSeenAtMs: 123 }, { forceDiscovery: true });
+
+    expect(discoveryInput?.firstSeenAtMs).toBe(123);
+  });
+
   test("uses session-specific cache keys for OpenCode DB refs", () => {
     const first: AgentHistoryRef = {
       kind: "discovered_file",
@@ -252,5 +270,95 @@ describe("agent history service", () => {
 
     expect(cacheSourcePathForRef(first)).toBe("/tmp/opencode.db#session=session-a");
     expect(cacheSourcePathForRef(second)).toBe("/tmp/opencode.db#session=session-b");
+  });
+
+  test("rejects stale persisted discovered refs and falls back to discovery", async () => {
+    const stalePath = await sourceFile("stale.jsonl");
+    const stalePreferred = ref(stalePath);
+    const freshDiscovered = ref(await sourceFile("fresh.jsonl"));
+    const fixture = service({ discovered: freshDiscovered });
+
+    // When firstSeenAtMs is set and preferred ref predates it, preferred ref is rejected
+    const firstSeenAtMs = Date.now() + 10_000;
+    const result = await fixture.service.resolveCompactHistory(
+      { ...lookup, firstSeenAtMs },
+      { preferredRef: stalePreferred },
+    );
+
+    expect(fixture.discoveries()).toBe(1);
+    expect(result.historyRef).toEqual(freshDiscovered);
+  });
+
+  test("rejects preferred file ref when cwd does not match and falls back to discovery", async () => {
+    const otherCwdPath = await sourceFile("other-cwd.jsonl", "/other-repo");
+    const otherCwdPreferred = ref(otherCwdPath);
+    const freshDiscovered = ref(await sourceFile("fresh.jsonl", "/repo"));
+    const fixture = service({ discovered: freshDiscovered });
+
+    const result = await fixture.service.resolveCompactHistory(lookup, {
+      preferredRef: otherCwdPreferred,
+    });
+
+    expect(fixture.discoveries()).toBe(1);
+    expect(result.historyRef).toEqual(freshDiscovered);
+  });
+
+  test("rejects preferred file ref without proven cwd and falls back to discovery", async () => {
+    const noCwdPath = await sourceFile("no-cwd.jsonl", null);
+    const noCwdPreferred = ref(noCwdPath);
+    const freshDiscovered = ref(await sourceFile("fresh.jsonl", "/repo"));
+    const fixture = service({ discovered: freshDiscovered });
+
+    const result = await fixture.service.resolveCompactHistory(lookup, {
+      preferredRef: noCwdPreferred,
+    });
+
+    expect(fixture.discoveries()).toBe(1);
+    expect(result.historyRef).toEqual(freshDiscovered);
+  });
+
+  test("preserves authoritative agent_session refs matching input.agentSession even if file timestamp predates firstSeenAtMs", async () => {
+    const path = await sourceFile("authoritative.jsonl");
+    const authoritativeRef: AgentHistoryRef = {
+      kind: "agent_session",
+      path,
+      source: "pi-jsonl",
+      value: path,
+    };
+    const fixture = service({ discovered: null });
+
+    const firstSeenAtMs = Date.now() + 10_000;
+    const result = await fixture.service.resolveCompactHistory(
+      {
+        ...lookup,
+        agentSession: { agent: "pi", kind: "path", source: "herdr:pi", value: path },
+        firstSeenAtMs,
+      },
+      { preferredRef: authoritativeRef },
+    );
+
+    expect(fixture.discoveries()).toBe(0);
+    expect(result.historyRef).toEqual(authoritativeRef);
+  });
+
+  test("rejects leftover stale agent_session refs when input.agentSession is null", async () => {
+    const stalePath = await sourceFile("stale-session.jsonl");
+    const leftoverRef: AgentHistoryRef = {
+      kind: "agent_session",
+      path: stalePath,
+      source: "pi-jsonl",
+      value: stalePath,
+    };
+    const freshDiscovered = ref(await sourceFile("fresh.jsonl", "/repo"));
+    const fixture = service({ discovered: freshDiscovered });
+
+    const firstSeenAtMs = Date.now() + 10_000;
+    const result = await fixture.service.resolveCompactHistory(
+      { ...lookup, agentSession: null, firstSeenAtMs },
+      { preferredRef: leftoverRef },
+    );
+
+    expect(fixture.discoveries()).toBe(1);
+    expect(result.historyRef).toEqual(freshDiscovered);
   });
 });

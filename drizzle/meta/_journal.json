@@ -36,6 +36,13 @@
       "when": 1784714691844,
       "tag": "0004_serious_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785000000000,
+      "tag": "0005_rich_adoption",
+      "breakpoints": true
     }
   ]
 }

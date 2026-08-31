@@ -279,4 +279,65 @@ describe("AgentStore terminal identity", () => {
     });
     expect(agentEvents.get(migrated.id).terminalId).toBeNull();
   });
+
+  test("resets first_seen_at when a stable terminal starts a new run and preserves it for the same run", async () => {
+    const { agents } = openHarness();
+    const initial = replacePiAgent(agents, { revision: 1 });
+    if (!initial) throw new Error("Expected initial agent");
+    const initialFirstSeen = initial.firstSeenAt.getTime();
+    expect(initial.isAdoption).toBe(true);
+
+    // Continuation of the same run preserves firstSeenAt and isAdoption
+    const continuation = replacePiAgent(agents, { revision: 2 });
+    expect(continuation?.firstSeenAt.getTime()).toBe(initialFirstSeen);
+    expect(continuation?.isAdoption).toBe(true);
+
+    // Set a session hint
+    agents.setSessionRefByTerminal({
+      agentSession: piSessionRef,
+      herdrSessionName: "default",
+      terminalId: "term_1",
+    });
+    expect(
+      agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession,
+    ).toEqual(piSessionRef);
+
+    // After agent completes (status: done), starting a new run resets first_seen_at, clears hint, and sets isAdoption: false
+    agents.updateStatus({ agentStatus: "done", herdrSessionName: "default", paneId: "wA:p1" });
+
+    // Wait 10ms to guarantee timestamp difference
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const newRun = replacePiAgent(agents, { revision: 1 });
+    expect(newRun?.firstSeenAt.getTime()).toBeGreaterThan(initialFirstSeen);
+    expect(newRun?.isAdoption).toBe(false);
+    expect(newRun?.agentSession).toBeNull();
+  });
+
+  test("updateStatus done -> working clears session hint and resets isAdoption to false", async () => {
+    const { agents } = openHarness();
+    const initial = replacePiAgent(agents, { revision: 1 });
+    expect(initial?.isAdoption).toBe(true);
+
+    agents.setSessionRefByTerminal({
+      agentSession: piSessionRef,
+      herdrSessionName: "default",
+      terminalId: "term_1",
+    });
+    expect(
+      agents.findByPane({ herdrSessionName: "default", paneId: "wA:p1" })?.agentSession,
+    ).toEqual(piSessionRef);
+
+    agents.updateStatus({ agentStatus: "done", herdrSessionName: "default", paneId: "wA:p1" });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const working = agents.updateStatus({
+      agentStatus: "working",
+      herdrSessionName: "default",
+      paneId: "wA:p1",
+    });
+    expect(working?.isAdoption).toBe(false);
+    expect(working?.agentSession).toBeNull();
+  });
 });
